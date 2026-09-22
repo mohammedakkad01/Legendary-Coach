@@ -102,11 +102,19 @@ async function main() {
       requestsUsed += 1;
       const teams = teamsData.response || [];
       console.log(`  season ${season}: ${teams.length} clubs (requests used so far: ${requestsUsed})`);
+      if (teams.length === 0) {
+        console.log(`    debug -> results=${teamsData.results} errors=${JSON.stringify(teamsData.errors)}`);
+      }
       if (teams.length > 0) {
         rawTeams = teams;
         seasonUsed = season;
         break; // found a season with real data, stop trying older ones
       }
+    }
+
+    if (rawTeams.length === 0 && league === OFFICIAL_LEAGUES_CONFIG[0]) {
+      console.error('First league returned 0 teams for every season tried — this is a systemic API/plan issue, not a per-league one. Stopping here to save quota; see the debug lines above for the real reason.');
+      process.exit(1);
     }
 
     const leagueDocId = `league_${league.id}`;

@@ -1,0 +1,216 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile containing authenticated user identity and metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 200 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "displayName", "createdAt", "updatedAt"]
+    },
+    "CareerSave": {
+      "title": "CareerSave",
+      "description": "Saved coach career data including club state, progression, finances, and squad state",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "clubName": { "type": "string", "maxLength": 100 },
+        "currentSport": { "type": "string", "enum": ["football", "basketball"] },
+        "reputation": { "type": "number" },
+        "coins": { "type": "number" },
+        "diamonds": { "type": "number" },
+        "vipPoints": { "type": "number" },
+        "currentChapter": { "type": "number" },
+        "currentMissionId": { "type": "number" },
+        "savePayload": { "type": "string", "maxLength": 100000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "clubName", "currentSport", "savePayload", "createdAt", "updatedAt"]
+    },
+    "CommunityTactic": {
+      "title": "CommunityTactic",
+      "description": "Shared coach tactical setup for the community",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "maxLength": 100 },
+        "title": { "type": "string", "maxLength": 120 },
+        "sport": { "type": "string", "enum": ["football", "basketball"] },
+        "formation": { "type": "string", "maxLength": 20 },
+        "mentality": { "type": "string", "maxLength": 30 },
+        "pressing": { "type": "string", "maxLength": 30 },
+        "likesCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "authorId", "authorName", "title", "sport", "formation", "mentality", "pressing", "likesCount", "createdAt"]
+    },
+    "LeagueCache": {
+      "title": "LeagueCache",
+      "description": "Shared reference cache for official football leagues fetched from API-Football",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "leagueId": { "type": "number" },
+        "season": { "type": "number" },
+        "name": { "type": "string", "maxLength": 100 },
+        "nameEn": { "type": "string", "maxLength": 100 },
+        "country": { "type": "string", "maxLength": 80 },
+        "logo": { "type": "string", "maxLength": 500 },
+        "standings": { "type": "string", "maxLength": 80000 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "leagueId", "season", "name", "updatedAt"]
+    },
+    "ClubCache": {
+      "title": "ClubCache",
+      "description": "Shared reference cache for official football clubs in a league",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "teamId": { "type": "number" },
+        "leagueId": { "type": "number" },
+        "season": { "type": "number" },
+        "name": { "type": "string", "maxLength": 100 },
+        "nameEn": { "type": "string", "maxLength": 100 },
+        "code": { "type": "string", "maxLength": 10 },
+        "country": { "type": "string", "maxLength": 80 },
+        "founded": { "type": "number" },
+        "logo": { "type": "string", "maxLength": 500 },
+        "venue": { "type": "string", "maxLength": 150 },
+        "venueCapacity": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "teamId", "name", "updatedAt"]
+    },
+    "PlayerCache": {
+      "title": "PlayerCache",
+      "description": "Shared reference cache for club squad players and real rating benchmarks",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "playerId": { "type": "number" },
+        "teamId": { "type": "number" },
+        "name": { "type": "string", "maxLength": 100 },
+        "age": { "type": "number" },
+        "number": { "type": "number" },
+        "position": { "type": "string", "maxLength": 20 },
+        "photo": { "type": "string", "maxLength": 500 },
+        "baseRating": { "type": "number" },
+        "calculatedOverall": { "type": "number" },
+        "potential": { "type": "number" },
+        "isRatingEstimated": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "playerId", "name", "position", "calculatedOverall", "updatedAt"]
+    },
+    "SyncAuditLog": {
+      "title": "SyncAuditLog",
+      "description": "Log entry tracking API-Football sync calls and quota consumption",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "initiatedBy": { "type": "string", "maxLength": 128 },
+        "requestsUsed": { "type": "number" },
+        "quotaRemaining": { "type": "number" },
+        "status": { "type": "string", "enum": ["success", "partial", "failed", "aborted_quota"] },
+        "summary": { "type": "string", "maxLength": 2000 },
+        "details": { "type": "string", "maxLength": 20000 }
+      },
+      "required": ["id", "timestamp", "requestsUsed", "status", "summary"]
+    },
+    "UserClubSave": {
+      "title": "UserClubSave",
+      "description": "Layer 2: Isolated user-owned club clone where personal gameplay progress is saved",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "clonedFromClubId": { "type": "string", "maxLength": 128 },
+        "clubName": { "type": "string", "maxLength": 100 },
+        "leagueId": { "type": "string", "maxLength": 100 },
+        "divisionName": { "type": "string", "maxLength": 100 },
+        "boardTrust": { "type": "number" },
+        "fanMood": { "type": "number" },
+        "coins": { "type": "number" },
+        "diamonds": { "type": "number" },
+        "reputation": { "type": "number" },
+        "seasonYear": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "clonedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "clubName", "updatedAt"]
+    },
+    "UserPlayerSave": {
+      "title": "UserPlayerSave",
+      "description": "Layer 2: Isolated player clone inside user squad with dynamic training and VIP boosts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "realName": { "type": "string", "maxLength": 100 },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "realPosition": { "type": "string", "maxLength": 20 },
+        "nationality": { "type": "string", "maxLength": 80 },
+        "isRealDataPlayer": { "type": "boolean" },
+        "baseOverall": { "type": "number" },
+        "currentOverall": { "type": "number" },
+        "potential": { "type": "number" },
+        "trainingBonus": { "type": "number" },
+        "vipBonus": { "type": "number" },
+        "fatiguePenalty": { "type": "number" },
+        "morale": { "type": "number" },
+        "isRatingEstimated": { "type": "boolean" },
+        "lastTrainingDate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "realName", "baseOverall", "currentOverall"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Authenticated user public profile document"
+    },
+    "/users/{userId}/careerSaves/{saveId}": {
+      "schema": "CareerSave",
+      "description": "User's saved game career progress and state"
+    },
+    "/tactics/{tacticId}": {
+      "schema": "CommunityTactic",
+      "description": "Community tactics shared by coaches"
+    },
+    "/leagues_cache/{leagueId}": {
+      "schema": "LeagueCache",
+      "description": "Layer 1: Shared read-only official league cache"
+    },
+    "/clubs_cache/{clubId}": {
+      "schema": "ClubCache",
+      "description": "Layer 1: Shared read-only official club cache"
+    },
+    "/players_cache/{playerId}": {
+      "schema": "PlayerCache",
+      "description": "Layer 1: Shared read-only official player cache"
+    },
+    "/sync_logs/{logId}": {
+      "schema": "SyncAuditLog",
+      "description": "Audit trail for API-Football synchronization runs"
+    },
+    "/user_saves/{userId}/club": {
+      "schema": "UserClubSave",
+      "description": "Layer 2: User personal club clone for gameplay"
+    },
+    "/user_saves/{userId}/club/players/{playerId}": {
+      "schema": "UserPlayerSave",
+      "description": "Layer 2: User personal player clones with dynamic progression"
+    }
+  }
+}

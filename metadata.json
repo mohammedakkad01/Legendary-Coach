@@ -1,0 +1,6 @@
+{
+  "name": "المدرب الأسطورة — The Legendary Coach",
+  "description": "لعبة إدارة وتدريب رياضي احترافية متعددة الرياضات بقصة تفاعلية درامية ومحاكاة تكتيكية حية باللغة العربية بالكامل",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

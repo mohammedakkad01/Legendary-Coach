@@ -1,0 +1,1554 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Central Game State Store (Zustand + LocalPersistence)
+ * Offline-first, multi-sport, deterministic simulation links, and VIP state.
+ */
+
+import { create } from 'zustand';
+import { 
+  Club, 
+  Player, 
+  FootballTactics, 
+  BasketballTactics, 
+  StoryMission, 
+  LeagueStanding, 
+  MatchRecord, 
+  MatchEvent, 
+  SportType,
+  ClubFacilities,
+  DailyMission,
+  MatchResultsCharacter,
+  TacticalDuelState,
+  TacticalStance,
+  DuelPiece,
+  TacticalDuelOrder
+} from '../types/game';
+import { 
+  REAL_INITIAL_PLAYER_CLUB, 
+  REAL_OPPONENT_CLUBS, 
+  REAL_INITIAL_STANDINGS, 
+  REAL_INITIAL_SCOUT_MARKET 
+} from '../data/realFootballData';
+import { RealClubConfig, generateStandingsForLeague } from '../data/realLeaguesData';
+import { STORY_CHAPTER_1_MISSIONS } from '../data/storyChapter1';
+import { VIP_LEVELS } from '../data/vipData';
+import { INITIAL_DAILY_MISSIONS } from '../data/dailyMissionsData';
+import { generatePostMatchCharacter } from '../data/matchAnalystData';
+import { 
+  getRandomDuelDraft, 
+  getBotDuelOrder, 
+  resolveSimultaneousDuelRound,
+  DUEL_PIECES_CATALOG 
+} from '../data/tacticalDuelData';
+import { FootballMatchEngine } from '../engine/footballEngine';
+import { BasketballMatchEngine } from '../engine/basketballEngine';
+import { soundEffects } from '../audio/soundFX';
+import confetti from 'canvas-confetti';
+
+const STORAGE_KEY = 'MODAREB_LEGEND_REAL_V2';
+
+export type GameTab = 
+  | 'dashboard' 
+  | 'tactics' 
+  | 'match' 
+  | 'story' 
+  | 'squad'
+  | 'training' 
+  | 'transfers' 
+  | 'club' 
+  | 'league' 
+  | 'vip' 
+  | 'editor'
+  | 'scout'
+  | 'football_api'
+  | 'tactical_duel';
+
+interface GameState {
+  currentSport: SportType;
+  language: 'ar' | 'en';
+  activeTab: GameTab;
+  soundEnabled: boolean;
+  
+  // Auth & Guest state
+  isGuest: boolean;
+  hasClaimedLoginBonus: boolean;
+  hasSelectedInitialClub: boolean;
+  clubSelectionModalOpen: boolean;
+
+  // Club & Career
+  club: Club;
+  energy: number; // 0-100
+  lastEnergyUpdate: number;
+  vipPoints: number;
+  vipClaimedToday: boolean;
+  checkInStreak: number;
+  checkInClaimedToday: boolean;
+
+  // Daily Missions System
+  dailyMissions: DailyMission[];
+  isDailyMissionsModalOpen: boolean;
+
+  // Match Results Character & Tactical Analyst
+  postMatchAnalyst: MatchResultsCharacter | null;
+
+  // Simultaneous Reveal Tactical Duel (صانع المعارك)
+  tacticalDuel: TacticalDuelState;
+  isTacticalDuelModalOpen: boolean;
+
+  // Story & Campaign
+  storyMissions: StoryMission[];
+  selectedMissionId: number | null;
+
+  // League & Competitions
+  leagueStandings: LeagueStanding[];
+  matchHistory: MatchRecord[];
+
+  // Live Match Simulation
+  activeEngine: FootballMatchEngine | null;
+  activeMatchRecord: MatchRecord | null;
+  isMatchLive: boolean;
+  isMatchPaused: boolean;
+  matchSpeed: number; // 1, 2, 4
+  currentMatchMinute: number;
+  pendingInteractiveEvent: MatchEvent | null;
+
+  // Market & Scouts
+  scoutMarket: Player[];
+
+  // Actions
+  setSport: (sport: SportType) => void;
+  setLanguage: (lang: 'ar' | 'en') => void;
+  setActiveTab: (tab: GameTab) => void;
+  toggleSound: () => void;
+  setIsGuest: (val: boolean) => void;
+  claimLoginBonus: () => { success: boolean; message: string };
+  chooseClub: (club: Club) => void;
+  setClubSelectionModalOpen: (open: boolean) => void;
+  selectLeagueAndClub: (clubConfig: RealClubConfig) => { success: boolean; message: string };
+  
+  // Daily Missions & Squad Fatigue Actions
+  claimDailyMission: (missionId: string) => { success: boolean; message: string };
+  runSquadRecoverySession: () => { success: boolean; message: string };
+  setDailyMissionsModalOpen: (open: boolean) => void;
+  setPostMatchAnalyst: (analyst: MatchResultsCharacter | null) => void;
+
+  // Tactical Duel Actions
+  startTacticalDuel: (difficulty?: 'novice' | 'tactical') => void;
+  selectDuelPieceAndStance: (pieceId: string, stance: TacticalStance) => void;
+  submitDuelRoundOrder: () => void;
+  closeTacticalDuel: () => void;
+  setTacticalDuelModalOpen: (open: boolean) => void;
+  
+  // Tactics & Lineup
+  updateFootballTactics: (newTactics: Partial<FootballTactics>) => void;
+  updateBasketballTactics: (newTactics: Partial<BasketballTactics>) => void;
+  swapFootballLineup: (lineupIndex: number, benchPlayerId: string) => void;
+  setFootballRoles: (roles: { captainId?: string; penaltyTakerId?: string; freeKickTakerId?: string; cornerTakerId?: string }) => void;
+
+  // Training & Facilities
+  runTrainingDrill: (drillType: 'stamina' | 'technical' | 'finishing') => boolean;
+  upgradeFacility: (facility: keyof ClubFacilities) => boolean;
+
+  // Transfers & Academy
+  buyPlayer: (player: Player) => boolean;
+  addPlayerToSquad: (player: Player) => boolean;
+  sellPlayer: (playerId: string) => void;
+  promoteAcademyTalent: () => void;
+  refreshScoutMarket: () => void;
+
+  // Narrative
+  chooseMissionOption: (missionId: number, choiceId: string) => void;
+  selectMission: (id: number | null) => void;
+
+  // Match Operations
+  startNewMatch: (opponentClubId?: string) => void;
+  stepMatchMinute: () => void;
+  toggleMatchPause: () => void;
+  setMatchSpeed: (speed: number) => void;
+  submitInteractiveDecision: (optionId: string) => void;
+  instantSimulateMatch: () => void;
+
+  // Daily & VIP
+  claimedVipUpgradeChests: number[]; // VIP levels where the one-time upgrade chest was opened
+  upgradeVipWithDiamonds: () => { success: boolean; message: string };
+  claimVipUpgradeChest: (level: number) => { success: boolean; message: string };
+  claimDailyVIPReward: () => { success: boolean; message: string };
+  claimDailyCheckIn: () => void;
+
+  // Custom Data Pack Editor
+  exportGameData: () => string;
+  importCustomDataPack: (jsonText: string) => { success: boolean; message: string };
+  resetCareer: () => void;
+}
+
+export const useGameStore = create<GameState>((set, get) => {
+  // Load saved state if present
+  const loadSavedState = () => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  };
+
+  const saveToStorage = (state: Partial<GameState>) => {
+    try {
+      const current = get();
+      const payload = {
+        currentSport: state.currentSport || current.currentSport,
+        language: state.language || current.language,
+        club: state.club || current.club,
+        energy: state.energy !== undefined ? state.energy : current.energy,
+        vipPoints: state.vipPoints !== undefined ? state.vipPoints : current.vipPoints,
+        checkInStreak: state.checkInStreak !== undefined ? state.checkInStreak : current.checkInStreak,
+        hasClaimedLoginBonus: state.hasClaimedLoginBonus !== undefined ? state.hasClaimedLoginBonus : current.hasClaimedLoginBonus,
+        isGuest: state.isGuest !== undefined ? state.isGuest : current.isGuest,
+        hasSelectedInitialClub: state.hasSelectedInitialClub !== undefined ? state.hasSelectedInitialClub : current.hasSelectedInitialClub,
+        leagueStandings: state.leagueStandings || current.leagueStandings,
+        matchHistory: state.matchHistory || current.matchHistory,
+        storyMissions: state.storyMissions || current.storyMissions,
+        scoutMarket: state.scoutMarket || current.scoutMarket,
+        claimedVipUpgradeChests: state.claimedVipUpgradeChests || current.claimedVipUpgradeChests,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+  };
+
+  const initialSave = loadSavedState();
+  const initialClubSelected = initialSave?.hasSelectedInitialClub ?? false;
+
+  return {
+    currentSport: initialSave?.currentSport || 'football',
+    language: initialSave?.language || 'ar',
+    activeTab: 'dashboard',
+    soundEnabled: initialSave?.soundEnabled ?? true,
+
+    // Auth & Guest
+    isGuest: initialSave?.isGuest ?? true,
+    hasClaimedLoginBonus: initialSave?.hasClaimedLoginBonus ?? false,
+    hasSelectedInitialClub: initialClubSelected,
+    clubSelectionModalOpen: !initialClubSelected,
+    
+    // Club & Career Starts from ZERO
+    club: initialSave?.club || REAL_INITIAL_PLAYER_CLUB,
+    energy: initialSave?.energy || 100,
+    lastEnergyUpdate: Date.now(),
+    vipPoints: initialSave?.vipPoints || 0, // Starts from ZERO!
+    vipClaimedToday: false,
+    claimedVipUpgradeChests: initialSave?.claimedVipUpgradeChests || [1], // Level 1 is claimed initially or claimable
+    checkInStreak: initialSave?.checkInStreak || 0, // Starts from ZERO!
+    checkInClaimedToday: false,
+
+    dailyMissions: initialSave?.dailyMissions || INITIAL_DAILY_MISSIONS,
+    isDailyMissionsModalOpen: false,
+
+    postMatchAnalyst: null,
+
+    tacticalDuel: {
+      isActive: false,
+      matchId: '',
+      opponentName: 'القائد ألكسندر',
+      opponentAvatar: '🛡️',
+      opponentIsBot: true,
+      round: 1,
+      maxRounds: 4,
+      playerHp: 100,
+      opponentHp: 100,
+      draftedPieces: DUEL_PIECES_CATALOG.slice(0, 3),
+      selectedPieceId: DUEL_PIECES_CATALOG[0].id,
+      selectedStance: 'attack',
+      isOrderSubmitted: false,
+      isRevealing: false,
+      history: [],
+      winner: null,
+    },
+    isTacticalDuelModalOpen: false,
+
+    storyMissions: initialSave?.storyMissions || STORY_CHAPTER_1_MISSIONS,
+    selectedMissionId: null,
+
+    leagueStandings: initialSave?.leagueStandings || REAL_INITIAL_STANDINGS,
+    matchHistory: initialSave?.matchHistory || [],
+
+    activeEngine: null,
+    activeMatchRecord: null,
+    isMatchLive: false,
+    isMatchPaused: false,
+    matchSpeed: 1,
+    currentMatchMinute: 0,
+    pendingInteractiveEvent: null,
+
+    scoutMarket: initialSave?.scoutMarket || REAL_INITIAL_SCOUT_MARKET,
+
+    setIsGuest: (val: boolean) => {
+      set({ isGuest: val });
+      saveToStorage({ isGuest: val });
+    },
+
+    claimLoginBonus: () => {
+      const state = get();
+      if (state.hasClaimedLoginBonus) {
+        return { success: false, message: 'تم استلام مكافأة تسجيل الدخول (300 جوهرة 💎) مسبقاً.' };
+      }
+      soundEffects.playLevelUp();
+      confetti({ particleCount: 120, spread: 90, origin: { y: 0.6 } });
+      const updatedClub = {
+        ...state.club,
+        finances: {
+          ...state.club.finances,
+          diamonds: (state.club.finances.diamonds || 0) + 300,
+        },
+      };
+      set({
+        hasClaimedLoginBonus: true,
+        isGuest: false,
+        club: updatedClub,
+      });
+      saveToStorage({ hasClaimedLoginBonus: true, isGuest: false, club: updatedClub });
+      return { success: true, message: '🎉 تهانينا! حصلت على مكافأة تسجيل الدخول: 300 جوهرة 💎 في خزينة ناديك!' };
+    },
+
+    chooseClub: (chosenClub: Club) => {
+      soundEffects.playFanfare();
+      const currentDiamonds = get().club.finances.diamonds || 0;
+      const updatedClub = {
+        ...chosenClub,
+        finances: {
+          ...chosenClub.finances,
+          diamonds: currentDiamonds,
+          reputation: 0, // Reset to zero!
+        },
+      };
+      set({
+        club: updatedClub,
+        leagueStandings: REAL_INITIAL_STANDINGS,
+        matchHistory: [],
+      });
+      saveToStorage({ club: updatedClub, leagueStandings: REAL_INITIAL_STANDINGS, matchHistory: [] });
+    },
+
+    setClubSelectionModalOpen: (open: boolean) => {
+      set({ clubSelectionModalOpen: open });
+    },
+
+    selectLeagueAndClub: (clubConfig: RealClubConfig) => {
+      const state = get();
+      const currentDiamonds = state.club.finances.diamonds || 0;
+      const isAr = state.language === 'ar';
+
+      // Check gem requirement for Top Tier clubs
+      if (clubConfig.isTopTier && clubConfig.gemCost > 0) {
+        if (currentDiamonds < clubConfig.gemCost) {
+          return {
+            success: false,
+            message: isAr
+              ? `نادي ${clubConfig.name} من أندية المركز الأول والنخبة ويتطلب ${clubConfig.gemCost} جوهرة 💎. رصيدك الحالي: ${currentDiamonds} 💎. سجّل الدخول مجاناً لتحصل على 300 💎 فوراً، أو اختر نادياً مجانياً (0 💎)!`
+              : `${clubConfig.nameEn} is a Tier-1 club requiring ${clubConfig.gemCost} 💎. You have ${currentDiamonds} 💎. Sign in to get 300 💎 for free or pick a free challenger club!`
+          };
+        }
+      }
+
+      const remainingDiamonds = clubConfig.gemCost > 0 ? currentDiamonds - clubConfig.gemCost : currentDiamonds;
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 140, spread: 90, origin: { y: 0.5 } });
+
+      const updatedClub: Club = {
+        ...REAL_INITIAL_PLAYER_CLUB,
+        id: clubConfig.id,
+        name: clubConfig.name,
+        nameEn: clubConfig.nameEn,
+        city: `${clubConfig.city}، ${clubConfig.country}`,
+        stadiumName: clubConfig.stadiumName,
+        logoBadge: '🛡️',
+        logoUrl: clubConfig.badge,
+        divisionId: clubConfig.leagueId,
+        divisionName: clubConfig.leagueName,
+        colors: clubConfig.colors,
+        boardTrust: 85,
+        fanMood: 85,
+        finances: {
+          ...REAL_INITIAL_PLAYER_CLUB.finances,
+          diamonds: remainingDiamonds,
+          coins: 100000,
+          reputation: 0, // Starts from ZERO on Day 1!
+          totalSeasonRevenue: 0,
+          totalSeasonExpenses: 0,
+        },
+        footballSquad: REAL_INITIAL_PLAYER_CLUB.footballSquad.map(p => ({
+          ...p,
+          realTeam: clubConfig.nameEn,
+          matchesPlayed: 0,
+          goalsOrPoints: 0,
+          assists: 0,
+        }))
+      };
+
+      const newStandings = generateStandingsForLeague(clubConfig.leagueId, clubConfig.id, clubConfig.name);
+
+      set({
+        club: updatedClub,
+        leagueStandings: newStandings,
+        matchHistory: [],
+        hasSelectedInitialClub: true,
+        clubSelectionModalOpen: false,
+      });
+
+      saveToStorage({
+        club: updatedClub,
+        leagueStandings: newStandings,
+        matchHistory: [],
+        hasSelectedInitialClub: true,
+      });
+
+      return {
+        success: true,
+        message: isAr
+          ? `🎉 تم تولي منصب المدير الفني لنادي ${clubConfig.name} بنجاح! تبدأ مسيرتك الرسمية في ${clubConfig.leagueName} من اليوم الأول.`
+          : `🎉 Officially appointed as Manager of ${clubConfig.nameEn}! Your career in ${clubConfig.leagueNameEn} begins today.`
+      };
+    },
+
+    setSport: (sport) => {
+      soundEffects.playTap();
+      set({ currentSport: sport });
+    },
+
+    setLanguage: (lang) => {
+      soundEffects.playTap();
+      set({ language: lang });
+      document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+      document.documentElement.lang = lang;
+    },
+
+    setActiveTab: (tab) => {
+      soundEffects.playTap();
+      set({ activeTab: tab });
+    },
+
+    toggleSound: () => {
+      const newState = !get().soundEnabled;
+      soundEffects.enabled = newState;
+      set({ soundEnabled: newState });
+    },
+
+    updateFootballTactics: (newTactics) => {
+      soundEffects.playTap();
+      set((state) => ({
+        club: {
+          ...state.club,
+          footballTactics: {
+            ...state.club.footballTactics,
+            ...newTactics,
+          },
+        },
+      }));
+    },
+
+    updateBasketballTactics: (newTactics) => {
+      soundEffects.playTap();
+      set((state) => ({
+        club: {
+          ...state.club,
+          basketballTactics: {
+            ...state.club.basketballTactics,
+            ...newTactics,
+          },
+        },
+      }));
+    },
+
+    swapFootballLineup: (lineupIndex, benchPlayerId) => {
+      soundEffects.playTap();
+      const club = get().club;
+      const oldPlayerId = club.footballLineup[lineupIndex];
+      const newLineup = [...club.footballLineup];
+      newLineup[lineupIndex] = benchPlayerId;
+
+      const newBench = club.footballBench.map(id => id === benchPlayerId ? oldPlayerId : id);
+      set({
+        club: {
+          ...club,
+          footballLineup: newLineup,
+          footballBench: newBench,
+        },
+      });
+    },
+
+    setFootballRoles: (roles) => {
+      soundEffects.playTap();
+      set((state) => ({
+        club: {
+          ...state.club,
+          footballTactics: {
+            ...state.club.footballTactics,
+            ...roles,
+          },
+        },
+      }));
+    },
+
+    runTrainingDrill: (drillType) => {
+      const state = get();
+      const cost = drillType === 'stamina' ? 30 : 40;
+      if (state.club.finances.trainingPoints < cost) {
+        return false;
+      }
+
+      soundEffects.playWhistle(true);
+      const updatedSquad = state.club.footballSquad.map(p => {
+        if (drillType === 'stamina') {
+          return { ...p, stamina: Math.min(100, p.stamina + 8), fatigue: Math.max(0, p.fatigue - 5) };
+        } else if (drillType === 'technical') {
+          return { ...p, form: Math.min(10, p.form + 1), morale: Math.min(100, p.morale + 4) };
+        } else {
+          return { ...p, overall: Math.min(p.potential, p.overall + (Math.random() < 0.25 ? 1 : 0)) };
+        }
+      });
+
+      set({
+        vipPoints: state.vipPoints + 15,
+        club: {
+          ...state.club,
+          footballSquad: updatedSquad,
+          finances: {
+            ...state.club.finances,
+            trainingPoints: state.club.finances.trainingPoints - cost,
+          },
+        },
+      });
+      return true;
+    },
+
+    upgradeFacility: (facility) => {
+      const state = get();
+      const currentLevel = state.club.facilities[facility];
+      if (currentLevel >= 10) return false;
+
+      const upgradeCost = currentLevel * 35000;
+      if (state.club.finances.coins < upgradeCost) return false;
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 40, spread: 60 });
+
+      set({
+        vipPoints: state.vipPoints + 50,
+        club: {
+          ...state.club,
+          facilities: {
+            ...state.club.facilities,
+            [facility]: currentLevel + 1,
+          },
+          finances: {
+            ...state.club.finances,
+            coins: state.club.finances.coins - upgradeCost,
+            reputation: state.club.finances.reputation + 40,
+          },
+        },
+      });
+      return true;
+    },
+
+    buyPlayer: (player) => {
+      const state = get();
+      if (state.club.finances.coins < player.marketValue) return false;
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 50, spread: 70 });
+
+      set({
+        vipPoints: state.vipPoints + 40,
+        club: {
+          ...state.club,
+          footballSquad: [...state.club.footballSquad, player],
+          footballBench: [...state.club.footballBench, player.id],
+          fanMood: Math.min(100, state.club.fanMood + 5),
+          finances: {
+            ...state.club.finances,
+            coins: state.club.finances.coins - player.marketValue,
+            reputation: state.club.finances.reputation + 25,
+          },
+        },
+        scoutMarket: state.scoutMarket.filter(p => p.id !== player.id),
+      });
+      return true;
+    },
+
+    addPlayerToSquad: (player) => {
+      const state = get();
+      soundEffects.playFanfare();
+      confetti({ particleCount: 75, spread: 80 });
+
+      set({
+        vipPoints: state.vipPoints + 50,
+        club: {
+          ...state.club,
+          footballSquad: [...state.club.footballSquad.filter(p => p.id !== player.id), player],
+          footballBench: [...state.club.footballBench.filter(id => id !== player.id), player.id],
+          fanMood: Math.min(100, state.club.fanMood + 10),
+          finances: {
+            ...state.club.finances,
+            reputation: state.club.finances.reputation + 40,
+          },
+        },
+      });
+      return true;
+    },
+
+    sellPlayer: (playerId) => {
+      const state = get();
+      const player = state.club.footballSquad.find(p => p.id === playerId);
+      if (!player) return;
+
+      soundEffects.playTap();
+      set({
+        vipPoints: state.vipPoints + 20,
+        club: {
+          ...state.club,
+          footballSquad: state.club.footballSquad.filter(p => p.id !== playerId),
+          footballLineup: state.club.footballLineup.filter(id => id !== playerId),
+          footballBench: state.club.footballBench.filter(id => id !== playerId),
+          finances: {
+            ...state.club.finances,
+            coins: state.club.finances.coins + Math.round(player.marketValue * 0.9),
+          },
+        },
+      });
+    },
+
+    promoteAcademyTalent: () => {
+      const state = get();
+      soundEffects.playFanfare();
+      confetti({ particleCount: 60, spread: 80 });
+
+      const newTalent: Player = {
+        id: `academy_gen_${Date.now()}`,
+        sport: state.currentSport,
+        name: state.currentSport === 'football' ? 'حمزة الشبل الذهبي' : 'أيهم الموهوب الصاعد',
+        nameEn: state.currentSport === 'football' ? 'Hamza The Golden Cub' : 'Ayham The Prodigy',
+        age: 17,
+        nationality: 'السعودية',
+        nationalityFlag: '🇸🇦',
+        position: state.currentSport === 'football' ? 'CAM' : 'PG',
+        secondaryPositions: [],
+        overall: 65,
+        potential: 85,
+        attributes: {
+          pace: 81,
+          dribbling: 76,
+          passing: 74,
+          shooting: 68,
+          physical: 62,
+          defending: 40,
+          goalkeeping: 10,
+          speed: 82,
+          playmaking: 78,
+          shootingThree: 74,
+        },
+        rarity: 'prospect',
+        personality: 'ambitious',
+        traits: ['خريج الأكاديمية الذهبي', 'مهارات فطرية'],
+        morale: 95,
+        form: 8,
+        stamina: 95,
+        fatigue: 0,
+        injuredWeeks: 0,
+        suspendedMatches: 0,
+        contractYears: 4,
+        wage: 850,
+        marketValue: 180000,
+        matchesPlayed: 0,
+        goalsOrPoints: 0,
+        assists: 0,
+        cleanSheetsOrRebounds: 0,
+        averageRating: 0,
+      };
+
+      if (state.currentSport === 'football') {
+        set({
+          vipPoints: state.vipPoints + 50,
+          club: {
+            ...state.club,
+            footballSquad: [...state.club.footballSquad, newTalent],
+            footballBench: [...state.club.footballBench, newTalent.id],
+            fanMood: Math.min(100, state.club.fanMood + 6),
+          },
+        });
+      } else {
+        set({
+          vipPoints: state.vipPoints + 50,
+          club: {
+            ...state.club,
+            basketballSquad: [...state.club.basketballSquad, newTalent],
+            basketballBench: [...state.club.basketballBench, newTalent.id],
+            fanMood: Math.min(100, state.club.fanMood + 6),
+          },
+        });
+      }
+    },
+
+    refreshScoutMarket: () => {
+      const state = get();
+      soundEffects.playTap();
+      const squadNames = new Set(state.club.footballSquad.map(p => p.nameEn.toLowerCase()));
+      const availableReal = REAL_INITIAL_SCOUT_MARKET.filter(p => !squadNames.has(p.nameEn.toLowerCase()));
+      
+      set({
+        scoutMarket: availableReal,
+      });
+      saveToStorage({ scoutMarket: availableReal });
+    },
+
+    selectMission: (id) => {
+      soundEffects.playTap();
+      set({ selectedMissionId: id });
+    },
+
+    chooseMissionOption: (missionId, choiceId) => {
+      const state = get();
+      const mission = state.storyMissions.find(m => m.id === missionId);
+      if (!mission) return;
+
+      const choice = mission.choices.find(c => c.id === choiceId);
+      if (!choice) return;
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 35, spread: 60 });
+
+      const c = choice.consequence;
+      const club = state.club;
+
+      const updatedMissions = state.storyMissions.map(m => 
+        m.id === missionId ? { ...m, isCompleted: true } : m
+      );
+
+      set({
+        vipPoints: state.vipPoints + (c.vipPoints || mission.reward.vipPoints),
+        storyMissions: updatedMissions,
+        selectedMissionId: null,
+        club: {
+          ...club,
+          boardTrust: Math.max(0, Math.min(100, club.boardTrust + (c.boardTrustChange || 0))),
+          fanMood: Math.max(0, Math.min(100, club.fanMood + (c.fanMoodChange || 0))),
+          finances: {
+            ...club.finances,
+            coins: club.finances.coins + (c.coinsChange || 0) + mission.reward.coins,
+            reputation: club.finances.reputation + (c.reputationChange || 0) + mission.reward.reputation,
+            trainingPoints: club.finances.trainingPoints + mission.reward.trainingPoints,
+          },
+        },
+      });
+    },
+
+    startNewMatch: (opponentClubId) => {
+      const state = get();
+      const opponent = REAL_OPPONENT_CLUBS.find(c => c.id === opponentClubId) || REAL_OPPONENT_CLUBS[0];
+      
+      soundEffects.playWhistle(false);
+
+      if (state.currentSport === 'football') {
+        // Calculate player VIP boosts
+        let activeVipTier = VIP_LEVELS[0];
+        for (const tier of VIP_LEVELS) {
+          if (state.vipPoints >= tier.pointsRequired) {
+            activeVipTier = tier;
+          }
+        }
+        const vipAttackBoost = activeVipTier.attackBoostPercent || 0;
+        const vipDefenseBoost = activeVipTier.defenseBoostPercent || 0;
+
+        const engine = new FootballMatchEngine(
+          state.club, 
+          opponent, 
+          Date.now(), 
+          state.club.footballTactics,
+          undefined,
+          vipAttackBoost,
+          vipDefenseBoost
+        );
+        set({
+          activeEngine: engine,
+          isMatchLive: true,
+          isMatchPaused: false,
+          currentMatchMinute: 0,
+          pendingInteractiveEvent: null,
+          activeTab: 'match',
+          activeMatchRecord: {
+            id: `match_${Date.now()}`,
+            sport: 'football',
+            seed: Date.now(),
+            homeClubId: state.club.id,
+            homeClubName: state.club.name,
+            awayClubId: opponent.id,
+            awayClubName: opponent.name,
+            homeScore: 0,
+            awayScore: 0,
+            events: [],
+            stats: {
+              homePossession: 50,
+              awayPossession: 50,
+              homeShots: 0,
+              awayShots: 0,
+              homeShotsOnTarget: 0,
+              awayShotsOnTarget: 0,
+              homeCorners: 0,
+              awayCorners: 0,
+              homeFouls: 0,
+              awayFouls: 0,
+              homeYellowCards: 0,
+              awayYellowCards: 0,
+              homeXg: 0,
+              awayXg: 0,
+            },
+            isFinished: false,
+            competition: 'دوري التحدي للدرجة الثانية',
+            matchDay: state.matchHistory.length + 1,
+            date: new Date().toISOString().split('T')[0],
+          },
+        });
+      } else {
+        // Basketball match
+        const bballEngine = new BasketballMatchEngine(state.club, opponent, Date.now(), state.club.basketballTactics);
+        const record = bballEngine.simulateFullGame();
+        soundEffects.playFanfare();
+        confetti({ particleCount: 70, spread: 80 });
+
+        set({
+          activeMatchRecord: record,
+          isMatchLive: false,
+          activeTab: 'match',
+          matchHistory: [record, ...state.matchHistory],
+          vipPoints: state.vipPoints + 60,
+          club: {
+            ...state.club,
+            finances: {
+              ...state.club.finances,
+              coins: state.club.finances.coins + 22000,
+              reputation: state.club.finances.reputation + 45,
+            },
+          },
+        });
+      }
+    },
+
+    stepMatchMinute: () => {
+      const state = get();
+      if (!state.activeEngine || !state.isMatchLive || state.isMatchPaused) return;
+
+      const res = state.activeEngine.stepMinute();
+
+      // Sound events on goals / saves
+      const latestEvent = res.events[res.events.length - 1];
+      if (latestEvent && latestEvent.minute === res.currentMinute) {
+        if (latestEvent.type === 'goal') {
+          soundEffects.playGoalCelebration();
+          confetti({ particleCount: 50, spread: 80 });
+        } else if (latestEvent.type === 'save') {
+          soundEffects.playKick();
+        }
+      }
+
+      const isFinished = res.isFinished;
+      if (isFinished) {
+        soundEffects.playWhistle(false);
+        soundEffects.playFanfare();
+        confetti({ particleCount: 80, spread: 90 });
+
+        // Update standings & finances
+        const won = res.homeScore > res.awayScore;
+        const drawn = res.homeScore === res.awayScore;
+        const pts = won ? 3 : (drawn ? 1 : 0);
+        const matchIncome = state.club.finances.ticketPrice * 5200 + state.club.finances.sponsorIncomePerMatch;
+
+        const updatedStandings = state.leagueStandings.map(s => {
+          if (s.clubId === state.club.id) {
+            return {
+              ...s,
+              played: s.played + 1,
+              won: s.won + (won ? 1 : 0),
+              drawn: s.drawn + (drawn ? 1 : 0),
+              lost: s.lost + (!won && !drawn ? 1 : 0),
+              goalsFor: s.goalsFor + res.homeScore,
+              goalsAgainst: s.goalsAgainst + res.awayScore,
+              goalDifference: s.goalDifference + (res.homeScore - res.awayScore),
+              points: s.points + pts,
+              form: [(won ? 'W' : (drawn ? 'D' : 'L')) as ('W'|'D'|'L'), ...s.form.slice(0, 4)],
+            };
+          }
+          return s;
+        });
+
+        const finalRecord: MatchRecord = {
+          id: `match_${Date.now()}`,
+          sport: 'football',
+          seed: Date.now(),
+          homeClubId: state.club.id,
+          homeClubName: state.club.name,
+          awayClubId: state.activeMatchRecord?.awayClubId || REAL_OPPONENT_CLUBS[0].id,
+          awayClubName: state.activeMatchRecord?.awayClubName || REAL_OPPONENT_CLUBS[0].name,
+          homeScore: res.homeScore,
+          awayScore: res.awayScore,
+          events: res.events,
+          stats: res.stats,
+          isFinished: true,
+          competition: 'دوري أبطال الأساطير',
+          matchDay: state.matchHistory.length + 1,
+          date: new Date().toISOString().split('T')[0],
+        };
+
+        // Squad Fatigue Simulation: starters drain energy, bench recovers
+        const lineupIds = new Set(state.club.footballLineup);
+        const updatedSquad = state.club.footballSquad.map((p) => {
+          if (lineupIds.has(p.id)) {
+            return {
+              ...p,
+              fatigue: Math.min(100, (p.fatigue || 0) + 20),
+              stamina: Math.max(10, (p.stamina || 100) - 22),
+            };
+          } else {
+            return {
+              ...p,
+              fatigue: Math.max(0, (p.fatigue || 0) - 15),
+              stamina: Math.min(100, (p.stamina || 100) + 15),
+            };
+          }
+        });
+
+        // Daily & Weekly Missions Progress
+        const currentMissions = state.dailyMissions || INITIAL_DAILY_MISSIONS;
+        const updatedMissions = currentMissions.map((m) => {
+          if (m.isClaimed) return m;
+          if (m.id === 'mission_play_matches') {
+            return { ...m, current: Math.min(m.target, m.current + 1) };
+          }
+          if (m.id === 'mission_score_goals') {
+            return { ...m, current: Math.min(m.target, m.current + res.homeScore) };
+          }
+          if (m.id === 'mission_clean_sheet' && res.awayScore === 0) {
+            return { ...m, current: Math.min(m.target, m.current + 1) };
+          }
+          if (m.id === 'weekly_win_matches' && won) {
+            return { ...m, current: Math.min(m.target, m.current + 1) };
+          }
+          return m;
+        });
+
+        // Determine VIP loss mitigation
+        let activeVipTier = VIP_LEVELS[0];
+        for (const tier of VIP_LEVELS) {
+          if (state.vipPoints >= tier.pointsRequired) {
+            activeVipTier = tier;
+          }
+        }
+        const mitigationFactor = 1 - ((activeVipTier.lossMitigationPercent || 0) / 100);
+        const boardPenalty = Math.round(3 * mitigationFactor);
+        const fanPenalty = Math.round(4 * mitigationFactor);
+
+        const updatedClub = {
+          ...state.club,
+          footballSquad: updatedSquad,
+          boardTrust: Math.min(100, Math.max(0, state.club.boardTrust + (won ? 4 : (drawn ? 0 : -boardPenalty)))),
+          fanMood: Math.min(100, Math.max(0, state.club.fanMood + (won ? 6 : (drawn ? 1 : -fanPenalty)))),
+          finances: {
+            ...state.club.finances,
+            coins: state.club.finances.coins + matchIncome,
+            reputation: state.club.finances.reputation + (won ? 35 : 10),
+          },
+        };
+
+        // Generate Post Match Character Analyst Feedback
+        const analystFeedback = generatePostMatchCharacter(finalRecord, updatedClub, state.language === 'ar');
+
+        set({
+          isMatchLive: false,
+          activeMatchRecord: finalRecord,
+          matchHistory: [finalRecord, ...state.matchHistory],
+          leagueStandings: updatedStandings,
+          vipPoints: state.vipPoints + (won ? 80 : 35),
+          dailyMissions: updatedMissions,
+          postMatchAnalyst: analystFeedback,
+          club: updatedClub,
+        });
+        saveToStorage({
+          club: updatedClub,
+          dailyMissions: updatedMissions,
+          leagueStandings: updatedStandings,
+          vipPoints: state.vipPoints + (won ? 80 : 35),
+        });
+        return;
+      }
+
+      set({
+        currentMatchMinute: res.currentMinute,
+        pendingInteractiveEvent: res.interactivePrompt || null,
+        isMatchPaused: !!res.interactivePrompt,
+        activeMatchRecord: {
+          ...(state.activeMatchRecord || {
+            id: 'live_match',
+            sport: 'football',
+            seed: 0,
+            homeClubId: state.club.id,
+            homeClubName: state.club.name,
+            awayClubId: REAL_OPPONENT_CLUBS[0].id,
+            awayClubName: REAL_OPPONENT_CLUBS[0].name,
+            competition: 'دوري أبطال الأساطير',
+            matchDay: 1,
+            date: '',
+          }),
+          homeScore: res.homeScore,
+          awayScore: res.awayScore,
+          events: res.events,
+          stats: res.stats,
+          isFinished: false,
+        },
+      });
+    },
+
+    toggleMatchPause: () => {
+      soundEffects.playTap();
+      set((s) => ({ isMatchPaused: !s.isMatchPaused }));
+    },
+
+    setMatchSpeed: (speed) => {
+      soundEffects.playTap();
+      set({ matchSpeed: speed });
+    },
+
+    submitInteractiveDecision: (optionId) => {
+      const state = get();
+      if (!state.activeEngine) return;
+      soundEffects.playWhistle(true);
+      state.activeEngine.applyInteractiveDecision(optionId);
+      set({
+        pendingInteractiveEvent: null,
+        isMatchPaused: false,
+      });
+    },
+
+    instantSimulateMatch: () => {
+      const state = get();
+      if (!state.activeEngine) return;
+      while (state.isMatchLive) {
+        get().stepMatchMinute();
+      }
+    },
+
+    upgradeVipWithDiamonds: () => {
+      const state = get();
+      const isAr = state.language === 'ar';
+
+      // Find current VIP level and next VIP level
+      let currentLevel = 1;
+      for (const tier of VIP_LEVELS) {
+        if (state.vipPoints >= tier.pointsRequired) {
+          currentLevel = tier.level;
+        }
+      }
+
+      if (currentLevel >= 20) {
+        return {
+          success: false,
+          message: isAr ? 'وصلت بالفعل لأعلى مستوى VIP 20 الأسطوري!' : 'Already at maximum VIP 20 Legendary tier!'
+        };
+      }
+
+      const nextTier = VIP_LEVELS.find(t => t.level === currentLevel + 1);
+      if (!nextTier) {
+        return { success: false, message: isAr ? 'لا يوجد مستوى تالٍ.' : 'No next tier found.' };
+      }
+
+      const cost = nextTier.diamondsCostToUpgrade;
+      const playerDiamonds = state.club.finances.diamonds || 0;
+
+      if (playerDiamonds < cost) {
+        return {
+          success: false,
+          message: isAr 
+            ? `تحتاج إلى ${cost.toLocaleString()} جوهرة للترقية (رصيدك الحالي: ${playerDiamonds.toLocaleString()}). يمكنك كسب الجواهر من المهام اليومية والأسبوعية!` 
+            : `You need ${cost.toLocaleString()} diamonds (Current balance: ${playerDiamonds.toLocaleString()}). Earn diamonds from daily and weekly missions!`
+        };
+      }
+
+      soundEffects.playLevelUp();
+      confetti({ particleCount: 100, spread: 85 });
+
+      const updatedClub = {
+        ...state.club,
+        finances: {
+          ...state.club.finances,
+          diamonds: playerDiamonds - cost,
+        }
+      };
+
+      const newVipPoints = Math.max(state.vipPoints, nextTier.pointsRequired);
+
+      set({
+        club: updatedClub,
+        vipPoints: newVipPoints,
+      });
+
+      saveToStorage({
+        club: updatedClub,
+        vipPoints: newVipPoints,
+      });
+
+      return {
+        success: true,
+        message: isAr
+          ? `🎉 مبروك! تمت الترقية بنجاح إلى VIP ${nextTier.level} (${nextTier.nameAr})! لا تنس فتح صندوق الترقية الخاص بك.`
+          : `🎉 Congratulations! Upgraded successfully to VIP ${nextTier.level} (${nextTier.nameEn})! Claim your upgrade chest now.`
+      };
+    },
+
+    claimVipUpgradeChest: (level: number) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+
+      let currentLevel = 1;
+      for (const tier of VIP_LEVELS) {
+        if (state.vipPoints >= tier.pointsRequired) {
+          currentLevel = tier.level;
+        }
+      }
+
+      if (level > currentLevel) {
+        return {
+          success: false,
+          message: isAr ? 'لم تبلغ هذا المستوى بعد لفتح صندوق الترقية.' : 'You have not reached this VIP level yet.'
+        };
+      }
+
+      const alreadyClaimed = (state.claimedVipUpgradeChests || []).includes(level);
+      if (alreadyClaimed) {
+        return {
+          success: false,
+          message: isAr ? 'تم فتح واستلام صندوق الترقية لهذا المستوى مسبقاً.' : 'Upgrade chest already claimed for this level.'
+        };
+      }
+
+      const tier = VIP_LEVELS.find(t => t.level === level);
+      if (!tier) {
+        return { success: false, message: isAr ? 'المستوى غير موجود.' : 'Tier not found.' };
+      }
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 90, spread: 80 });
+
+      const reward = tier.upgradeChestReward;
+      const updatedClaimed = [...(state.claimedVipUpgradeChests || []), level];
+
+      const updatedClub = {
+        ...state.club,
+        finances: {
+          ...state.club.finances,
+          coins: state.club.finances.coins + reward.coins,
+          trainingPoints: state.club.finances.trainingPoints + reward.trainingPoints,
+          diamonds: (state.club.finances.diamonds || 0) + (reward.diamonds || 0),
+        }
+      };
+
+      set({
+        claimedVipUpgradeChests: updatedClaimed,
+        club: updatedClub,
+      });
+
+      saveToStorage({
+        claimedVipUpgradeChests: updatedClaimed,
+        club: updatedClub,
+      });
+
+      return {
+        success: true,
+        message: isAr
+          ? `🎁 تم فتح صندوق ترقية VIP ${level}! استلمت: ${reward.coins.toLocaleString()} كوينز، ${reward.trainingPoints} نقطة تدريب${reward.diamonds ? `، و ${reward.diamonds} جوهرة` : ''}!`
+          : `🎁 Opened VIP ${level} Upgrade Chest! Received: ${reward.coins.toLocaleString()} Coins, ${reward.trainingPoints} Training Pts${reward.diamonds ? `, and ${reward.diamonds} Diamonds` : ''}!`
+      };
+    },
+
+    claimDailyVIPReward: () => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      if (state.vipClaimedToday) {
+        return {
+          success: false,
+          message: isAr ? 'تم استلام صندوق الـ VIP اليومي مسبقاً لهذا اليوم.' : 'Daily VIP chest already claimed today.'
+        };
+      }
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 70, spread: 75 });
+
+      // Determine VIP level
+      let currentTier = VIP_LEVELS[0];
+      for (const tier of VIP_LEVELS) {
+        if (state.vipPoints >= tier.pointsRequired) {
+          currentTier = tier;
+        }
+      }
+
+      const dailyReward = currentTier.dailyChestReward;
+      const updatedClub = {
+        ...state.club,
+        finances: {
+          ...state.club.finances,
+          coins: state.club.finances.coins + dailyReward.coins,
+          trainingPoints: state.club.finances.trainingPoints + dailyReward.trainingPoints,
+          diamonds: (state.club.finances.diamonds || 0) + (dailyReward.diamonds || 0),
+        },
+      };
+
+      set({
+        vipClaimedToday: true,
+        club: updatedClub,
+      });
+
+      saveToStorage({
+        club: updatedClub,
+      });
+
+      return {
+        success: true,
+        message: isAr
+          ? `🎁 تم استلام صندوق VIP ${currentTier.level} اليومي: ${dailyReward.coins.toLocaleString()} كوينز + ${dailyReward.trainingPoints} نقطة تدريب + ${dailyReward.diamonds || 0} جوهرة!`
+          : `🎁 Claimed VIP ${currentTier.level} Daily Chest: ${dailyReward.coins.toLocaleString()} Coins + ${dailyReward.trainingPoints} Training Pts + ${dailyReward.diamonds || 0} Diamonds!`
+      };
+    },
+
+    claimDailyCheckIn: () => {
+      const state = get();
+      if (state.checkInClaimedToday) return;
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 70, spread: 80 });
+
+      const newStreak = (state.checkInStreak % 7) + 1;
+      const rewardCoins = newStreak * 8000;
+      const rewardVip = 30 + newStreak * 15;
+
+      set({
+        checkInClaimedToday: true,
+        checkInStreak: newStreak,
+        vipPoints: state.vipPoints + rewardVip,
+        club: {
+          ...state.club,
+          finances: {
+            ...state.club.finances,
+            coins: state.club.finances.coins + rewardCoins,
+          },
+        },
+      });
+    },
+
+    claimDailyMission: (missionId: string) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      const mission = (state.dailyMissions || INITIAL_DAILY_MISSIONS).find((m) => m.id === missionId);
+      if (!mission) {
+        return { success: false, message: isAr ? 'المهمة غير موجودة' : 'Mission not found' };
+      }
+      if (mission.current < mission.target) {
+        return { success: false, message: isAr ? 'المهمة لم تكتمل بعد' : 'Mission not completed yet' };
+      }
+      if (mission.isClaimed) {
+        return { success: false, message: isAr ? 'تم استلام المكافأة مسبقاً' : 'Reward already claimed' };
+      }
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 80, spread: 70 });
+
+      const updatedMissions = (state.dailyMissions || INITIAL_DAILY_MISSIONS).map((m) => {
+        if (m.id === missionId) return { ...m, isClaimed: true };
+        return m;
+      });
+
+      const updatedClub = {
+        ...state.club,
+        finances: {
+          ...state.club.finances,
+          coins: state.club.finances.coins + mission.rewardCoins,
+          diamonds: (state.club.finances.diamonds || 0) + mission.rewardDiamonds,
+          trainingPoints: state.club.finances.trainingPoints + mission.rewardTrainingPoints,
+        },
+      };
+
+      set({
+        dailyMissions: updatedMissions,
+        vipPoints: state.vipPoints + mission.rewardVipPoints,
+        club: updatedClub,
+      });
+      saveToStorage({ dailyMissions: updatedMissions, vipPoints: state.vipPoints + mission.rewardVipPoints, club: updatedClub });
+
+      return {
+        success: true,
+        message: isAr
+          ? `🎉 مبروك! استلمت ${mission.rewardCoins.toLocaleString()} كوينز و ${mission.rewardDiamonds} جوهرة و ${mission.rewardTrainingPoints} نقطة تدريب!`
+          : `🎉 Claimed ${mission.rewardCoins.toLocaleString()} Coins, ${mission.rewardDiamonds} Diamonds, and ${mission.rewardTrainingPoints} Training Points!`
+      };
+    },
+
+    runSquadRecoverySession: () => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      const cost = 500;
+      if (state.club.finances.coins < cost) {
+        return {
+          success: false,
+          message: isAr ? 'الرصيد المالي غير كافٍ لجلسة الاستشفاء (مطلوب 500 كوينز).' : 'Insufficient coins for recovery session (500 required).'
+        };
+      }
+
+      soundEffects.playLevelUp();
+      confetti({ particleCount: 50, spread: 60 });
+
+      const updatedSquad = state.club.footballSquad.map((p) => ({
+        ...p,
+        fatigue: Math.max(0, (p.fatigue || 0) - 35),
+        stamina: Math.min(100, (p.stamina || 100) + 30),
+      }));
+
+      const updatedMissions = (state.dailyMissions || INITIAL_DAILY_MISSIONS).map((m) => {
+        if (m.id === 'mission_manage_fatigue' && !m.isClaimed) {
+          return { ...m, current: Math.min(m.target, m.current + 1) };
+        }
+        return m;
+      });
+
+      const updatedClub = {
+        ...state.club,
+        footballSquad: updatedSquad,
+        finances: {
+          ...state.club.finances,
+          coins: state.club.finances.coins - cost,
+        },
+      };
+
+      set({
+        club: updatedClub,
+        dailyMissions: updatedMissions,
+      });
+      saveToStorage({ club: updatedClub, dailyMissions: updatedMissions });
+
+      return {
+        success: true,
+        message: isAr
+          ? 'تمت جلسة الاستشفاء البدني بنجاح! تعافت لياقة جميع اللاعبين وانخفض مؤشر الإجهاد بمقدار 35%.'
+          : 'Squad recovery complete! All players restored stamina and reduced fatigue by 35%.'
+      };
+    },
+
+    setDailyMissionsModalOpen: (open: boolean) => {
+      set({ isDailyMissionsModalOpen: open });
+    },
+
+    setPostMatchAnalyst: (analyst: MatchResultsCharacter | null) => {
+      set({ postMatchAnalyst: analyst });
+    },
+
+    setTacticalDuelModalOpen: (open: boolean) => {
+      set({ isTacticalDuelModalOpen: open });
+    },
+
+    startTacticalDuel: (difficulty = 'tactical') => {
+      soundEffects.playWhistle(true);
+      const initialPlayerDraft = getRandomDuelDraft(3);
+      const botNames = ['القائد ألكسندر', 'سيف الدين المقاتل', 'حارس الأسوار كايوس', 'صقر البادية'];
+      const opponentName = botNames[Math.floor(Math.random() * botNames.length)];
+
+      const duelState: TacticalDuelState = {
+        isActive: true,
+        matchId: `duel_${Date.now()}`,
+        opponentName,
+        opponentAvatar: '🛡️',
+        opponentIsBot: true,
+        round: 1,
+        maxRounds: 4,
+        playerHp: 100,
+        opponentHp: 100,
+        draftedPieces: initialPlayerDraft,
+        selectedPieceId: initialPlayerDraft[0]?.id || null,
+        selectedStance: 'attack',
+        isOrderSubmitted: false,
+        isRevealing: false,
+        history: [],
+        winner: null,
+      };
+
+      set({
+        tacticalDuel: duelState,
+        isTacticalDuelModalOpen: true,
+      });
+    },
+
+    selectDuelPieceAndStance: (pieceId, stance) => {
+      const state = get();
+      if (!state.tacticalDuel) return;
+      soundEffects.playTap();
+      set({
+        tacticalDuel: {
+          ...state.tacticalDuel,
+          selectedPieceId: pieceId,
+          selectedStance: stance,
+        },
+      });
+    },
+
+    submitDuelRoundOrder: () => {
+      const state = get();
+      const duel = state.tacticalDuel;
+      if (!duel || duel.isOrderSubmitted || duel.winner) return;
+
+      const playerPiece = duel.draftedPieces.find((p) => p.id === duel.selectedPieceId) || duel.draftedPieces[0];
+      const playerStance = duel.selectedStance || 'attack';
+
+      const playerOrder: TacticalDuelOrder = {
+        round: duel.round,
+        playerId: 'player',
+        pieceId: playerPiece.id,
+        stance: playerStance,
+        timestamp: Date.now(),
+      };
+
+      const botPieceList = getRandomDuelDraft(3);
+      const botDecision = getBotDuelOrder(duel.round, botPieceList, duel.draftedPieces, 'tactical');
+      const botOrder: TacticalDuelOrder = {
+        round: duel.round,
+        playerId: 'opponent',
+        pieceId: botDecision.piece.id,
+        stance: botDecision.stance,
+        timestamp: Date.now(),
+      };
+
+      soundEffects.playFanfare();
+
+      set({
+        tacticalDuel: {
+          ...duel,
+          isOrderSubmitted: true,
+          isRevealing: true,
+        },
+      });
+
+      setTimeout(() => {
+        const curDuel = get().tacticalDuel;
+        if (!curDuel) return;
+
+        const roundResult = resolveSimultaneousDuelRound(
+          curDuel.round,
+          playerOrder,
+          botOrder,
+          playerPiece,
+          botDecision.piece,
+          get().club.name,
+          curDuel.opponentName
+        );
+
+        const newPlayerHp = Math.max(0, curDuel.playerHp - roundResult.damageToPlayer);
+        const newOpponentHp = Math.max(0, curDuel.opponentHp - roundResult.damageToOpponent);
+
+        let matchWinner: 'player' | 'opponent' | 'draw' | null = null;
+        if (newPlayerHp === 0 && newOpponentHp === 0) matchWinner = 'draw';
+        else if (newPlayerHp === 0) matchWinner = 'opponent';
+        else if (newOpponentHp === 0) matchWinner = 'player';
+        else if (curDuel.round >= curDuel.maxRounds) {
+          if (newPlayerHp > newOpponentHp) matchWinner = 'player';
+          else if (newOpponentHp > newPlayerHp) matchWinner = 'opponent';
+          else matchWinner = 'draw';
+        }
+
+        const nextRound = curDuel.round + 1;
+        const newDraft = getRandomDuelDraft(3);
+
+        let updatedMissions = get().dailyMissions;
+        if (matchWinner === 'player') {
+          soundEffects.playFanfare();
+          confetti({ particleCount: 100, spread: 80 });
+          updatedMissions = (updatedMissions || INITIAL_DAILY_MISSIONS).map((m) => {
+            if (m.id === 'mission_tactical_duel' && !m.isClaimed) {
+              return { ...m, current: Math.min(m.target, m.current + 1) };
+            }
+            return m;
+          });
+        }
+
+        set({
+          dailyMissions: updatedMissions,
+          tacticalDuel: {
+            ...curDuel,
+            round: nextRound,
+            playerHp: newPlayerHp,
+            opponentHp: newOpponentHp,
+            draftedPieces: newDraft,
+            selectedPieceId: newDraft[0]?.id || null,
+            selectedStance: 'attack',
+            isOrderSubmitted: false,
+            isRevealing: false,
+            history: [roundResult, ...curDuel.history],
+            winner: matchWinner,
+          },
+        });
+      }, 1000);
+    },
+
+    closeTacticalDuel: () => {
+      set({
+        isTacticalDuelModalOpen: false,
+      });
+    },
+
+    exportGameData: () => {
+      const state = get();
+      const exportObj = {
+        version: '1.0.0',
+        exportedAt: new Date().toISOString(),
+        club: state.club,
+        vipPoints: state.vipPoints,
+        storyMissions: state.storyMissions,
+        leagueStandings: state.leagueStandings,
+      };
+      return JSON.stringify(exportObj, null, 2);
+    },
+
+    importCustomDataPack: (jsonText) => {
+      try {
+        const parsed = JSON.parse(jsonText);
+        if (!parsed.club || !parsed.club.name) {
+          return { success: false, message: 'ملف البيانات غير صالح — ينقصه كائن النادي الأساسي.' };
+        }
+        set({
+          club: parsed.club,
+          vipPoints: parsed.vipPoints || get().vipPoints,
+          storyMissions: parsed.storyMissions || get().storyMissions,
+          leagueStandings: parsed.leagueStandings || get().leagueStandings,
+        });
+        soundEffects.playFanfare();
+        return { success: true, message: 'تم استيراد حزمة البيانات بنجاح وتطبيقها محلياً!' };
+      } catch {
+        return { success: false, message: 'خطأ في تنسيق JSON. يرجى التأكد من صحة الملف المرفوع.' };
+      }
+    },
+
+    resetCareer: () => {
+      localStorage.removeItem(STORAGE_KEY);
+      set({
+        club: REAL_INITIAL_PLAYER_CLUB,
+        vipPoints: 0,
+        checkInStreak: 0,
+        hasClaimedLoginBonus: false,
+        isGuest: true,
+        storyMissions: STORY_CHAPTER_1_MISSIONS,
+        leagueStandings: REAL_INITIAL_STANDINGS,
+        matchHistory: [],
+        activeTab: 'dashboard',
+        isMatchLive: false,
+      });
+    },
+  };
+});

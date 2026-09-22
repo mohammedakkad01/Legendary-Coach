@@ -11,6 +11,82 @@
 import { Club, LeagueStanding } from '../types/game';
 import { REAL_INITIAL_PLAYER_CLUB } from './realFootballData';
 
+// Maps our internal string league IDs to the numeric API-Football league IDs
+// used by scripts/syncFootballData.ts (must stay in sync with that script).
+export const LEAGUE_ID_TO_API_FOOTBALL_ID: Record<string, number> = {
+  premier_league: 39,
+  la_liga: 140,
+  ligue_1: 61,
+  bundesliga: 78,
+  egyptian_league: 233,
+  saudi_pro_league: 307,
+};
+
+// Shape written by scripts/syncFootballData.ts into Firestore's clubs_cache/{club_<teamId>}
+export interface CachedClubDoc {
+  id: string;
+  teamId: number;
+  leagueId: number; // numeric API-Football league id
+  name: string;
+  nameEn: string;
+  country?: string;
+  logo?: string;
+  venue?: string;
+  updatedAt?: string;
+}
+
+/**
+ * Merges live-synced clubs (Firestore clubs_cache, keyed by doc id) into the static
+ * REAL_LEAGUES roster. Clubs already curated by name are left untouched (their hand-written
+ * description/keyStars/colors are kept); any club present in the live cache but missing from
+ * the curated list is appended with sensible defaults and a real badge/venue from the API.
+ */
+export function mergeLiveClubsIntoLeagues(
+  leagues: RealLeague[],
+  cachedClubs: Record<string, CachedClubDoc>
+): RealLeague[] {
+  const clubsByApiLeagueId = new Map<number, CachedClubDoc[]>();
+  Object.values(cachedClubs || {}).forEach(c => {
+    if (!c || !c.leagueId) return;
+    const arr = clubsByApiLeagueId.get(c.leagueId) || [];
+    arr.push(c);
+    clubsByApiLeagueId.set(c.leagueId, arr);
+  });
+
+  return leagues.map(league => {
+    const apiLeagueId = LEAGUE_ID_TO_API_FOOTBALL_ID[league.id];
+    if (!apiLeagueId) return league;
+    const liveClubs = clubsByApiLeagueId.get(apiLeagueId);
+    if (!liveClubs || liveClubs.length === 0) return league;
+
+    const existingNames = new Set(league.clubs.map(c => c.nameEn.toLowerCase()));
+    const additions: RealClubConfig[] = liveClubs
+      .filter(lc => !existingNames.has((lc.nameEn || lc.name || '').toLowerCase()))
+      .map(lc => ({
+        id: `club_api_${lc.teamId}`,
+        name: lc.name,
+        nameEn: lc.nameEn || lc.name,
+        country: league.country,
+        leagueId: league.id,
+        leagueName: league.name,
+        leagueNameEn: league.nameEn,
+        badge: lc.logo || '',
+        stadiumName: lc.venue || '',
+        city: '',
+        isTopTier: false,
+        gemCost: 0,
+        starRating: 3.5,
+        colors: { primary: '#334155', secondary: '#ffffff', accent: '#64748b' },
+        keyStars: [],
+        descriptionAr: 'نادٍ رسمي مزامَن مباشرة من بيانات الدوري الحقيقية.',
+        descriptionEn: 'Officially licensed club synced live from real league data.'
+      }));
+
+    if (additions.length === 0) return league;
+    return { ...league, clubs: [...league.clubs, ...additions] };
+  });
+}
+
 export interface RealClubConfig {
   id: string;
   name: string;
@@ -940,144 +1016,6 @@ export const REAL_LEAGUES: RealLeague[] = [
         keyStars: ['توزي', 'باولو ريكاردو', 'فهد العبيد'],
         descriptionAr: 'حزم الصمود؛ خبرة كروية وباع طويل في المنافسات السعودية الكبرى.',
         descriptionEn: 'Resilient and battle-tested Saudi club. (Free to start!)'
-      }
-    ]
-  },
-  {
-    id: 'bundesliga',
-    name: 'الدوري الألماني (البوندسليغا)',
-    nameEn: 'Bundesliga',
-    flag: '🇩🇪',
-    country: 'ألمانيا',
-    logo: 'https://r2.thesportsdb.com/images/media/league/badge/0j516x1534764790.png',
-    descriptionAr: 'كرة السرعة والضغط العالي والملاعب الممتلئة بأعلى معدل تهديفي في أوروبا.',
-    descriptionEn: 'High-octane pressing, intense transitions, and world-leading goals per match.',
-    clubs: [
-      {
-        id: 'club_bayern',
-        name: 'بايرن ميونخ',
-        nameEn: 'FC Bayern München',
-        country: 'ألمانيا 🇩🇪',
-        leagueId: 'bundesliga',
-        leagueName: 'الدوري الألماني (البوندسليغا)',
-        leagueNameEn: 'Bundesliga',
-        badge: 'https://r2.thesportsdb.com/images/media/team/badge/0jv60v1567345229.png',
-        stadiumName: 'Allianz Arena',
-        city: 'ميونخ',
-        isTopTier: true,
-        gemCost: 100,
-        starRating: 5.0,
-        colors: { primary: '#dc2626', secondary: '#ffffff', accent: '#1e3a8a' },
-        keyStars: ['هاري كين', 'جمال موسيالا', 'مانويل نوير'],
-        descriptionAr: 'العملاق البافاري؛ ماكينة انتصارات ألمانية لا ترحم وعمود الكرة الأوروبية.',
-        descriptionEn: 'The Bavarian juggernaut with ruthless attacking dominance.'
-      },
-      {
-        id: 'club_leverkusen',
-        name: 'باير ليفركوزن',
-        nameEn: 'Bayer 04 Leverkusen',
-        country: 'ألمانيا 🇩🇪',
-        leagueId: 'bundesliga',
-        leagueName: 'الدوري الألماني (البوندسليغا)',
-        leagueNameEn: 'Bundesliga',
-        badge: 'https://r2.thesportsdb.com/images/media/team/badge/800px-bayer_04_leverkusen_logo.svg.png',
-        stadiumName: 'BayArena',
-        city: 'ليفركوزن',
-        isTopTier: true,
-        gemCost: 100,
-        starRating: 5.0,
-        colors: { primary: '#000000', secondary: '#dc2626', accent: '#ffffff' },
-        keyStars: ['فلوريان فيرتز', 'غرانيت تشاكا', 'جيريمي فريمبونغ'],
-        descriptionAr: 'كتيبة الأبطال الخارقين غير المهزومين؛ أسلوب تكتيكي متطور وسرعة خيالية.',
-        descriptionEn: 'The invincible champions of Germany with tactical genius.'
-      },
-      {
-        id: 'club_dortmund',
-        name: 'بوروسيا دورتموند',
-        nameEn: 'Borussia Dortmund',
-        country: 'ألمانيا 🇩🇪',
-        leagueId: 'bundesliga',
-        leagueName: 'الدوري الألماني (البوندسليغا)',
-        leagueNameEn: 'Bundesliga',
-        badge: 'https://r2.thesportsdb.com/images/media/team/badge/tuvuqu1424032483.png',
-        stadiumName: 'Signal Iduna Park',
-        city: 'دورتموند',
-        isTopTier: false,
-        gemCost: 0,
-        starRating: 4.5,
-        colors: { primary: '#facc15', secondary: '#000000', accent: '#ffffff' },
-        keyStars: ['يوليان براندت', 'سيرهو غيراسي', 'كريم أديمي'],
-        descriptionAr: 'الجدار الأصفر؛ ضغط رهيب وجماهيرية أسطورية ومواهب عالمية تصنع الفارق.',
-        descriptionEn: 'The Yellow Wall; electric atmosphere and world-class attack. (Free to start!)'
-      }
-    ]
-  },
-  {
-    id: 'ligue_1',
-    name: 'الدوري الفرنسي (ليغ 1)',
-    nameEn: 'Ligue 1 McDonald’s',
-    flag: '🇫🇷',
-    country: 'فرنسا',
-    logo: 'https://r2.thesportsdb.com/images/media/league/badge/8mviw91566817342.png',
-    descriptionAr: 'دوري المهارات الفردية الفذة والمواهب الخام الأسرع تطوراً في العالم.',
-    descriptionEn: 'Home of individual flair and the world most fertile talent incubator.',
-    clubs: [
-      {
-        id: 'club_psg',
-        name: 'باريس سان جيرمان',
-        nameEn: 'Paris Saint-Germain',
-        country: 'فرنسا 🇫🇷',
-        leagueId: 'ligue_1',
-        leagueName: 'الدوري الفرنسي (ليغ 1)',
-        leagueNameEn: 'Ligue 1',
-        badge: 'https://r2.thesportsdb.com/images/media/team/badge/rwqrsw1420587216.png',
-        stadiumName: 'Parc des Princes',
-        city: 'باريس',
-        isTopTier: true,
-        gemCost: 100,
-        starRating: 4.5,
-        colors: { primary: '#1e3a8a', secondary: '#dc2626', accent: '#ffffff' },
-        keyStars: ['عثمان ديمبيلي', 'أشرف حكيمي', 'فيتينيا'],
-        descriptionAr: 'نادي العاصمة الفرنسية؛ ترسانة من النجوم الدوليين وسيطرة تامة على المسابقات المحلية.',
-        descriptionEn: 'Parisian powerhouse driven by electric wingers and modern tactical depth.'
-      },
-      {
-        id: 'club_marseille',
-        name: 'أولمبيك مارسيليا',
-        nameEn: 'Olympique de Marseille',
-        country: 'فرنسا 🇫🇷',
-        leagueId: 'ligue_1',
-        leagueName: 'الدوري الفرنسي (ليغ 1)',
-        leagueNameEn: 'Ligue 1',
-        badge: 'https://r2.thesportsdb.com/images/media/team/badge/vwpwxv1420587189.png',
-        stadiumName: 'Orange Vélodrome',
-        city: 'مارسيليا',
-        isTopTier: false,
-        gemCost: 0,
-        starRating: 4.0,
-        colors: { primary: '#38bdf8', secondary: '#ffffff', accent: '#f59e0b' },
-        keyStars: ['ماسون غرينوود', 'بيير إيميريك أوباميانغ', 'فالنتين رونجيه'],
-        descriptionAr: 'الجنوب الحارق؛ بطل أوروبا الوحيد في فرنسا وأجواء حماسية لا تتوقف.',
-        descriptionEn: 'Passionate southern giants with relentless attacking intent. (Free to start!)'
-      },
-      {
-        id: 'club_monaco',
-        name: 'موناكو',
-        nameEn: 'AS Monaco',
-        country: 'فرنسا 🇫🇷',
-        leagueId: 'ligue_1',
-        leagueName: 'الدوري الفرنسي (ليغ 1)',
-        leagueNameEn: 'Ligue 1',
-        badge: 'https://r2.thesportsdb.com/images/media/team/badge/tyrrvx1420587198.png',
-        stadiumName: 'Stade Louis II',
-        city: 'موناكو',
-        isTopTier: false,
-        gemCost: 0,
-        starRating: 4.0,
-        colors: { primary: '#dc2626', secondary: '#ffffff', accent: '#f59e0b' },
-        keyStars: ['تاكومي مينامينو', 'ألكسندر غولوفين', 'دينيس زكريا'],
-        descriptionAr: 'فريق الإمارة؛ كرة ذكية وهجوم سريع قادر على مفاجأة أعتى الفرق.',
-        descriptionEn: 'Principality stars known for explosive counters and youth dynamism.'
       }
     ]
   },

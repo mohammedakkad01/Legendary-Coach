@@ -47,6 +47,19 @@ export interface SyncResult {
 export async function checkFootballApiStatus(): Promise<QuotaStatus> {
   try {
     const res = await fetch('/api/football/status');
+    if (!res.ok) {
+      return {
+        configured: false,
+        message: 'خدمة خادم الكوتا غير نشطة في بيئة الاستضافة الثابتة (Static Host). يتم استخدام التخزين السحابي المحلي.',
+      };
+    }
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      return {
+        configured: false,
+        message: 'خدمة خادم الكوتا مخصصة لبيئة السيرفر النشطة. تعمل اللعبة في وضع العميل الثابت بكفاءة تامة.',
+      };
+    }
     const data = await res.json();
     return data;
   } catch (err) {
@@ -68,6 +81,13 @@ export async function syncRealLeague(leagueId: number, season: number = 2025): P
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ leagueId, season }),
     });
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      return {
+        success: false,
+        message: 'مزامنة API الخارجية تتطلب تشغيل السيرفر الخلفي المخصص للكوتا (Node/Express Server). اللعبة تعمل بنجاح مع البيانات المحلية وسحابة Firebase.',
+      };
+    }
     const data = await res.json();
     return data;
   } catch (err: any) {
@@ -84,6 +104,10 @@ export async function syncRealLeague(leagueId: number, season: number = 2025): P
 export async function fetchFootballLayer1Cache() {
   try {
     const res = await fetch('/api/football/cache/all');
+    const contentType = res.headers.get('content-type') || '';
+    if (!res.ok || !contentType.includes('application/json')) {
+      return { leagues: {}, clubs: {}, players: {}, syncLogs: [] };
+    }
     return await res.json();
   } catch (err) {
     console.error('Error fetching Layer 1 cache:', err);

@@ -1,0 +1,27 @@
+name: Sync Football Data
+
+on:
+  workflow_dispatch: {}       # يسمح بالتشغيل اليدوي من تبويب Actions في GitHub
+  schedule:
+    - cron: '0 3 * * 1'       # كل يوم اثنين الساعة 3 صباحًا UTC (مرة أسبوعيًا، 6 طلبات فقط لكل تشغيل)
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies for the sync script
+        run: npm install --no-save tsx firebase-admin
+
+      - name: Run sync script
+        env:
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: npx tsx scripts/syncFootballData.ts

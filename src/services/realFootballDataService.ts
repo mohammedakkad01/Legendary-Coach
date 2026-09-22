@@ -99,18 +99,27 @@ export async function syncRealLeague(leagueId: number, season: number = 2025): P
 }
 
 /**
- * Fetch Layer 1 cache from server
+ * Fetch Layer 1 cache directly from Firestore (leagues_cache / clubs_cache).
+ * These collections are populated by scripts/syncFootballData.ts, run periodically via
+ * GitHub Actions (see .github/workflows/sync-football-data.yml) — NOT by the Express
+ * proxy in server.ts, which never runs in production on GitHub Pages (static hosting).
  */
 export async function fetchFootballLayer1Cache() {
   try {
-    const res = await fetch('/api/football/cache/all');
-    const contentType = res.headers.get('content-type') || '';
-    if (!res.ok || !contentType.includes('application/json')) {
-      return { leagues: {}, clubs: {}, players: {}, syncLogs: [] };
-    }
-    return await res.json();
+    const [leaguesSnap, clubsSnap] = await Promise.all([
+      getDocs(collection(db, 'leagues_cache')),
+      getDocs(collection(db, 'clubs_cache')),
+    ]);
+
+    const leagues: Record<string, any> = {};
+    leaguesSnap.forEach(d => { leagues[d.id] = d.data(); });
+
+    const clubs: Record<string, any> = {};
+    clubsSnap.forEach(d => { clubs[d.id] = d.data(); });
+
+    return { leagues, clubs, players: {}, syncLogs: [] };
   } catch (err) {
-    console.error('Error fetching Layer 1 cache:', err);
+    console.error('Error fetching Layer 1 cache from Firestore:', err);
     return { leagues: {}, clubs: {}, players: {}, syncLogs: [] };
   }
 }

@@ -8,12 +8,12 @@
  * Top Tier / Champion clubs cost Gems (100 💎), Challengers are Free (0 💎).
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGameStore } from '../state/useGameStore';
 import { useFirebase } from '../firebase/FirebaseContext';
-import { REAL_LEAGUES, RealLeague, RealClubConfig } from '../data/realLeaguesData';
-import { cloneClubToUserSave } from '../services/realFootballDataService';
+import { REAL_LEAGUES, RealLeague, RealClubConfig, mergeLiveClubsIntoLeagues } from '../data/realLeaguesData';
+import { cloneClubToUserSave, fetchFootballLayer1Cache } from '../services/realFootballDataService';
 import { 
   Trophy, 
   Gem, 
@@ -51,9 +51,23 @@ export const InitialClubSelectModal: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
+  // Live rosters: starts as the static curated list, then enriched in the background with the
+  // full real rosters synced into Firestore (leagues_cache/clubs_cache) — see
+  // scripts/syncFootballData.ts. Falls back silently to the static list if offline/not synced yet.
+  const [leagues, setLeagues] = useState<RealLeague[]>(REAL_LEAGUES);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchFootballLayer1Cache().then(({ clubs }) => {
+      if (cancelled || !clubs || Object.keys(clubs).length === 0) return;
+      setLeagues(mergeLiveClubsIntoLeagues(REAL_LEAGUES, clubs));
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   if (!clubSelectionModalOpen) return null;
 
-  const selectedLeague: RealLeague = REAL_LEAGUES.find(l => l.id === selectedLeagueId) || REAL_LEAGUES[0];
+  const selectedLeague: RealLeague = leagues.find(l => l.id === selectedLeagueId) || leagues[0];
 
   // Filter clubs by league, search query, and tier
   const filteredClubs: RealClubConfig[] = selectedLeague.clubs.filter(c => {

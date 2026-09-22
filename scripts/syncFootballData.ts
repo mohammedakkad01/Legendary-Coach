@@ -32,7 +32,12 @@ import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' 
 
 const API_FOOTBALL_KEY = process.env.API_FOOTBALL_KEY;
 const SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT;
-const SEASON = Number(process.env.FOOTBALL_SEASON || 2025);
+// Season = the year the season STARTS. As of late 2026 the current European season is 2026-27,
+// so the correct value is 2026, not 2025. Override with FOOTBALL_SEASON if needed.
+const PRIMARY_SEASON = Number(process.env.FOOTBALL_SEASON || 2026);
+// If the primary season comes back empty (some free-tier keys only have full team data for one
+// specific recent season), automatically retry with these seasons, in order.
+const FALLBACK_SEASONS = [PRIMARY_SEASON, PRIMARY_SEASON - 1, PRIMARY_SEASON - 2];
 const BASE_API_URL = 'https://v3.football.api-sports.io';
 
 // Must stay in sync with LEAGUE_ID_TO_API_FOOTBALL_ID in src/data/realLeaguesData.ts
@@ -78,7 +83,8 @@ async function main() {
   const current = statusData.response?.requests?.current || 0;
   const limitDay = statusData.response?.requests?.limit_day || 100;
   console.log(`API-Football quota: ${current}/${limitDay} used before this run.`);
-  if (current + OFFICIAL_LEAGUES_CONFIG.length >= limitDay - 5) {
+  const maxPossibleRequests = OFFICIAL_LEAGUES_CONFIG.length * FALLBACK_SEASONS.length;
+  if (current + maxPossibleRequests >= limitDay - 5) {
     throw new Error(`Aborting: not enough quota left today (${current}/${limitDay}) to safely sync ${OFFICIAL_LEAGUES_CONFIG.length} leagues.`);
   }
 
@@ -88,15 +94,26 @@ async function main() {
 
   for (const league of OFFICIAL_LEAGUES_CONFIG) {
     console.log(`Syncing ${league.nameEn} (id=${league.id})...`);
-    const teamsData = await callApiFootball(`/teams?league=${league.id}&season=${SEASON}`);
-    requestsUsed += 1;
-    const rawTeams = teamsData.response || [];
+
+    let rawTeams: any[] = [];
+    let seasonUsed = FALLBACK_SEASONS[0];
+    for (const season of FALLBACK_SEASONS) {
+      const teamsData = await callApiFootball(`/teams?league=${league.id}&season=${season}`);
+      requestsUsed += 1;
+      const teams = teamsData.response || [];
+      console.log(`  season ${season}: ${teams.length} clubs (requests used so far: ${requestsUsed})`);
+      if (teams.length > 0) {
+        rawTeams = teams;
+        seasonUsed = season;
+        break; // found a season with real data, stop trying older ones
+      }
+    }
 
     const leagueDocId = `league_${league.id}`;
     batch.set(db.collection('leagues_cache').doc(leagueDocId), {
       id: leagueDocId,
       leagueId: league.id,
-      season: SEASON,
+      season: seasonUsed,
       name: league.name,
       nameEn: league.nameEn,
       country: league.country,
@@ -112,7 +129,7 @@ async function main() {
         id: clubDocId,
         teamId,
         leagueId: league.id,
-        season: SEASON,
+        season: seasonUsed,
         name: t.team?.name || '',
         nameEn: t.team?.name || '',
         code: t.team?.code || '',
@@ -125,7 +142,7 @@ async function main() {
       });
       totalClubs += 1;
     }
-    console.log(`  -> ${rawTeams.length} clubs found (requests used so far: ${requestsUsed})`);
+    console.log(`  -> FINAL: ${rawTeams.length} clubs saved for ${league.nameEn} (season ${seasonUsed})`);
   }
 
   const logId = `log_${Date.now()}`;

@@ -1,0 +1,20 @@
+name: Sync Clubs (API-Football)
+
+on:
+  workflow_dispatch: {}   # يدوي فقط — لحماية حصة 100 طلب يومياً
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-save --legacy-peer-deps tsx firebase-admin
+      - name: Sync clubs
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: npx tsx scripts/syncClubsApiFootball.ts

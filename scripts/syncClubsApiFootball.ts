@@ -4,16 +4,14 @@
  *
  * scripts/syncClubsApiFootball.ts
  *
- * يجلب أندية الموسم الحالي لـ 9 دوريات من API-Football (الخطة المجانية) ويخزنها في Firestore
+ * يجلب أندية 9 دوريات من API-Football (الخطة المجانية) ويخزنها في Firestore
  * (clubs_cache + leagues_cache) بنفس الشكل الذي تقرؤه اللعبة.
  *
- * لماذا fixtures وليس /teams؟
- *  الخطة المجانية ترفض /teams للمواسم 2025 و2026 (أثبت فحصك ذلك)، لكنها تسمح بـ fixtures?next/last
- *  بدون تحديد موسم. مباريات الجولتين القادمتين (next=20) تحتوي كل أندية الدوري الحالية مع الشعارات.
- *  التكلفة: 1-2 طلب لكل دوري (~20 طلباً كحد أقصى من 100 يومياً).
+ * الخطة المجانية ترفض الموسمين 2025/2026 وكذلك next/last، لذلك نستخدم موسم 2024 (SEASON) عبر
+ * /standings (جدول الدوري = العضوية الدقيقة + الترتيب الذي نستخدمه لاحقاً لتقدير قوة النادي).
+ * التكلفة: طلب واحد لكل دوري (9 طلبات). عند الترقية لخطة مدفوعة: SEASON=2026 فقط.
  *
  * تشغيل محلي بدون Firebase:  DRY_RUN=1 API_FOOTBALL_KEY=xxx npx tsx scripts/syncClubsApiFootball.ts
- * تشغيل حقيقي: FIREBASE_SERVICE_ACCOUNT="$(cat sa.json)" API_FOOTBALL_KEY=xxx npx tsx scripts/syncClubsApiFootball.ts
  */
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
@@ -21,7 +19,7 @@ import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' 
 
 const KEY = (process.env.API_FOOTBALL_KEY || '').trim();
 const DRY_RUN = process.env.DRY_RUN === '1';
-const ALLOW_STALE = process.env.ALLOW_STALE === '1'; // يسمح بكتابة قوائم موسم 2024 إن فشلت الطريقة الحالية
+const SEASON = process.env.SEASON || '2024';
 const SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT;
 const BASE = 'https://v3.football.api-sports.io';
 const DELAY_MS = 6500; // المجاني: 10 طلبات/دقيقة
@@ -61,33 +59,20 @@ async function call(path: string): Promise<{ body: any; planError: boolean }> {
   return { body, planError: hasErr };
 }
 
-interface Club { id: number; name: string; logo: string }
+interface Club { id: number; name: string; logo: string; rank?: number }
 
-async function clubsCurrentSeason(cfg: LeagueCfg): Promise<{ clubs: Club[]; leagueName: string; via: string }> {
+async function clubsFromStandings(cfg: LeagueCfg): Promise<{ clubs: Club[]; leagueName: string }> {
+  const { body, planError } = await call(`/standings?league=${cfg.afId}&season=${SEASON}`);
+  if (planError) return { clubs: [], leagueName: '' };
+  const league = body.response?.[0]?.league;
+  const groups: any[][] = league?.standings || [];
   const map = new Map<number, Club>();
-  let leagueName = '';
-  let via = '';
-  let maxSeason = 0;
-  const rows: { season: number; teams: Club[] }[] = [];
-  for (const mode of ['next=20', 'last=20']) {
-    const { body, planError } = await call(`/fixtures?league=${cfg.afId}&${mode}`);
-    if (planError) continue;
-    for (const f of body.response || []) {
-      leagueName ||= f.league?.name || '';
-      const season = Number(f.league?.season || 0);
-      maxSeason = Math.max(maxSeason, season);
-      rows.push({ season, teams: [f.teams?.home, f.teams?.away].filter(Boolean) });
-    }
-    map.clear();
-    for (const r of rows) if (r.season === maxSeason) for (const t of r.teams) if (t?.id) map.set(t.id, { id: t.id, name: t.name, logo: t.logo || '' });
-    via = `fixtures(${mode.split('=')[0]}${rows.length ? '+' : ''}) season=${maxSeason}`;
-    if (map.size >= cfg.expected) break;
-  }
-  return { clubs: [...map.values()], leagueName, via };
+  for (const g of groups) for (const r of g) if (r?.team?.id && !map.has(r.team.id)) map.set(r.team.id, { id: r.team.id, name: r.team.name, logo: r.team.logo || '', rank: r.rank });
+  return { clubs: [...map.values()], leagueName: league?.name || '' };
 }
 
-async function clubsStale2024(cfg: LeagueCfg): Promise<Club[]> {
-  const { body } = await call(`/teams?league=${cfg.afId}&season=2024`);
+async function clubsFromTeams(cfg: LeagueCfg): Promise<Club[]> {
+  const { body } = await call(`/teams?league=${cfg.afId}&season=${SEASON}`);
   return (body.response || []).map((r: any) => ({ id: r.team.id, name: r.team.name, logo: r.team.logo || '' }));
 }
 
@@ -109,7 +94,8 @@ async function main() {
   for (const cfg of LEAGUES) {
     console.log(`\n=== ${cfg.nameEn} (${cfg.key}, api id ${cfg.afId}) expected ${cfg.expected} ===`);
     try {
-      let { clubs, leagueName, via } = await clubsCurrentSeason(cfg);
+      let { clubs, leagueName } = await clubsFromStandings(cfg);
+      let via = `standings season=${SEASON}`;
       console.log(`  API league name: "${leagueName}"`);
 
       if (cfg.nameMustMatch && leagueName && !cfg.nameMustMatch.test(leagueName)) {
@@ -121,21 +107,14 @@ async function main() {
       }
 
       if (clubs.length === 0) {
-        console.warn('  fixtures لم تُرجع شيئاً (خطة/موسم) — تجربة /teams موسم 2024 (قديم)');
-        clubs = await clubsStale2024(cfg);
-        via = 'teams season=2024 (STALE)';
-        if (clubs.length && !ALLOW_STALE) {
-          console.warn(`  ${clubs.length} نادياً من موسم 2024 لن تُكتب (شغّل بـ ALLOW_STALE=1 إن أردتها).`);
-          rows.push({ key: cfg.key, status: 'STALE_ONLY', found: clubs.length, expected: cfg.expected, via });
-          console.log(`  ${clubs.map(c => c.name).sort().join(' | ')}`);
-          continue;
-        }
+        clubs = await clubsFromTeams(cfg);
+        via = `teams season=${SEASON}`;
       }
 
       console.log(`  via ${via}: ${clubs.length} clubs`);
       console.log(`  ${clubs.map(c => c.name).sort().join(' | ')}`);
-      const status = clubs.length === cfg.expected ? 'OK' : clubs.length > cfg.expected ? 'OVER' : 'PARTIAL';
-      if (status !== 'OK') console.warn(`  ⚠️ ${status}: ${clubs.length}/${cfg.expected}`);
+      const status = clubs.length === 0 ? 'EMPTY' : clubs.length === cfg.expected ? 'OK' : 'CHECK';
+      if (status === 'CHECK') console.warn(`  ⚠️ العدد ${clubs.length} يختلف عن المتوقع ${cfg.expected} (قد يكون طبيعياً في موسم ${SEASON}) — راجع الأسماء.`);
       rows.push({ key: cfg.key, status, found: clubs.length, expected: cfg.expected, via });
       if (!db || clubs.length === 0) continue;
 
@@ -144,7 +123,7 @@ async function main() {
       batch.set(db.collection('leagues_cache').doc(`league_${cfg.key}`), {
         id: `league_${cfg.key}`, leagueKey: cfg.key, source: 'api-football', apiFootballLeagueId: cfg.afId,
         matchedVia: leagueName, name: cfg.name, nameEn: cfg.nameEn, country: cfg.country,
-        totalClubs: clubs.length, expectedClubs: cfg.expected, complete: status !== 'PARTIAL', updatedAt: now,
+        totalClubs: clubs.length, expectedClubs: cfg.expected, season: SEASON, complete: status === 'OK', updatedAt: now,
       });
       const keep = new Set<string>();
       for (const c of clubs) {
@@ -153,10 +132,10 @@ async function main() {
         batch.set(db.collection('clubs_cache').doc(docId), {
           id: docId, idTeam: String(c.id), leagueKey: cfg.key, source: 'api-football',
           name: c.name, nameEn: c.name, country: cfg.country, founded: '', logo: c.logo, venue: '',
-          descriptionEn: '', updatedAt: now,
+          descriptionEn: '', season: SEASON, standingRank: c.rank ?? null, standingsTotal: clubs.length, updatedAt: now,
         });
       }
-      if (status !== 'PARTIAL') {
+      {
         const old = await db.collection('clubs_cache').where('leagueKey', '==', cfg.key).get();
         let removed = 0;
         old.forEach(d => { if (!keep.has(d.id)) { batch.delete(d.ref); removed++; } });
@@ -177,8 +156,8 @@ async function main() {
   if (db) {
     const id = `log_${Date.now()}`;
     await db.collection('sync_logs').doc(id).set({ id, timestamp: new Date().toISOString(), source: 'api-football', requestsUsed: used, results: rows,
-      status: rows.every(r => r.status === 'OK' || r.status === 'OVER') ? 'success' : 'partial' });
+      status: rows.every(r => r.status === 'OK' || r.status === 'CHECK') ? 'success' : 'partial' });
   }
-  if (rows.some(r => !['OK', 'OVER'].includes(r.status))) process.exit(1);
+  if (rows.some(r => !['OK', 'CHECK'].includes(r.status))) process.exit(1);
 }
 main().catch(e => { console.error('Sync failed:', e); process.exit(1); });

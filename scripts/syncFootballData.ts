@@ -125,10 +125,13 @@ async function main() {
       console.log(`  no match by guessed names — looking up seed team "${league.seedTeamName}" to find the exact league name...`);
       const seedData = await callSportsDb(`/searchteams.php?t=${encodeURIComponent(league.seedTeamName)}`);
       requestsUsed += 1;
-      const seedTeam = (seedData.teams || []).find((t: any) =>
-        (!t.strSport || t.strSport === 'Soccer') &&
-        (t.strCountry || '').toLowerCase() === league.country.toLowerCase()
-      );
+      const candidates = (seedData.teams || []).filter((t: any) => !t.strSport || t.strSport === 'Soccer');
+      console.log(`  seed search candidates: ${JSON.stringify(candidates.map((t: any) => ({ team: t.strTeam, country: t.strCountry, league: t.strLeague })))}`);
+      const seedTeam = candidates.find((t: any) => {
+        const c = (t.strCountry || '').toLowerCase();
+        const target = league.country.toLowerCase();
+        return c.includes(target) || target.includes(c);
+      });
       if (seedTeam?.strLeague) {
         console.log(`  seed team's exact league name: "${seedTeam.strLeague}"`);
         const teamsData = await callSportsDb(`/search_all_teams.php?l=${encodeURIComponent(seedTeam.strLeague)}`);

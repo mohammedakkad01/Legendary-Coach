@@ -4,124 +4,99 @@
  *
  * scripts/syncFootballData.ts
  *
- * Standalone, one-shot sync script — run manually or from GitHub Actions
- * (.github/workflows/sync-football-data.yml). It replaces the broken approach of calling
- * API-Football live from the browser (server.ts only runs in dev, never on GitHub Pages).
+ * Standalone, one-shot sync script (run via tsx, no Express/Cloud Functions needed).
  *
- * What it does, per official league (6 leagues total):
- *   1) GET /teams?league=<id>&season=<season>   -> real club list, badges, venues   (1 request)
- * Total: 6 requests per run — comfortably inside the 100/day API-Football free quota,
- * even if this is run several times a day.
+ * NOTE: originally built against API-Football, but that account got suspended with no
+ * support response, so this now uses TheSportsDB instead — the exact same free, public,
+ * no-signup, no-suspension-risk API already used in src/services/footballApi.ts for team/
+ * player search. No API key/secret needed at all for this script anymore.
+ *
+ * Per official league (6 leagues total):
+ *   1) search_all_leagues.php?l=<name>   -> resolve TheSportsDB's numeric league id (1 request)
+ *   2) lookup_all_teams.php?id=<id>      -> full real team list, badges, stadiums   (1 request)
+ * Total: ~12 requests per run. TheSportsDB's public test key ("3") has no published daily cap
+ * for this volume, but the script is still deliberately small and infrequent (weekly schedule).
  *
  * Writes results to Firestore:
- *   leagues_cache/{league_<id>}   (matches the shape server.ts already used in-memory)
- *   clubs_cache/{club_<teamId>}
- *
- * These are the exact collection names already whitelisted for public read in firestore.rules
- * ("LAYER 1: Shared Read-Only Official Cache") — write access is server-only (Admin SDK bypasses
- * rules), so no rules changes are needed.
+ *   leagues_cache/{league_<key>}
+ *   clubs_cache/{club_<idTeam>}
  *
  * Usage (locally):
- *   API_FOOTBALL_KEY=xxx FIREBASE_SERVICE_ACCOUNT="$(cat serviceAccount.json)" npx tsx scripts/syncFootballData.ts
- *
- * In CI this is wired up via GitHub Actions secrets — see the workflow file.
+ *   FIREBASE_SERVICE_ACCOUNT="$(cat serviceAccount.json)" npx tsx scripts/syncFootballData.ts
  */
 
 import admin from 'firebase-admin';
 import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
 
-const API_FOOTBALL_KEY = process.env.API_FOOTBALL_KEY;
 const SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT;
-// Season = the year the season STARTS. As of late 2026 the current European season is 2026-27,
-// so the correct value is 2026, not 2025. Override with FOOTBALL_SEASON if needed.
-const PRIMARY_SEASON = Number(process.env.FOOTBALL_SEASON || 2026);
-// If the primary season comes back empty (some free-tier keys only have full team data for one
-// specific recent season), automatically retry with these seasons, in order.
-const FALLBACK_SEASONS = [PRIMARY_SEASON, PRIMARY_SEASON - 1, PRIMARY_SEASON - 2];
-const BASE_API_URL = 'https://v3.football.api-sports.io';
+const BASE_API_URL = 'https://www.thesportsdb.com/api/v1/json/3'; // public free test key, no signup
 
-// Must stay in sync with LEAGUE_ID_TO_API_FOOTBALL_ID in src/data/realLeaguesData.ts
+// Must stay in sync with LEAGUE_ID_TO_THESPORTSDB_NAME in src/data/realLeaguesData.ts
 const OFFICIAL_LEAGUES_CONFIG = [
-  { id: 39, key: 'premier_league', name: 'الدوري الإنجليزي الممتاز', nameEn: 'Premier League', country: 'England' },
-  { id: 140, key: 'la_liga', name: 'الدوري الإسباني (La Liga)', nameEn: 'La Liga', country: 'Spain' },
-  { id: 61, key: 'ligue_1', name: 'الدوري الفرنسي (Ligue 1)', nameEn: 'Ligue 1', country: 'France' },
-  { id: 78, key: 'bundesliga', name: 'الدوري الألماني (Bundesliga)', nameEn: 'Bundesliga', country: 'Germany' },
-  { id: 233, key: 'egypt_pl', name: 'الدوري المصري الممتاز', nameEn: 'Egyptian Premier League', country: 'Egypt' },
-  { id: 307, key: 'saudi_pro', name: 'دوري روشن السعودي', nameEn: 'Saudi Pro League', country: 'Saudi Arabia' },
+  { key: 'premier_league', name: 'الدوري الإنجليزي الممتاز', nameEn: 'Premier League', country: 'England', sportsDbNames: ['English Premier League'] },
+  { key: 'la_liga', name: 'الدوري الإسباني (La Liga)', nameEn: 'La Liga', country: 'Spain', sportsDbNames: ['Spanish La Liga'] },
+  { key: 'ligue_1', name: 'الدوري الفرنسي (Ligue 1)', nameEn: 'Ligue 1', country: 'France', sportsDbNames: ['French Ligue 1'] },
+  { key: 'bundesliga', name: 'الدوري الألماني (Bundesliga)', nameEn: 'Bundesliga', country: 'Germany', sportsDbNames: ['German Bundesliga'] },
+  { key: 'egyptian_league', name: 'الدوري المصري الممتاز', nameEn: 'Egyptian Premier League', country: 'Egypt', sportsDbNames: ['Egyptian Premier League'] },
+  { key: 'saudi_pro_league', name: 'دوري روشن السعودي', nameEn: 'Saudi Pro League', country: 'Saudi Arabia', sportsDbNames: ['Saudi Professional League', 'Saudi Pro League', 'Saudi Arabian Premier League'] },
 ];
 
-async function callApiFootball(endpoint: string) {
-  const res = await fetch(`${BASE_API_URL}${endpoint}`, {
-    headers: { 'x-apisports-key': API_FOOTBALL_KEY as string },
-  });
+async function callSportsDb(endpoint: string) {
+  const res = await fetch(`${BASE_API_URL}${endpoint}`);
   if (!res.ok) {
-    throw new Error(`API-Football ${endpoint} -> HTTP ${res.status}: ${res.statusText}`);
+    throw new Error(`TheSportsDB ${endpoint} -> HTTP ${res.status}: ${res.statusText}`);
   }
   return res.json();
 }
 
-async function main() {
-  if (!API_FOOTBALL_KEY) {
-    throw new Error('Missing API_FOOTBALL_KEY environment variable.');
+async function resolveLeagueId(candidateNames: string[]): Promise<{ id: string; matchedName: string } | null> {
+  for (const name of candidateNames) {
+    const data = await callSportsDb(`/search_all_leagues.php?l=${encodeURIComponent(name)}`);
+    const match = (data.countrys || data.leagues || [])[0];
+    if (match?.idLeague) {
+      return { id: match.idLeague, matchedName: match.strLeague };
+    }
   }
+  return null;
+}
+
+async function main() {
   if (!SERVICE_ACCOUNT_JSON) {
     throw new Error('Missing FIREBASE_SERVICE_ACCOUNT environment variable (paste the full service account JSON).');
   }
 
   const serviceAccount = JSON.parse(SERVICE_ACCOUNT_JSON);
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
+  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
   const db = admin.firestore();
-  // CRITICAL: same non-default database ID the client app uses (see src/firebase/firebase.ts)
   if ((firebaseConfig as any).firestoreDatabaseId) {
     db.settings({ databaseId: (firebaseConfig as any).firestoreDatabaseId } as any);
   }
 
-  // Safety check: verify remaining quota before doing anything (0-cost call)
-  const statusData = await callApiFootball('/status');
-  const current = statusData.response?.requests?.current || 0;
-  const limitDay = statusData.response?.requests?.limit_day || 100;
-  console.log(`API-Football quota: ${current}/${limitDay} used before this run.`);
-  const maxPossibleRequests = OFFICIAL_LEAGUES_CONFIG.length * FALLBACK_SEASONS.length;
-  if (current + maxPossibleRequests >= limitDay - 5) {
-    throw new Error(`Aborting: not enough quota left today (${current}/${limitDay}) to safely sync ${OFFICIAL_LEAGUES_CONFIG.length} leagues.`);
-  }
-
-  let requestsUsed = 0;
   const batch = db.batch();
   let totalClubs = 0;
+  let requestsUsed = 0;
 
   for (const league of OFFICIAL_LEAGUES_CONFIG) {
-    console.log(`Syncing ${league.nameEn} (id=${league.id})...`);
+    console.log(`Syncing ${league.nameEn} (${league.key})...`);
 
-    let rawTeams: any[] = [];
-    let seasonUsed = FALLBACK_SEASONS[0];
-    for (const season of FALLBACK_SEASONS) {
-      const teamsData = await callApiFootball(`/teams?league=${league.id}&season=${season}`);
-      requestsUsed += 1;
-      const teams = teamsData.response || [];
-      console.log(`  season ${season}: ${teams.length} clubs (requests used so far: ${requestsUsed})`);
-      if (teams.length === 0) {
-        console.log(`    debug -> results=${teamsData.results} errors=${JSON.stringify(teamsData.errors)}`);
-      }
-      if (teams.length > 0) {
-        rawTeams = teams;
-        seasonUsed = season;
-        break; // found a season with real data, stop trying older ones
-      }
+    const resolved = await resolveLeagueId(league.sportsDbNames);
+    requestsUsed += league.sportsDbNames.length; // upper bound; loop stops early on first match
+    if (!resolved) {
+      console.error(`  -> could not resolve TheSportsDB league id for any of: ${league.sportsDbNames.join(', ')}. Skipping.`);
+      continue;
     }
+    console.log(`  matched TheSportsDB league "${resolved.matchedName}" (id=${resolved.id})`);
 
-    if (rawTeams.length === 0 && league === OFFICIAL_LEAGUES_CONFIG[0]) {
-      console.error('First league returned 0 teams for every season tried — this is a systemic API/plan issue, not a per-league one. Stopping here to save quota; see the debug lines above for the real reason.');
-      process.exit(1);
-    }
+    const teamsData = await callSportsDb(`/lookup_all_teams.php?id=${resolved.id}`);
+    requestsUsed += 1;
+    const rawTeams = teamsData.teams || [];
+    console.log(`  -> ${rawTeams.length} clubs found`);
 
-    const leagueDocId = `league_${league.id}`;
+    const leagueDocId = `league_${league.key}`;
     batch.set(db.collection('leagues_cache').doc(leagueDocId), {
       id: leagueDocId,
-      leagueId: league.id,
-      season: seasonUsed,
+      leagueKey: league.key,
+      sportsDbLeagueId: resolved.id,
       name: league.name,
       nameEn: league.nameEn,
       country: league.country,
@@ -130,27 +105,24 @@ async function main() {
     });
 
     for (const t of rawTeams) {
-      const teamId = t.team?.id;
-      if (!teamId) continue;
-      const clubDocId = `club_${teamId}`;
+      const idTeam = t.idTeam;
+      if (!idTeam) continue;
+      const clubDocId = `club_${idTeam}`;
       batch.set(db.collection('clubs_cache').doc(clubDocId), {
         id: clubDocId,
-        teamId,
-        leagueId: league.id,
-        season: seasonUsed,
-        name: t.team?.name || '',
-        nameEn: t.team?.name || '',
-        code: t.team?.code || '',
-        country: t.team?.country || '',
-        founded: t.team?.founded || 1900,
-        logo: t.team?.logo || '',
-        venue: t.venue?.name || '',
-        venueCapacity: t.venue?.capacity || 30000,
+        idTeam,
+        leagueKey: league.key,
+        name: t.strTeam || '',
+        nameEn: t.strTeam || '',
+        country: t.strCountry || league.country,
+        founded: t.intFormedYear || '',
+        logo: t.strBadge || t.strLogo || '',
+        venue: t.strStadium || '',
+        descriptionEn: t.strDescriptionEN || '',
         updatedAt: new Date().toISOString(),
       });
       totalClubs += 1;
     }
-    console.log(`  -> FINAL: ${rawTeams.length} clubs saved for ${league.nameEn} (season ${seasonUsed})`);
   }
 
   const logId = `log_${Date.now()}`;
@@ -158,14 +130,14 @@ async function main() {
     id: logId,
     timestamp: new Date().toISOString(),
     initiatedBy: 'github-actions',
+    source: 'thesportsdb',
     requestsUsed,
-    quotaRemaining: Math.max(0, limitDay - (current + requestsUsed)),
     status: 'success',
-    summary: `تمت مزامنة ${OFFICIAL_LEAGUES_CONFIG.length} دوريات و${totalClubs} نادياً بنجاح، باستخدام ${requestsUsed} طلبات فقط.`,
+    summary: `تمت مزامنة ${OFFICIAL_LEAGUES_CONFIG.length} دوريات و${totalClubs} نادياً بنجاح عبر TheSportsDB.`,
   });
 
   await batch.commit();
-  console.log(`Done. Synced ${OFFICIAL_LEAGUES_CONFIG.length} leagues, ${totalClubs} clubs. Requests used: ${requestsUsed}/${limitDay - current}.`);
+  console.log(`Done. Synced ${totalClubs} clubs across ${OFFICIAL_LEAGUES_CONFIG.length} leagues.`);
 }
 
 main().catch(err => {

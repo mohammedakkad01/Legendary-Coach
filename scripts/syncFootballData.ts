@@ -37,8 +37,8 @@ const OFFICIAL_LEAGUES_CONFIG = [
   { key: 'la_liga', name: 'الدوري الإسباني (La Liga)', nameEn: 'La Liga', country: 'Spain', sportsDbNames: ['Spanish La Liga'] },
   { key: 'ligue_1', name: 'الدوري الفرنسي (Ligue 1)', nameEn: 'Ligue 1', country: 'France', sportsDbNames: ['French Ligue 1'] },
   { key: 'bundesliga', name: 'الدوري الألماني (Bundesliga)', nameEn: 'Bundesliga', country: 'Germany', sportsDbNames: ['German Bundesliga'] },
-  { key: 'egyptian_league', name: 'الدوري المصري الممتاز', nameEn: 'Egyptian Premier League', country: 'Egypt', sportsDbNames: ['Egyptian Premier League'] },
-  { key: 'saudi_pro_league', name: 'دوري روشن السعودي', nameEn: 'Saudi Pro League', country: 'Saudi Arabia', sportsDbNames: ['Saudi Professional League', 'Saudi Pro League', 'Saudi Arabian Premier League'] },
+  { key: 'egyptian_league', name: 'الدوري المصري الممتاز', nameEn: 'Egyptian Premier League', country: 'Egypt', sportsDbNames: ['Egyptian Premier League'], seedTeamName: 'Al Ahly' },
+  { key: 'saudi_pro_league', name: 'دوري روشن السعودي', nameEn: 'Saudi Pro League', country: 'Saudi Arabia', sportsDbNames: ['Saudi Professional League', 'Saudi Pro League', 'Saudi Arabian Premier League'], seedTeamName: 'Al Hilal' },
 ];
 
 async function callSportsDb(endpoint: string) {
@@ -118,6 +118,20 @@ async function main() {
           matchedVia = name;
           break;
         }
+      }
+    }
+
+    if (rawTeams.length === 0 && league.seedTeamName) {
+      console.log(`  no match by guessed names — looking up seed team "${league.seedTeamName}" to find the exact league name...`);
+      const seedData = await callSportsDb(`/searchteams.php?t=${encodeURIComponent(league.seedTeamName)}`);
+      requestsUsed += 1;
+      const seedTeam = (seedData.teams || []).find((t: any) => !t.strSport || t.strSport === 'Soccer');
+      if (seedTeam?.strLeague) {
+        console.log(`  seed team's exact league name: "${seedTeam.strLeague}"`);
+        const teamsData = await callSportsDb(`/search_all_teams.php?l=${encodeURIComponent(seedTeam.strLeague)}`);
+        requestsUsed += 1;
+        rawTeams = (teamsData.teams || []).filter((t: any) => !t.strSport || t.strSport === 'Soccer');
+        matchedVia = seedTeam.strLeague;
       }
     }
 

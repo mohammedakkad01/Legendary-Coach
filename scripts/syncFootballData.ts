@@ -49,10 +49,20 @@ async function callSportsDb(endpoint: string) {
   return res.json();
 }
 
-async function resolveLeagueId(candidateNames: string[]): Promise<{ id: string; matchedName: string } | null> {
+async function resolveLeagueId(allLeagues: any[], candidateNames: string[]): Promise<{ id: string; matchedName: string } | null> {
   for (const name of candidateNames) {
-    const data = await callSportsDb(`/search_all_leagues.php?l=${encodeURIComponent(name)}`);
-    const match = (data.countrys || data.leagues || [])[0];
+    const match = allLeagues.find((l: any) => (l.strLeague || '').toLowerCase() === name.toLowerCase());
+    if (match?.idLeague) {
+      return { id: match.idLeague, matchedName: match.strLeague };
+    }
+  }
+  // Fallback: loose substring match in case the exact name differs slightly
+  for (const name of candidateNames) {
+    const parts = name.toLowerCase().split(' ');
+    const match = allLeagues.find((l: any) => {
+      const s = (l.strLeague || '').toLowerCase();
+      return parts.every(p => s.includes(p));
+    });
     if (match?.idLeague) {
       return { id: match.idLeague, matchedName: match.strLeague };
     }
@@ -76,13 +86,23 @@ async function main() {
   let totalClubs = 0;
   let requestsUsed = 0;
 
+  console.log('Fetching full leagues list from TheSportsDB (one request)...');
+  const allLeaguesData = await callSportsDb('/all_leagues.php');
+  requestsUsed += 1;
+  const allLeagues = (allLeaguesData.leagues || []).filter((l: any) => l.strSport === 'Soccer');
+  console.log(`  -> ${allLeagues.length} soccer leagues available to match against.`);
+
   for (const league of OFFICIAL_LEAGUES_CONFIG) {
     console.log(`Syncing ${league.nameEn} (${league.key})...`);
 
-    const resolved = await resolveLeagueId(league.sportsDbNames);
-    requestsUsed += league.sportsDbNames.length; // upper bound; loop stops early on first match
+    const resolved = await resolveLeagueId(allLeagues, league.sportsDbNames);
     if (!resolved) {
-      console.error(`  -> could not resolve TheSportsDB league id for any of: ${league.sportsDbNames.join(', ')}. Skipping.`);
+      const nearby = allLeagues
+        .filter((l: any) => (l.strLeague || '').toLowerCase().includes(league.country.toLowerCase()) || (l.strCountry || '').toLowerCase() === league.country.toLowerCase())
+        .map((l: any) => l.strLeague)
+        .slice(0, 8);
+      console.error(`  -> could not resolve TheSportsDB league id for any of: ${league.sportsDbNames.join(', ')}.`);
+      console.error(`     nearby candidates for country "${league.country}": ${JSON.stringify(nearby)}`);
       continue;
     }
     console.log(`  matched TheSportsDB league "${resolved.matchedName}" (id=${resolved.id})`);

@@ -13,7 +13,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useGameStore } from '../state/useGameStore';
 import { useFirebase } from '../firebase/FirebaseContext';
 import { REAL_LEAGUES, RealLeague, RealClubConfig, mergeLiveClubsIntoLeagues } from '../data/realLeaguesData';
-import { cloneClubToUserSave, fetchFootballLayer1Cache } from '../services/realFootballDataService';
+import { cloneClubToUserSave, fetchFootballLayer1Cache, fetchClubSquadCache } from '../services/realFootballDataService';
+import { convertCachedSquadPlayerToGamePlayer } from '../services/footballApi';
 import { 
   Trophy, 
   Gem, 
@@ -50,6 +51,7 @@ export const InitialClubSelectModal: React.FC = () => {
   const [filterTier, setFilterTier] = useState<'all' | 'top' | 'free'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [joiningClubId, setJoiningClubId] = useState<string | null>(null);
 
   // Live rosters: starts as the static curated list, then enriched in the background with the
   // full real rosters synced into Firestore (leagues_cache/clubs_cache) — see
@@ -85,7 +87,7 @@ export const InitialClubSelectModal: React.FC = () => {
     return true;
   });
 
-  const handleClubSelection = (clubConfig: RealClubConfig) => {
+  const handleClubSelection = async (clubConfig: RealClubConfig) => {
     setFeedbackMessage(null);
 
     // If top tier and player doesn't have enough gems
@@ -99,7 +101,25 @@ export const InitialClubSelectModal: React.FC = () => {
       return;
     }
 
-    const res = selectLeagueAndClub(clubConfig);
+    setJoiningClubId(clubConfig.id);
+
+    // Try to fetch this club's REAL, pre-synced squad (squads_cache, from
+    // scripts/syncSquadsData.ts) so the manager takes over with that club's
+    // actual real players instead of a generic starter roster. Silently
+    // falls back if the club hasn't been synced yet (see selectLeagueAndClub).
+    let realSquad;
+    try {
+      const cached = await fetchClubSquadCache(clubConfig.id);
+      if (cached && cached.players.length > 0) {
+        realSquad = cached.players.map(p => convertCachedSquadPlayerToGamePlayer(p, clubConfig.nameEn));
+      }
+    } catch (e) {
+      console.warn('Could not fetch real squad cache, falling back to default roster:', e);
+    }
+
+    const res = selectLeagueAndClub(clubConfig, realSquad);
+    setJoiningClubId(null);
+
     if (res.success) {
       // Layer 2 Cloning: If logged in, clone club and squad to user_saves/{userId}
       if (user && user.uid) {
@@ -429,7 +449,8 @@ export const InitialClubSelectModal: React.FC = () => {
 
                           <button
                             onClick={() => handleClubSelection(clubConfig)}
-                            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 shadow-lg ${
+                            disabled={joiningClubId === clubConfig.id}
+                            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 shadow-lg disabled:opacity-60 disabled:cursor-wait ${
                               clubConfig.isTopTier
                                 ? canAfford
                                   ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 hover:brightness-110'
@@ -438,7 +459,8 @@ export const InitialClubSelectModal: React.FC = () => {
                             }`}
                           >
                             <span>
-                              {clubConfig.isTopTier
+                              {joiningClubId === clubConfig.id ? (isAr ? 'جاري تحميل التشكيلة الحقيقية...' : 'Loading real squad...') : null}
+                              {joiningClubId === clubConfig.id ? null : clubConfig.isTopTier
                                 ? canAfford
                                   ? (isAr ? 'تولَّ تدريب النادي (100 💎)' : 'Manage Club (100 💎)')
                                   : (isAr ? 'اختر وتعرّف على المتطلبات' : 'Requires 100 💎')

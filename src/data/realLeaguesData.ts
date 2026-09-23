@@ -45,11 +45,30 @@ export function mergeLiveClubsIntoLeagues(
 
   return leagues.map(league => {
     const liveClubs = clubsByLeagueKey.get(league.id);
-    if (!liveClubs || liveClubs.length === 0) return league;
+    if (!liveClubs || liveClubs.length === 0) {
+      // لم تصل أي بيانات من clubs_cache لهذا الدوري — على الأغلب لأن
+      // GitHub Action (sync-football-data.yml) لم يُشغَّل بنجاح بعد أو
+      // السر FIREBASE_SERVICE_ACCOUNT غير مضبوط. نعرض تحذيرًا واضحًا في
+      // الـ console بدل الفشل الصامت، ونعلّم الدوري بأنه لا يزال بالبيانات
+      // الاحتياطية الجزئية فقط (isLiveSynced=false) ليُستخدم هذا العلم في الواجهة.
+      console.warn(
+        `[realLeaguesData] لا توجد بيانات مزامَنة لدوري "${league.nameEn}" (${league.id}) في clubs_cache — ` +
+        `يتم حاليًا عرض ${league.clubs.length} نادٍ احتياطي فقط بدل القائمة الكاملة. ` +
+        `شغّل GitHub Action "Sync Football Data" يدويًا وتحقق من السر FIREBASE_SERVICE_ACCOUNT.`
+      );
+      return { ...league, isLiveSynced: false };
+    }
 
-    const existingNames = new Set(league.clubs.map(c => c.nameEn.toLowerCase()));
+    const normalize = (s: string) =>
+      (s || '')
+        .toLowerCase()
+        .replace(/\b(fc|sc|cf|club|afc|cd)\b/g, '')
+        .replace(/[^a-z0-9]/g, '')
+        .trim();
+
+    const existingNames = new Set(league.clubs.map(c => normalize(c.nameEn)));
     const additions: RealClubConfig[] = liveClubs
-      .filter(lc => !existingNames.has((lc.nameEn || lc.name || '').toLowerCase()))
+      .filter(lc => !existingNames.has(normalize(lc.nameEn || lc.name || '')))
       .map(lc => ({
         id: `club_api_${lc.idTeam}`,
         name: lc.name,
@@ -70,8 +89,8 @@ export function mergeLiveClubsIntoLeagues(
         descriptionEn: 'Officially licensed club synced live from real league data.'
       }));
 
-    if (additions.length === 0) return league;
-    return { ...league, clubs: [...league.clubs, ...additions] };
+    if (additions.length === 0) return { ...league, isLiveSynced: true };
+    return { ...league, clubs: [...league.clubs, ...additions], isLiveSynced: true };
   });
 }
 
@@ -105,6 +124,7 @@ export interface RealLeague {
   descriptionAr: string;
   descriptionEn: string;
   clubs: RealClubConfig[];
+  isLiveSynced?: boolean; // true إذا وصلت بيانات فعلية من clubs_cache لهذا الدوري، false/undefined = لا تزال بالقائمة الاحتياطية الجزئية فقط
 }
 
 export const REAL_LEAGUES: RealLeague[] = [

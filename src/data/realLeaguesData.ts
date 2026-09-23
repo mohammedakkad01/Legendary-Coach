@@ -11,22 +11,12 @@
 import { Club, LeagueStanding } from '../types/game';
 import { REAL_INITIAL_PLAYER_CLUB } from './realFootballData';
 
-// Maps our internal string league IDs to the numeric API-Football league IDs
-// used by scripts/syncFootballData.ts (must stay in sync with that script).
-export const LEAGUE_ID_TO_API_FOOTBALL_ID: Record<string, number> = {
-  premier_league: 39,
-  la_liga: 140,
-  ligue_1: 61,
-  bundesliga: 78,
-  egyptian_league: 233,
-  saudi_pro_league: 307,
-};
-
-// Shape written by scripts/syncFootballData.ts into Firestore's clubs_cache/{club_<teamId>}
+// Shape written by scripts/syncFootballData.ts into Firestore's clubs_cache/{club_<idTeam>}
+// (source: TheSportsDB — no numeric-ID mapping needed, it already uses our own league keys)
 export interface CachedClubDoc {
   id: string;
-  teamId: number;
-  leagueId: number; // numeric API-Football league id
+  idTeam: string;
+  leagueKey: string; // one of our internal league ids, e.g. 'premier_league'
   name: string;
   nameEn: string;
   country?: string;
@@ -39,31 +29,29 @@ export interface CachedClubDoc {
  * Merges live-synced clubs (Firestore clubs_cache, keyed by doc id) into the static
  * REAL_LEAGUES roster. Clubs already curated by name are left untouched (their hand-written
  * description/keyStars/colors are kept); any club present in the live cache but missing from
- * the curated list is appended with sensible defaults and a real badge/venue from the API.
+ * the curated list is appended with sensible defaults and a real badge/venue from TheSportsDB.
  */
 export function mergeLiveClubsIntoLeagues(
   leagues: RealLeague[],
   cachedClubs: Record<string, CachedClubDoc>
 ): RealLeague[] {
-  const clubsByApiLeagueId = new Map<number, CachedClubDoc[]>();
+  const clubsByLeagueKey = new Map<string, CachedClubDoc[]>();
   Object.values(cachedClubs || {}).forEach(c => {
-    if (!c || !c.leagueId) return;
-    const arr = clubsByApiLeagueId.get(c.leagueId) || [];
+    if (!c || !c.leagueKey) return;
+    const arr = clubsByLeagueKey.get(c.leagueKey) || [];
     arr.push(c);
-    clubsByApiLeagueId.set(c.leagueId, arr);
+    clubsByLeagueKey.set(c.leagueKey, arr);
   });
 
   return leagues.map(league => {
-    const apiLeagueId = LEAGUE_ID_TO_API_FOOTBALL_ID[league.id];
-    if (!apiLeagueId) return league;
-    const liveClubs = clubsByApiLeagueId.get(apiLeagueId);
+    const liveClubs = clubsByLeagueKey.get(league.id);
     if (!liveClubs || liveClubs.length === 0) return league;
 
     const existingNames = new Set(league.clubs.map(c => c.nameEn.toLowerCase()));
     const additions: RealClubConfig[] = liveClubs
       .filter(lc => !existingNames.has((lc.nameEn || lc.name || '').toLowerCase()))
       .map(lc => ({
-        id: `club_api_${lc.teamId}`,
+        id: `club_api_${lc.idTeam}`,
         name: lc.name,
         nameEn: lc.nameEn || lc.name,
         country: league.country,

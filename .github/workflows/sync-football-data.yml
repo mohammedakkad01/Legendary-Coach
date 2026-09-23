@@ -18,7 +18,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies for the sync script
-        run: npm install --no-save tsx firebase-admin
+        run: npm install --no-save --legacy-peer-deps tsx firebase-admin
 
       - name: Run sync script
         env:

@@ -344,19 +344,47 @@ export const useGameStore = create<GameState>((set, get) => {
       const currentDiamonds = state.club.finances.diamonds || 0;
       const isAr = state.language === 'ar';
 
-      // Check gem requirement for Top Tier clubs
-      if (clubConfig.isTopTier && clubConfig.gemCost > 0) {
-        if (currentDiamonds < clubConfig.gemCost) {
+      const isSwitchingClub = state.hasSelectedInitialClub && state.club.id !== clubConfig.id;
+      const SWITCH_FEE_DIAMONDS = 50;
+      const SWITCH_FEE_COINS = 25000;
+      const currentCoins = state.club.finances.coins || 0;
+
+      // If user already chose a club and is switching to a different club/league
+      if (isSwitchingClub) {
+        const canPayDiamonds = currentDiamonds >= (clubConfig.gemCost + SWITCH_FEE_DIAMONDS);
+        const canPayCoins = currentCoins >= SWITCH_FEE_COINS && currentDiamonds >= clubConfig.gemCost;
+
+        if (!canPayDiamonds && !canPayCoins) {
           return {
             success: false,
             message: isAr
-              ? `نادي ${clubConfig.name} من أندية المركز الأول والنخبة ويتطلب ${clubConfig.gemCost} جوهرة 💎. رصيدك الحالي: ${currentDiamonds} 💎. سجّل الدخول مجاناً لتحصل على 300 💎 فوراً، أو اختر نادياً مجانياً (0 💎)!`
-              : `${clubConfig.nameEn} is a Tier-1 club requiring ${clubConfig.gemCost} 💎. You have ${currentDiamonds} 💎. Sign in to get 300 💎 for free or pick a free challenger club!`
+              ? `تغيير النادي والدوري بعد بدء المسيرة يتطلب دفع رسوم انتقال رسمية: (${SWITCH_FEE_DIAMONDS} جوهرة 💎 أو ${SWITCH_FEE_COINS.toLocaleString()} عملة كروية 🪙). رصيدك: ${currentDiamonds} 💎 و ${currentCoins.toLocaleString()} 🪙.`
+              : `Changing your club/league mid-career requires a transfer release fee: (${SWITCH_FEE_DIAMONDS} Diamonds 💎 or ${SWITCH_FEE_COINS.toLocaleString()} Coins 🪙). Balance: ${currentDiamonds} 💎 and ${currentCoins.toLocaleString()} 🪙.`
           };
         }
       }
 
-      const remainingDiamonds = clubConfig.gemCost > 0 ? currentDiamonds - clubConfig.gemCost : currentDiamonds;
+      // Check gem requirement for Top Tier clubs
+      const totalDiamondsNeeded = (clubConfig.isTopTier && clubConfig.gemCost > 0 ? clubConfig.gemCost : 0) + (isSwitchingClub && currentCoins < SWITCH_FEE_COINS ? SWITCH_FEE_DIAMONDS : 0);
+      if (currentDiamonds < totalDiamondsNeeded) {
+        return {
+          success: false,
+          message: isAr
+            ? `نادي ${clubConfig.name} من أندية المركز الأول والنخبة ويتطلب ${clubConfig.gemCost} جوهرة 💎. رصيدك الحالي: ${currentDiamonds} 💎. سجّل الدخول مجاناً لتحصل على 300 💎 فوراً، أو اختر نادياً مجانياً (0 💎)!`
+            : `${clubConfig.nameEn} is a Tier-1 club requiring ${clubConfig.gemCost} 💎. You have ${currentDiamonds} 💎. Sign in to get 300 💎 for free or pick a free challenger club!`
+        };
+      }
+
+      let remainingDiamonds = currentDiamonds - (clubConfig.gemCost > 0 ? clubConfig.gemCost : 0);
+      let remainingCoins = isSwitchingClub ? currentCoins : 100000;
+
+      if (isSwitchingClub) {
+        if (remainingCoins >= SWITCH_FEE_COINS) {
+          remainingCoins -= SWITCH_FEE_COINS;
+        } else {
+          remainingDiamonds -= SWITCH_FEE_DIAMONDS;
+        }
+      }
 
       soundEffects.playFanfare();
       confetti({ particleCount: 140, spread: 90, origin: { y: 0.5 } });
@@ -375,11 +403,13 @@ export const useGameStore = create<GameState>((set, get) => {
         colors: clubConfig.colors,
         boardTrust: 85,
         fanMood: 85,
+        facilities: isSwitchingClub ? state.club.facilities : REAL_INITIAL_PLAYER_CLUB.facilities,
         finances: {
-          ...REAL_INITIAL_PLAYER_CLUB.finances,
-          diamonds: remainingDiamonds,
-          coins: 100000,
-          reputation: 0, // Starts from ZERO on Day 1!
+          ...state.club.finances,
+          diamonds: Math.max(0, remainingDiamonds),
+          coins: Math.max(0, remainingCoins),
+          trainingPoints: Math.max(50, state.club.finances.trainingPoints || 100),
+          reputation: isSwitchingClub ? Math.max(0, state.club.finances.reputation - 20) : 0,
           totalSeasonRevenue: 0,
           totalSeasonExpenses: 0,
         },
@@ -1040,8 +1070,16 @@ export const useGameStore = create<GameState>((set, get) => {
 
     instantSimulateMatch: () => {
       const state = get();
-      if (!state.activeEngine) return;
-      while (state.isMatchLive) {
+      if (!state.activeEngine || !state.isMatchLive) return;
+
+      // Simulate steps until match is completed or safety limit reached
+      let safetyCounter = 0;
+      while (get().isMatchLive && safetyCounter < 120) {
+        safetyCounter++;
+        // If an interactive prompt paused the match, auto-clear it so simulation proceeds
+        if (get().isMatchPaused) {
+          set({ isMatchPaused: false, pendingInteractiveEvent: null });
+        }
         get().stepMatchMinute();
       }
     },

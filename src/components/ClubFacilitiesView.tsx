@@ -9,12 +9,21 @@
 import React from 'react';
 import { useGameStore } from '../state/useGameStore';
 import { ClubFacilities } from '../types/game';
-import { Building2, Landmark, ShieldCheck, HeartPulse, Sparkles, TrendingUp } from 'lucide-react';
+import { Building2, Landmark, ShieldCheck, HeartPulse, Sparkles, TrendingUp, Crown, Zap } from 'lucide-react';
+import { VIP_LEVELS } from '../data/vipData';
 
 export const ClubFacilitiesView: React.FC = () => {
-  const { club, upgradeFacility, language } = useGameStore();
+  const { club, upgradeFacility, vipPoints, language } = useGameStore();
   const isAr = language === 'ar';
   const f = club.facilities;
+
+  // Calculate current VIP Tier for facility benefits
+  let currentVipTier = VIP_LEVELS[0];
+  for (const tier of VIP_LEVELS) {
+    if ((vipPoints || 0) >= tier.pointsRequired) {
+      currentVipTier = tier;
+    }
+  }
 
   const facilityList: {
     key: keyof ClubFacilities;
@@ -90,9 +99,21 @@ export const ClubFacilitiesView: React.FC = () => {
           </p>
         </div>
 
-        <div className="bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800 text-center min-w-[170px]">
-          <span className="text-[11px] text-slate-400 block font-bold">{isAr ? 'الخزينة النقدية' : 'Treasury Balance'}</span>
-          <span className="text-xl font-black text-amber-300">{club.finances.coins.toLocaleString()} 💰</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800 text-center min-w-[150px]">
+            <span className="text-[11px] text-slate-400 block font-bold">{isAr ? 'الخزينة النقدية' : 'Treasury Balance'}</span>
+            <span className="text-xl font-black text-amber-300">{club.finances.coins.toLocaleString()} 💰</span>
+          </div>
+
+          <div className="bg-gradient-to-r from-amber-950/60 to-slate-950 p-3.5 rounded-2xl border border-amber-500/30 text-center min-w-[150px] shadow-lg">
+            <div className="flex items-center justify-center gap-1 text-[11px] text-amber-400 font-bold">
+              <Crown className="w-3.5 h-3.5 text-amber-400" />
+              <span>{isAr ? `مزايا VIP ${currentVipTier.level}` : `VIP ${currentVipTier.level} Buff`}</span>
+            </div>
+            <span className="text-sm font-black text-white block mt-0.5">
+              +{currentVipTier.incomeBonusPercent}% {isAr ? 'أرباح المنشآت' : 'Facility Yield'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -125,9 +146,16 @@ export const ClubFacilitiesView: React.FC = () => {
               <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] text-slate-500 block">{isAr ? 'تكلفة التطوير' : 'Cost'}</span>
-                  <span className="text-xs font-black text-amber-300">
-                    {item.level < 10 ? `${upgradeCost.toLocaleString()} 💰` : (isAr ? 'الحد الأقصى' : 'Max Level')}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-black text-amber-300">
+                      {item.level < 10 ? `${upgradeCost.toLocaleString()} 💰` : (isAr ? 'الحد الأقصى' : 'Max Level')}
+                    </span>
+                    {item.level < 10 && (
+                      <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1 rounded border border-amber-500/20">
+                        +50 VIP
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {item.level < 10 && (

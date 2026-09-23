@@ -43,7 +43,8 @@ export const Header: React.FC = () => {
     setClubSelectionModalOpen,
     dailyMissions,
     setDailyMissionsModalOpen,
-    startTacticalDuel
+    startTacticalDuel,
+    hasSelectedInitialClub
   } = useGameStore();
 
   const { user, isOnline, setAuthModalOpen } = useFirebase();
@@ -106,11 +107,13 @@ export const Header: React.FC = () => {
           <button
             onClick={() => setClubSelectionModalOpen(true)}
             id="header_change_club_btn"
-            title={isAr ? 'اختيار الدوري والنادي' : 'Choose League & Club'}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-[11px] font-bold text-amber-300 border border-slate-700 hover:border-amber-400/50 transition-all shadow-sm"
+            title={hasSelectedInitialClub ? (isAr ? 'الانتقال إلى دوري أو نادٍ آخر' : 'Transfer League & Club') : (isAr ? 'اختيار الدوري والنادي' : 'Choose League & Club')}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-[11px] font-bold text-amber-300 border border-slate-700 hover:border-amber-400/50 transition-all shadow-sm cursor-pointer"
           >
             <Trophy className="w-3.5 h-3.5 text-amber-400" />
-            <span className="hidden md:inline">{isAr ? 'الدوري والنادي' : 'League & Club'}</span>
+            <span className="hidden md:inline">
+              {hasSelectedInitialClub ? (isAr ? 'سوق الانتقال' : 'Transfers') : (isAr ? 'الدوري والنادي' : 'League & Club')}
+            </span>
           </button>
         </div>
 

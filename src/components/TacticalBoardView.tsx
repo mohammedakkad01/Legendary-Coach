@@ -9,7 +9,8 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../state/useGameStore';
 import { FootballFormation, MatchMentality, PressingStyle, PassingStyle, TeamTempo } from '../types/game';
-import { Shield, Sparkles, ChevronRight, UserCheck, Flame } from 'lucide-react';
+import { Shield, Sparkles, ChevronRight, UserCheck, Flame, Crown, Lock } from 'lucide-react';
+import { VIP_LEVELS } from '../data/vipData';
 
 const FORMATION_COORDINATES: Record<FootballFormation, { x: number; y: number; pos: string }[]> = {
   '4-3-3': [
@@ -77,14 +78,66 @@ const FORMATION_COORDINATES: Record<FootballFormation, { x: number; y: number; p
     { x: 38, y: 18, pos: 'ST' },
     { x: 62, y: 18, pos: 'ST' },
   ],
+  '4-1-4-1': [
+    { x: 50, y: 88, pos: 'GK' },
+    { x: 15, y: 70, pos: 'RB' },
+    { x: 38, y: 72, pos: 'CB' },
+    { x: 62, y: 72, pos: 'CB' },
+    { x: 85, y: 70, pos: 'LB' },
+    { x: 50, y: 56, pos: 'CDM' },
+    { x: 16, y: 38, pos: 'RM' },
+    { x: 38, y: 40, pos: 'CM' },
+    { x: 62, y: 40, pos: 'CM' },
+    { x: 84, y: 38, pos: 'LM' },
+    { x: 50, y: 18, pos: 'ST' },
+  ],
+  '3-4-3': [
+    { x: 50, y: 88, pos: 'GK' },
+    { x: 25, y: 72, pos: 'CB' },
+    { x: 50, y: 74, pos: 'CB' },
+    { x: 75, y: 72, pos: 'CB' },
+    { x: 15, y: 48, pos: 'RM' },
+    { x: 38, y: 50, pos: 'CM' },
+    { x: 62, y: 50, pos: 'CM' },
+    { x: 85, y: 48, pos: 'LM' },
+    { x: 20, y: 22, pos: 'RW' },
+    { x: 50, y: 16, pos: 'ST' },
+    { x: 80, y: 22, pos: 'LW' },
+  ],
 };
 
+interface FormationItem {
+  id: FootballFormation;
+  label: string;
+  minVipLevel: number;
+}
+
+const ALL_FORMATIONS: FormationItem[] = [
+  { id: '4-3-3', label: '4-3-3', minVipLevel: 1 },
+  { id: '4-4-2', label: '4-4-2', minVipLevel: 1 },
+  { id: '4-2-3-1', label: '4-2-3-1', minVipLevel: 1 },
+  { id: '3-5-2', label: '3-5-2', minVipLevel: 1 },
+  { id: '5-3-2', label: '5-3-2', minVipLevel: 1 },
+  { id: '4-1-4-1', label: '4-1-4-1 (VIP 2+)', minVipLevel: 2 },
+  { id: '3-4-3', label: '3-4-3 (VIP 3+)', minVipLevel: 3 },
+];
+
 export const TacticalBoardView: React.FC = () => {
-  const { club, updateFootballTactics, swapFootballLineup, setFootballRoles, language, startNewMatch } = useGameStore();
+  const { club, updateFootballTactics, swapFootballLineup, setFootballRoles, language, startNewMatch, vipPoints, setActiveTab } = useGameStore();
   const isAr = language === 'ar';
   const tactics = club.footballTactics;
 
+  // Calculate current VIP Tier
+  let currentVipTier = VIP_LEVELS[0];
+  for (const tier of VIP_LEVELS) {
+    if (vipPoints >= tier.pointsRequired) {
+      currentVipTier = tier;
+    }
+  }
+  const vipLevel = currentVipTier.level;
+
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null);
+  const [formationLockWarning, setFormationLockWarning] = useState<string | null>(null);
 
   const lineupPlayers = club.footballLineup.map((id, index) => {
     const player = club.footballSquad.find(p => p.id === id);
@@ -100,6 +153,19 @@ export const TacticalBoardView: React.FC = () => {
   const avgOverall = validPlayers.length > 0 
     ? Math.round(validPlayers.reduce((acc, p) => acc + (p?.overall || 0), 0) / validPlayers.length) 
     : 65;
+
+  const handleSelectFormation = (item: FormationItem) => {
+    if (vipLevel < item.minVipLevel) {
+      setFormationLockWarning(
+        isAr 
+          ? `🔒 تشكيل ${item.id} متاح حصرياً للمدربين من مستوى VIP ${item.minVipLevel} وما فوق! يمكنك ترقية مستواك مجاناً عبر الجواهر أو المهام.` 
+          : `🔒 Formation ${item.id} is exclusive to VIP Level ${item.minVipLevel}+! Upgrade via VIP tab.`
+      );
+      return;
+    }
+    setFormationLockWarning(null);
+    updateFootballTactics({ formation: item.id });
+  };
 
   const handleSlotClick = (index: number) => {
     if (selectedSlotIndex === index) {
@@ -132,7 +198,22 @@ export const TacticalBoardView: React.FC = () => {
         </div>
 
         {/* Tactical Metrics */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* VIP Tactical Perk Badge */}
+          <div 
+            onClick={() => setActiveTab('vip')}
+            className="bg-gradient-to-r from-amber-950/70 to-slate-900 border border-amber-500/40 hover:border-amber-400 px-3 py-1.5 rounded-xl cursor-pointer transition-all flex items-center gap-2 shadow-md"
+            title={isAr ? 'اضغط لفتح شجرة مميزات الـ VIP' : 'Click to view VIP tree'}
+          >
+            <Crown className="w-4 h-4 text-amber-400" />
+            <div className="text-right">
+              <span className="text-[10px] text-amber-400 block font-bold leading-none">VIP {vipLevel}</span>
+              <span className="text-[11px] font-black text-white leading-tight">
+                ⚔️ +{currentVipTier.attackBoostPercent}% / 🛡️ +{currentVipTier.defenseBoostPercent}%
+              </span>
+            </div>
+          </div>
+
           <div className="bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-center">
             <span className="text-[10px] text-slate-400 block">{isAr ? 'قوة التشكيلة' : 'Lineup OVR'}</span>
             <span className="text-lg font-black text-amber-400">{avgOverall}</span>
@@ -152,29 +233,66 @@ export const TacticalBoardView: React.FC = () => {
         </div>
       </div>
 
+      {/* VIP Formation Lock Warning Toast */}
+      {formationLockWarning && (
+        <div className="bg-amber-950/70 border border-amber-500/50 p-3 rounded-2xl flex items-center justify-between text-xs text-amber-200">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>{formationLockWarning}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setActiveTab('vip')}
+              className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] cursor-pointer"
+            >
+              {isAr ? 'ترقية VIP' : 'Upgrade VIP'}
+            </button>
+            <button 
+              onClick={() => setFormationLockWarning(null)}
+              className="text-amber-400 hover:text-white text-xs px-1"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Pitch Area (7 Cols) */}
         <div className="lg:col-span-7 flex flex-col space-y-3">
           
           {/* Formation Picker Bar */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
             <span className="text-xs font-bold text-slate-400 whitespace-nowrap">
               {isAr ? 'التشكيل:' : 'Formation:'}
             </span>
-            {(['4-3-3', '4-4-2', '4-2-3-1', '3-5-2', '5-3-2'] as FootballFormation[]).map(f => (
-              <button
-                key={f}
-                onClick={() => updateFootballTactics({ formation: f })}
-                className={`px-3 py-1 rounded-lg text-xs font-black transition-all ${
-                  tactics.formation === f
-                    ? 'bg-sky-500 text-slate-950 shadow-md'
-                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                {f}
-              </button>
-            ))}
+            {ALL_FORMATIONS.map(item => {
+              const isLocked = vipLevel < item.minVipLevel;
+              const isSelected = tactics.formation === item.id;
+
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => handleSelectFormation(item)}
+                  className={`px-3 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                    isSelected
+                      ? 'bg-sky-500 text-slate-950 shadow-md ring-2 ring-sky-300'
+                      : isLocked
+                        ? 'bg-slate-900/80 text-slate-500 border border-slate-800 hover:border-amber-500/40'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  {isLocked && <Lock className="w-3 h-3 text-amber-400" />}
+                  <span>{item.id}</span>
+                  {item.minVipLevel > 1 && (
+                    <span className={`text-[9px] px-1 py-0.2 rounded font-black ${isSelected ? 'bg-sky-700 text-white' : 'bg-amber-500/20 text-amber-300'}`}>
+                      VIP {item.minVipLevel}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {/* 2D Realistic Turf Pitch */}

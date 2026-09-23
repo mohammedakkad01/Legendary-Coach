@@ -314,23 +314,71 @@ export function convertApiPlayerToGamePlayer(apiP: ApiPlayerResult): Player {
   }
 
   // Base realistic ratings calculation
-  let overall = 82;
-  let potential = 87;
+  let overall = 80;
+  let potential = 85;
 
-  // Higher ratings for known superstars
+  // Higher ratings for known superstars and real football icons
   const nameLower = apiP.strPlayer.toLowerCase();
-  if (nameLower.includes('haaland') || nameLower.includes('mbapp') || nameLower.includes('vinicius') || nameLower.includes('bellingham') || nameLower.includes('rodri')) {
+  if (
+    nameLower.includes('haaland') || 
+    nameLower.includes('mbapp') || 
+    nameLower.includes('vinicius') || 
+    nameLower.includes('bellingham') || 
+    nameLower.includes('rodri')
+  ) {
     overall = 91;
     potential = 95;
-  } else if (nameLower.includes('salah') || nameLower.includes('de bruyne') || nameLower.includes('kane') || nameLower.includes('ronaldo') || nameLower.includes('messi')) {
+  } else if (
+    nameLower.includes('salah') || 
+    nameLower.includes('de bruyne') || 
+    nameLower.includes('kane') || 
+    nameLower.includes('ronaldo') || 
+    nameLower.includes('messi') ||
+    nameLower.includes('lewandowski') ||
+    nameLower.includes('courtois') ||
+    nameLower.includes('alisson') ||
+    nameLower.includes('van dijk')
+  ) {
     overall = 89;
     potential = 89;
-  } else if (nameLower.includes('saka') || nameLower.includes('yamal') || nameLower.includes('wirtz') || nameLower.includes('musiala') || nameLower.includes('palmer')) {
-    overall = 86;
+  } else if (
+    nameLower.includes('saka') || 
+    nameLower.includes('yamal') || 
+    nameLower.includes('wirtz') || 
+    nameLower.includes('musiala') || 
+    nameLower.includes('palmer') ||
+    nameLower.includes('foden') ||
+    nameLower.includes('valverde') ||
+    nameLower.includes('gvardiol') ||
+    nameLower.includes('saliba') ||
+    nameLower.includes('pedri')
+  ) {
+    overall = 87;
     potential = 94;
-  } else if (age < 22) {
-    overall = 75;
-    potential = 88;
+  } else if (
+    nameLower.includes('son heung') ||
+    nameLower.includes('bernardo silva') ||
+    nameLower.includes('bruno fernandes') ||
+    nameLower.includes('al dawsari') ||
+    nameLower.includes('mahrez') ||
+    nameLower.includes('mane') ||
+    nameLower.includes('modric') ||
+    nameLower.includes('benzema') ||
+    nameLower.includes('griezmann') ||
+    nameLower.includes('bounou') ||
+    nameLower.includes('hakimi')
+  ) {
+    overall = 85;
+    potential = 86;
+  } else if (age < 21) {
+    overall = 76;
+    potential = 89;
+  } else if (age < 25) {
+    overall = 81;
+    potential = 87;
+  } else {
+    overall = 80;
+    potential = 82;
   }
 
   // Determine rarity
@@ -343,6 +391,12 @@ export function convertApiPlayerToGamePlayer(apiP: ApiPlayerResult): Player {
   const marketValue = Math.round(overall * overall * 22000);
   const wage = Math.round(marketValue * 0.015);
 
+  // Position-specific tuned attributes
+  const isAttacker = position === 'ST' || position === 'LW' || position === 'RW';
+  const isMidfielder = position === 'CM' || position === 'CAM' || position === 'CDM';
+  const isDefender = position === 'CB' || position === 'LB' || position === 'RB';
+  const isGk = position === 'GK';
+
   return {
     id: `api_p_${apiP.idPlayer || Date.now()}_${Math.floor(Math.random() * 1000)}`,
     sport: 'football',
@@ -352,17 +406,17 @@ export function convertApiPlayerToGamePlayer(apiP: ApiPlayerResult): Player {
     nationality: apiP.strNationality || 'دولي',
     nationalityFlag: '🌍',
     position,
-    secondaryPositions: position === 'ST' ? ['LW', 'RW'] : position === 'CB' ? ['CDM'] : ['CM'],
+    secondaryPositions: isAttacker ? ['LW', 'RW'] : isDefender ? ['CDM'] : ['CM'],
     overall,
     potential,
     attributes: {
-      pace: position === 'ST' || position === 'LW' || position === 'RW' ? 88 : 74,
-      shooting: position === 'ST' ? 89 : 72,
-      passing: position === 'CM' || position === 'CAM' ? 88 : 74,
-      dribbling: position === 'LW' || position === 'RW' || position === 'CAM' ? 87 : 75,
-      defending: position === 'CB' || position === 'CDM' ? 85 : 45,
-      physical: 78,
-      goalkeeping: position === 'GK' ? overall : 12,
+      pace: isGk ? 35 : isAttacker ? Math.min(99, overall + 2) : isDefender ? Math.max(68, overall - 12) : Math.max(72, overall - 8),
+      shooting: isGk ? 15 : isAttacker ? Math.min(99, overall - 1) : isMidfielder ? Math.max(68, overall - 10) : Math.max(45, overall - 35),
+      passing: isGk ? 60 : isMidfielder ? Math.min(99, overall + 1) : isAttacker ? Math.max(70, overall - 10) : Math.max(65, overall - 15),
+      dribbling: isGk ? 20 : isAttacker || position === 'CAM' ? Math.min(99, overall) : isMidfielder ? Math.max(75, overall - 6) : Math.max(60, overall - 20),
+      defending: isGk ? 20 : isDefender ? Math.min(99, overall + 1) : position === 'CDM' ? Math.max(78, overall - 3) : Math.max(35, overall - 45),
+      physical: isGk ? 70 : isDefender || position === 'ST' ? Math.min(99, overall - 2) : Math.max(68, overall - 12),
+      goalkeeping: isGk ? overall : 12,
     },
     rarity,
     personality: 'professional' as PlayerPersonality,

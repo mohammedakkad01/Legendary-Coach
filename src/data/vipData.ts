@@ -69,6 +69,7 @@ export const VIP_LEVELS: VIPPrivilege[] = [
       '⚔️ قوة الهجوم: +1.5%',
       '🛡️ قوة الدفاع: +1.5%',
       '🛡️ تقليل خسارة النقاط عند الهزيمة بنسبة 3%',
+      'فتح تشكيل تكتيكي متقدم: 4-1-4-1',
       '+5% دخل مالي من التذاكر ومبيعات المتجر',
       'تسريع تمارين الاستشفاء البدني بنسبة 4%'
     ],
@@ -76,6 +77,7 @@ export const VIP_LEVELS: VIPPrivilege[] = [
       '⚔️ Attack Power: +1.5%',
       '🛡️ Defense Power: +1.5%',
       '🛡️ 3% match loss penalty reduction',
+      'Unlock Advanced Formation: 4-1-4-1',
       '+5% ticket & merchandise income',
       '4% faster player recovery drills'
     ],
@@ -106,6 +108,7 @@ export const VIP_LEVELS: VIPPrivilege[] = [
       '⚔️ قوة الهجوم: +2.0%',
       '🛡️ قوة الدفاع: +2.0%',
       '🛡️ تقليل خسارة النقاط والعملات بنسبة 4%',
+      'فتح تشكيل تكتيكي هجومي: 3-4-3',
       '+7% دخل مالي إضافي من الرعاة',
       'خانة إضافية مخصصة في دكة البدلاء'
     ],
@@ -113,6 +116,7 @@ export const VIP_LEVELS: VIPPrivilege[] = [
       '⚔️ Attack Power: +2.0%',
       '🛡️ Defense Power: +2.0%',
       '🛡️ 4% loss penalty mitigation',
+      'Unlock Offensive Formation: 3-4-3',
       '+7% sponsor match bonus',
       'Extra tactical bench flexibility'
     ],

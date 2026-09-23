@@ -29,7 +29,8 @@ import {
   Flame,
   ArrowRight,
   Compass,
-  AlertCircle
+  AlertCircle,
+  Coins
 } from 'lucide-react';
 
 export const InitialClubSelectModal: React.FC = () => {
@@ -46,6 +47,10 @@ export const InitialClubSelectModal: React.FC = () => {
 
   const isAr = language === 'ar';
   const currentDiamonds = club.finances.diamonds || 0;
+  const currentCoins = club.finances.coins || 0;
+  const isSwitchingMode = hasSelectedInitialClub;
+  const SWITCH_FEE_DIAMONDS = 50;
+  const SWITCH_FEE_COINS = 25000;
 
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>('premier_league');
   const [filterTier, setFilterTier] = useState<'all' | 'top' | 'free'>('all');
@@ -90,8 +95,30 @@ export const InitialClubSelectModal: React.FC = () => {
   const handleClubSelection = async (clubConfig: RealClubConfig) => {
     setFeedbackMessage(null);
 
-    // If top tier and player doesn't have enough gems
-    if (clubConfig.isTopTier && clubConfig.gemCost > currentDiamonds) {
+    // If already current club
+    if (isSwitchingMode && club.id === clubConfig.id) {
+      setFeedbackMessage({
+        type: 'error',
+        text: isAr ? `أنت تدرب نادي ${club.name} بالفعل!` : `You already manage ${club.nameEn}!`
+      });
+      return;
+    }
+
+    // Affordability check
+    if (isSwitchingMode) {
+      const canPayDiamonds = currentDiamonds >= (clubConfig.gemCost + SWITCH_FEE_DIAMONDS);
+      const canPayCoins = currentCoins >= SWITCH_FEE_COINS && currentDiamonds >= clubConfig.gemCost;
+
+      if (!canPayDiamonds && !canPayCoins) {
+        setFeedbackMessage({
+          type: 'error',
+          text: isAr
+            ? `⚠️ لا تملك ما يكفي لفسخ العقد والانتقال! يتطلب (${SWITCH_FEE_COINS.toLocaleString()} 🪙 أو ${SWITCH_FEE_DIAMONDS} 💎) بالإضافة لتكلفة النادي (${clubConfig.gemCost} 💎).`
+            : `⚠️ Insufficient funds for contract termination! Requires (${SWITCH_FEE_COINS.toLocaleString()} 🪙 or ${SWITCH_FEE_DIAMONDS} 💎) plus club fee (${clubConfig.gemCost} 💎).`
+        });
+        return;
+      }
+    } else if (clubConfig.isTopTier && clubConfig.gemCost > currentDiamonds) {
       setFeedbackMessage({
         type: 'error',
         text: isAr
@@ -169,22 +196,32 @@ export const InitialClubSelectModal: React.FC = () => {
                   )}
                 </div>
                 <h2 className="text-xl sm:text-2xl font-black font-heading text-white mt-0.5">
-                  {isAr ? 'اختر دوريك وناديك لبدء المسيرة' : 'Select Your League & Club'}
+                  {isSwitchingMode 
+                    ? (isAr ? 'الانتقال إلى نادٍ أو دوري جديد' : 'Transfer to a New League / Club') 
+                    : (isAr ? 'اختر دوريك وناديك لبدء المسيرة' : 'Select Your League & Club')}
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-400">
-                  {isAr 
-                    ? 'أندية المركز الأول والنخبة تتطلب جواهر 💎، وأندية التحدي والصعود مجانية (0 💎).'
-                    : 'Champion clubs require Gems 💎, while Challenger clubs are completely Free (0 💎).'}
+                  {isSwitchingMode
+                    ? (isAr 
+                        ? `أنت تدرب حالياً: ${club.name}. يتطلب كسر العقد والانتقال رسوم انتقال رسمية (${SWITCH_FEE_DIAMONDS} 💎 أو ${SWITCH_FEE_COINS.toLocaleString()} 🪙) بالإضافة لتكلفة النادي إن وجد.`
+                        : `Currently managing: ${club.nameEn}. Transfer release fee is (${SWITCH_FEE_DIAMONDS} 💎 or ${SWITCH_FEE_COINS.toLocaleString()} 🪙) plus tier signing fee.`)
+                    : (isAr 
+                        ? 'أندية المركز الأول والنخبة تتطلب جواهر 💎، وأندية التحدي والصعود مجانية (0 💎).'
+                        : 'Champion clubs require Gems 💎, while Challenger clubs are completely Free (0 💎).')}
                 </p>
               </div>
             </div>
 
-            {/* Gems balance & Close button */}
+            {/* Balances & Close button */}
             <div className="flex items-center gap-2.5 self-end sm:self-center">
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-black">
+                <Coins className="w-4 h-4 text-amber-400" />
+                <span className="text-amber-300 font-mono">{currentCoins.toLocaleString()}</span>
+              </div>
+
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-black">
                 <Gem className="w-4 h-4 text-fuchsia-400" />
-                <span className="text-slate-300">{isAr ? 'رصيدك:' : 'Balance:'}</span>
-                <span className="text-fuchsia-300 font-mono text-sm">{currentDiamonds} 💎</span>
+                <span className="text-fuchsia-300 font-mono">{currentDiamonds} 💎</span>
               </div>
 
               {currentDiamonds < 100 && (
@@ -351,12 +388,20 @@ export const InitialClubSelectModal: React.FC = () => {
                   </div>
                 ) : (
                   filteredClubs.map((clubConfig) => {
-                    const canAfford = currentDiamonds >= clubConfig.gemCost;
+                    const isCurrentClub = isSwitchingMode && club.id === clubConfig.id;
+                    const canAffordCoinsSwitch = currentCoins >= SWITCH_FEE_COINS && currentDiamonds >= clubConfig.gemCost;
+                    const canAffordDiamondsSwitch = currentDiamonds >= (clubConfig.gemCost + SWITCH_FEE_DIAMONDS);
+                    const canAfford = isSwitchingMode
+                      ? (isCurrentClub || canAffordCoinsSwitch || canAffordDiamondsSwitch)
+                      : (currentDiamonds >= clubConfig.gemCost);
+
                     return (
                       <div
                         key={clubConfig.id}
                         className={`rounded-3xl border p-4 sm:p-5 flex flex-col justify-between gap-4 transition-all relative overflow-hidden ${
-                          clubConfig.isTopTier
+                          isCurrentClub
+                            ? 'bg-sky-950/40 border-sky-500/60 shadow-sky-500/10 shadow-xl'
+                            : clubConfig.isTopTier
                             ? 'bg-gradient-to-br from-amber-950/30 via-slate-900 to-slate-950 border-amber-500/40 shadow-xl'
                             : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
                         }`}
@@ -364,22 +409,46 @@ export const InitialClubSelectModal: React.FC = () => {
                         {/* Top Tier Gold Watermark Badge */}
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-center gap-3">
-                            <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 p-2 flex items-center justify-center shadow-md shrink-0">
-                              <img
-                                src={clubConfig.badge}
-                                alt={clubConfig.nameEn}
-                                className="w-full h-full object-contain"
-                                referrerPolicy="no-referrer"
-                                onError={(e) => {
-                                  (e.currentTarget as HTMLImageElement).src = 'https://r2.thesportsdb.com/images/media/team/badge/vwvwrw1473502969.png';
-                                }}
-                              />
+                            <div 
+                              className="w-14 h-14 rounded-2xl border p-2 flex items-center justify-center shadow-md shrink-0 relative overflow-hidden"
+                              style={{ 
+                                backgroundColor: clubConfig.colors?.primary ? `${clubConfig.colors.primary}20` : '#0f172a',
+                                borderColor: clubConfig.colors?.primary || '#334155'
+                              }}
+                            >
+                              {clubConfig.badge ? (
+                                <img
+                                  src={clubConfig.badge}
+                                  alt={clubConfig.nameEn}
+                                  className="w-full h-full object-contain"
+                                  referrerPolicy="no-referrer"
+                                  onError={(e) => {
+                                    // Hide broken image and reveal styled crest fallback
+                                    (e.currentTarget as HTMLImageElement).style.display = 'none';
+                                    const fallbackEl = (e.currentTarget as HTMLElement).parentElement?.querySelector('.crest-fallback');
+                                    if (fallbackEl) (fallbackEl as HTMLElement).style.display = 'flex';
+                                  }}
+                                />
+                              ) : null}
+                              <div 
+                                className={`crest-fallback ${clubConfig.badge ? 'hidden' : 'flex'} flex-col items-center justify-center w-full h-full`}
+                              >
+                                <Shield className="w-7 h-7" style={{ color: clubConfig.colors?.primary || '#38bdf8' }} />
+                                <span className="text-[9px] font-black uppercase tracking-tighter" style={{ color: clubConfig.colors?.secondary || '#ffffff' }}>
+                                  {clubConfig.nameEn.substring(0, 3)}
+                                </span>
+                              </div>
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
                                 <h4 className="font-heading font-black text-base sm:text-lg text-white">
                                   {isAr ? clubConfig.name : clubConfig.nameEn}
                                 </h4>
+                                {isCurrentClub && (
+                                  <span className="px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/40 text-[10px] font-black">
+                                    {isAr ? 'ناديك الحالي' : 'Current Club'}
+                                  </span>
+                                )}
                                 <div className="flex items-center text-amber-400 text-xs">
                                   {Array.from({ length: Math.floor(clubConfig.starRating) }).map((_, i) => (
                                     <Star key={i} className="w-3 h-3 fill-amber-400" />
@@ -395,7 +464,12 @@ export const InitialClubSelectModal: React.FC = () => {
 
                           {/* Price Tag Badge */}
                           <div>
-                            {clubConfig.isTopTier ? (
+                            {isCurrentClub ? (
+                              <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/40 text-xs font-black">
+                                <Check className="w-3.5 h-3.5" />
+                                <span>{isAr ? 'فريقك الحالي' : 'Active'}</span>
+                              </div>
+                            ) : clubConfig.isTopTier ? (
                               <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-black shadow-inner">
                                 <Gem className="w-3.5 h-3.5 text-amber-400" />
                                 <span>{clubConfig.gemCost} 💎</span>
@@ -428,9 +502,25 @@ export const InitialClubSelectModal: React.FC = () => {
                         </div>
 
                         {/* Action CTA */}
-                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-3">
+                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-3 flex-wrap">
                           <div className="text-[11px] text-slate-400">
-                            {clubConfig.isTopTier ? (
+                            {isCurrentClub ? (
+                              <span className="text-sky-400 font-bold flex items-center gap-1">
+                                <Check className="w-3.5 h-3.5" /> {isAr ? 'أنت المدير الفني لهذا الفريق' : 'You are currently managing this team'}
+                              </span>
+                            ) : isSwitchingMode ? (
+                              canAfford ? (
+                                <span className="text-emerald-400 font-bold flex items-center gap-1">
+                                  <Coins className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>{isAr ? `رسوم الانتقال: ${SWITCH_FEE_COINS.toLocaleString()} 🪙 أو ${SWITCH_FEE_DIAMONDS} 💎` : `Transfer fee: ${SWITCH_FEE_COINS.toLocaleString()} 🪙 or ${SWITCH_FEE_DIAMONDS} 💎`}</span>
+                                </span>
+                              ) : (
+                                <span className="text-rose-400 font-bold flex items-center gap-1">
+                                  <AlertCircle className="w-3.5 h-3.5" />
+                                  <span>{isAr ? `يلزم ${SWITCH_FEE_COINS.toLocaleString()} 🪙 أو ${SWITCH_FEE_DIAMONDS} 💎 لكسر العقد` : `Need ${SWITCH_FEE_COINS.toLocaleString()} 🪙 or ${SWITCH_FEE_DIAMONDS} 💎 release fee`}</span>
+                                </span>
+                              )
+                            ) : clubConfig.isTopTier ? (
                               canAfford ? (
                                 <span className="text-emerald-400 font-bold flex items-center gap-1">
                                   <Check className="w-3.5 h-3.5" /> {isAr ? 'يمكنك تولي التدريب فوراً' : 'Available for appointment'}
@@ -449,24 +539,32 @@ export const InitialClubSelectModal: React.FC = () => {
 
                           <button
                             onClick={() => handleClubSelection(clubConfig)}
-                            disabled={joiningClubId === clubConfig.id}
-                            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 shadow-lg disabled:opacity-60 disabled:cursor-wait ${
-                              clubConfig.isTopTier
+                            disabled={joiningClubId === clubConfig.id || isCurrentClub}
+                            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 shadow-lg disabled:opacity-60 disabled:cursor-not-allowed ${
+                              isCurrentClub
+                                ? 'bg-slate-800 text-slate-400 border border-slate-700'
+                                : clubConfig.isTopTier
                                 ? canAfford
                                   ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 hover:brightness-110'
                                   : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                                : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                                : canAfford
+                                ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                                : 'bg-slate-800 text-slate-400'
                             }`}
                           >
                             <span>
-                              {joiningClubId === clubConfig.id ? (isAr ? 'جاري تحميل التشكيلة الحقيقية...' : 'Loading real squad...') : null}
-                              {joiningClubId === clubConfig.id ? null : clubConfig.isTopTier
+                              {joiningClubId === clubConfig.id ? (isAr ? 'جاري تجهيز الفريق...' : 'Preparing club...') : null}
+                              {joiningClubId === clubConfig.id ? null : isCurrentClub
+                                ? (isAr ? 'فريقك الحالي' : 'Active Club')
+                                : isSwitchingMode
+                                ? (isAr ? `انتقال رسمي (${SWITCH_FEE_COINS.toLocaleString()} 🪙 / ${SWITCH_FEE_DIAMONDS} 💎)` : `Transfer (${SWITCH_FEE_COINS.toLocaleString()} 🪙 / ${SWITCH_FEE_DIAMONDS} 💎)`)
+                                : clubConfig.isTopTier
                                 ? canAfford
                                   ? (isAr ? 'تولَّ تدريب النادي (100 💎)' : 'Manage Club (100 💎)')
                                   : (isAr ? 'اختر وتعرّف على المتطلبات' : 'Requires 100 💎')
                                 : (isAr ? 'تولَّ تدريب النادي (مجاناً)' : 'Manage Club (Free)')}
                             </span>
-                            <ArrowRight className="w-4 h-4 rtl:rotate-180" />
+                            {!isCurrentClub && <ArrowRight className="w-4 h-4 rtl:rotate-180" />}
                           </button>
                         </div>
                       </div>

@@ -18,9 +18,11 @@ import {
   Activity, 
   FileText, 
   AlertCircle,
-  MessageSquare
+  MessageSquare,
+  Crown
 } from 'lucide-react';
 import { generatePostMatchCharacter } from '../data/matchAnalystData';
+import { VIP_LEVELS } from '../data/vipData';
 
 export const LiveMatchView: React.FC = () => {
   const { 
@@ -39,11 +41,20 @@ export const LiveMatchView: React.FC = () => {
     startNewMatch,
     postMatchAnalyst,
     setPostMatchAnalyst,
+    vipPoints,
     language 
   } = useGameStore();
 
   const isAr = language === 'ar';
   const commentaryEndRef = useRef<HTMLDivElement>(null);
+
+  // Calculate current VIP Tier for tactical boost indicator
+  let currentVipTier = VIP_LEVELS[0];
+  for (const tier of VIP_LEVELS) {
+    if ((vipPoints || 0) >= tier.pointsRequired) {
+      currentVipTier = tier;
+    }
+  }
 
   // Auto-step timer when match is live and unpaused
   useEffect(() => {
@@ -107,7 +118,15 @@ export const LiveMatchView: React.FC = () => {
               <h3 className="text-base sm:text-lg font-black font-heading text-white">
                 {record.homeClubName}
               </h3>
-              <span className="text-[11px] text-sky-400 font-bold">{isAr ? 'المضيف (فريقك)' : 'Home (You)'}</span>
+              <div className="flex items-center gap-1.5 justify-start sm:justify-end">
+                <span className="text-[11px] text-sky-400 font-bold">{isAr ? 'المضيف (فريقك)' : 'Home (You)'}</span>
+                {currentVipTier.attackBoostPercent > 0 && (
+                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-black" title={isAr ? `ميزة تكتيكية VIP: +${currentVipTier.attackBoostPercent}% هجوم ودفاع` : `VIP Tactical Bonus: +${currentVipTier.attackBoostPercent}% atk & def`}>
+                    <Crown className="w-2.5 h-2.5 text-amber-400" />
+                    <span>VIP {currentVipTier.level} (+{currentVipTier.attackBoostPercent}%)</span>
+                  </span>
+                )}
+              </div>
             </div>
             <div className="w-12 h-12 rounded-2xl bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-2xl shadow-lg">
               {club.logoBadge || '🛡️'}

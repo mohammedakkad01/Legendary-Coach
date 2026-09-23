@@ -47,12 +47,21 @@ const POPULAR_SEARCH_PLAYERS = [
   'Lamine Yamal',
   'Cristiano Ronaldo',
   'Lionel Messi',
+  'Salem Al-Dawsari',
+  'Riyad Mahrez',
+  'Achraf Hakimi',
+  'Yassine Bounou',
   'Kevin De Bruyne',
-  'Bukayo Saka'
+  'Bukayo Saka',
+  'Rodri',
+  'Harry Kane',
+  'Robert Lewandowski',
+  'Cole Palmer',
+  'Florian Wirtz'
 ];
 
 export const FootballApiView: React.FC = () => {
-  const { club, language, addPlayerToSquad, chooseClub, selectLeagueAndClub, setClubSelectionModalOpen } = useGameStore();
+  const { club, language, addPlayerToSquad, chooseClub, selectLeagueAndClub, setClubSelectionModalOpen, hasSelectedInitialClub } = useGameStore();
   const { setAuthModalOpen, user } = useFirebase();
 
   const [activeSubTab, setActiveSubTab] = useState<'players' | 'teams'>('players');
@@ -161,6 +170,12 @@ export const FootballApiView: React.FC = () => {
   };
 
   const handleSelectClubAsManaged = (apiTeam: ApiTeamResult) => {
+    // Check if user already manages this team
+    if (club.nameEn.toLowerCase() === apiTeam.strTeam.toLowerCase() || club.name.toLowerCase() === apiTeam.strTeam.toLowerCase()) {
+      setFeedbackMessage(isAr ? `أنت تدرب نادي "${apiTeam.strTeam}" بالفعل!` : `You are already managing "${apiTeam.strTeam}"!`);
+      return;
+    }
+
     // Check if team is in REAL_LEAGUES clubs
     let matchedConfig: RealClubConfig | null = null;
     for (const league of REAL_LEAGUES) {
@@ -180,23 +195,29 @@ export const FootballApiView: React.FC = () => {
       return;
     }
 
-    // Otherwise check opponent clubs or create
-    const match = REAL_OPPONENT_CLUBS.find(c => c.nameEn.toLowerCase() === apiTeam.strTeam.toLowerCase());
-    if (match) {
-      chooseClub(match);
-      setFeedbackMessage(isAr ? `تم تعيين نادي "${match.name}" كـ ناديك الأساسي! ستبدأ المسيرة من الصفر.` : `Assigned "${match.nameEn}" as your club! Starting career from zero.`);
-    } else {
-      chooseClub({
-        ...REAL_INITIAL_PLAYER_CLUB,
-        name: apiTeam.strTeam,
-        nameEn: apiTeam.strTeam,
-        logoBadge: '🛡️',
-        logoUrl: apiTeam.strBadge,
-        stadiumName: apiTeam.strStadium || 'الملعب الرئيسي',
-        divisionName: apiTeam.strLeague || 'دوري النخبة',
-      });
-      setFeedbackMessage(isAr ? `تم اختيار نادي ${apiTeam.strTeam}! بدأت مسيرتك كمدرب من الصفر.` : `Selected ${apiTeam.strTeam}! Your career started from zero.`);
-    }
+    // If custom team from API search, wrap into a config and route via selectLeagueAndClub
+    const customConfig: RealClubConfig = {
+      id: `custom_${apiTeam.idTeam || Date.now()}`,
+      name: apiTeam.strTeam,
+      nameEn: apiTeam.strTeam,
+      country: apiTeam.strCountry || 'العالم',
+      leagueId: 'custom_league',
+      leagueName: apiTeam.strLeague || 'دوري النخبة العالمي',
+      leagueNameEn: apiTeam.strLeague || 'World Elite League',
+      badge: apiTeam.strBadge || 'https://r2.thesportsdb.com/images/media/team/badge/vwvwrw1473502969.png',
+      stadiumName: apiTeam.strStadium || 'الملعب الرئيسي',
+      city: apiTeam.strCountry || 'مدينة النادي',
+      isTopTier: false,
+      gemCost: 0,
+      starRating: 4.0,
+      colors: { primary: '#1e3a8a', secondary: '#ffffff', accent: '#f59e0b' },
+      keyStars: [],
+      descriptionAr: `نادي ${apiTeam.strTeam} من ${apiTeam.strCountry || 'العالم'}.`,
+      descriptionEn: `${apiTeam.strTeam} football club from ${apiTeam.strCountry || 'the world'}.`,
+    };
+
+    const res = selectLeagueAndClub(customConfig);
+    setFeedbackMessage(res.message);
   };
 
   return (
@@ -512,13 +533,24 @@ export const FootballApiView: React.FC = () => {
               </div>
 
               <div className="mt-4 pt-3 border-t border-slate-800">
-                <button
-                  onClick={() => handleSelectClubAsManaged(t)}
-                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition-all"
-                >
-                  <Trophy className="w-4 h-4 text-amber-300" />
-                  <span>{isAr ? 'اختر كـ ناديك (ابدأ مسيرتك معه)' : 'Manage this Club (Start Career)'}</span>
-                </button>
+                {club.nameEn.toLowerCase() === t.strTeam.toLowerCase() || club.name.toLowerCase() === t.strTeam.toLowerCase() ? (
+                  <div className="w-full py-2.5 px-4 rounded-xl bg-sky-950/40 border border-sky-500/30 text-sky-300 font-bold text-xs flex items-center justify-center gap-2">
+                    <Check className="w-4 h-4 text-sky-400" />
+                    <span>{isAr ? 'أنت المدير الفني لهذا الفريق' : 'Active Managed Club'}</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleSelectClubAsManaged(t)}
+                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                  >
+                    <Trophy className="w-4 h-4 text-amber-300" />
+                    <span>
+                      {hasSelectedInitialClub 
+                        ? (isAr ? 'انتقال رسمي (25k 🪙 / 50 💎)' : 'Transfer (25k 🪙 / 50 💎)')
+                        : (isAr ? 'تولَّ تدريب النادي' : 'Manage this Club')}
+                    </span>
+                  </button>
+                )}
               </div>
             </motion.div>
           ))}

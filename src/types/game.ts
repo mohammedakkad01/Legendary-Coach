@@ -81,7 +81,7 @@ export interface Player {
   averageRating: number;
 }
 
-export type FootballFormation = '4-3-3' | '4-4-2' | '4-2-3-1' | '3-5-2' | '5-3-2';
+export type FootballFormation = '4-3-3' | '4-4-2' | '4-2-3-1' | '3-5-2' | '5-3-2' | '4-1-4-1' | '3-4-3';
 export type MatchMentality = 'ultra_defensive' | 'defensive' | 'balanced' | 'attacking' | 'all_out_attack';
 export type PressingStyle = 'low_block' | 'mid_press' | 'high_press' | 'gegenpress';
 export type PassingStyle = 'short_tiki_taka' | 'mixed' | 'direct_counter' | 'long_ball';

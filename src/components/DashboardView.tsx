@@ -49,6 +49,7 @@ export const DashboardView: React.FC = () => {
     setDailyMissionsModalOpen,
     startTacticalDuel,
     runSquadRecoverySession,
+    hasSelectedInitialClub,
     language 
   } = useGameStore();
 
@@ -127,13 +128,15 @@ export const DashboardView: React.FC = () => {
 
           {/* Quick Action Buttons */}
           <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={() => setClubSelectionModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/30 font-bold text-xs sm:text-sm shadow-lg transition-all cursor-pointer"
-            >
-              <Trophy className="w-4 h-4 text-amber-400" />
-              <span>{isAr ? 'اختر دورياً وفريقاً' : 'Select League & Team'}</span>
-            </button>
+            {!hasSelectedInitialClub && (
+              <button
+                onClick={() => setClubSelectionModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/30 font-bold text-xs sm:text-sm shadow-lg transition-all cursor-pointer"
+              >
+                <Trophy className="w-4 h-4 text-amber-400" />
+                <span>{isAr ? 'اختر دورياً وفريقاً' : 'Select League & Team'}</span>
+              </button>
+            )}
 
             <button
               id="btn_dashboard_kickoff"
@@ -236,15 +239,21 @@ export const DashboardView: React.FC = () => {
             <div>
               <div className="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
                 <Trophy className="w-4 h-4" />
-                <span>{isAr ? 'الدوريات والأندية الرسمية' : 'Official Leagues & Clubs'}</span>
+                <span>{hasSelectedInitialClub ? (isAr ? 'النادي والدوري المختار' : 'Active Club & League') : (isAr ? 'الدوريات والأندية الرسمية' : 'Official Leagues & Clubs')}</span>
               </div>
               <h3 className="text-lg font-black font-heading text-white mt-1">
-                {isAr ? 'اختر دوريك وناديك لبدء المسيرة' : 'Select Your League & Team'}
+                {hasSelectedInitialClub 
+                  ? (isAr ? `${club.name} • ${club.divisionName}` : `${club.nameEn} • ${club.divisionName}`)
+                  : (isAr ? 'اختر دوريك وناديك لبدء المسيرة' : 'Select Your League & Team')}
               </h3>
               <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                {isAr 
-                  ? 'اختر ناديك المفضل في الدوري الإنجليزي، الإسباني، السعودي، أو الإيطالي. أندية المركز الأول والنخبة تتطلب 100 💎، وأندية التحدي مجانية بالكامل (0 💎).' 
-                  : 'Pick your club in the Premier League, La Liga, Saudi Pro League, or Serie A. Top-tier clubs require 100 💎, challenger clubs are free (0 💎).'}
+                {hasSelectedInitialClub
+                  ? (isAr 
+                      ? 'أنت تدرب هذا النادي حالياً. الانتقال إلى نادٍ آخر يتطلب رسوم انتقال رسمية لفسخ العقد (25,000 🪙 أو 50 💎).' 
+                      : 'You currently manage this club. Mid-career transfers require an official release fee (25,000 🪙 or 50 💎).')
+                  : (isAr 
+                      ? 'اختر ناديك المفضل في الدوريات العالمية. أندية المركز الأول والنخبة تتطلب 100 💎، وأندية التحدي مجانية بالكامل (0 💎).' 
+                      : 'Pick your club in world leagues. Top-tier clubs require 100 💎, challenger clubs are free (0 💎).')}
               </p>
             </div>
             <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-2xl shrink-0">
@@ -254,14 +263,16 @@ export const DashboardView: React.FC = () => {
 
           <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
             <span className="text-[11px] text-slate-400">
-              {isAr ? 'شعار حقيقي وملعب رسمي ومسيرة واقعية' : 'Real badges, official stadiums & stats'}
+              {hasSelectedInitialClub 
+                ? (isAr ? `الملعب: ${club.stadiumName}` : `Stadium: ${club.stadiumName}`)
+                : (isAr ? 'شعار حقيقي وملعب رسمي ومسيرة واقعية' : 'Real badges, official stadiums & stats')}
             </span>
             <button
               onClick={() => setClubSelectionModalOpen(true)}
               className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer hover:brightness-110"
             >
               <Trophy className="w-3.5 h-3.5 text-slate-950" />
-              <span>{isAr ? 'اختيار الدوري والنادي' : 'Choose League & Club'}</span>
+              <span>{hasSelectedInitialClub ? (isAr ? 'سوق الانتقال لدوري آخر' : 'Transfer League/Club') : (isAr ? 'اختيار الدوري والنادي' : 'Choose League & Club')}</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>

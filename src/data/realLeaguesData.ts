@@ -482,7 +482,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         colors: { primary: '#78350f', secondary: '#ffffff', accent: '#eab308' },
         keyStars: ['فيصل الغامدي', 'موسى النذير', 'حمد اليامي'],
         descriptionAr: 'العميد الأول للكرة السعودية؛ تاريخ عريق وجمهور شرقي متحمس.',
-        descriptionEn: 'One of Saudi football's oldest clubs with a passionate Eastern fanbase.'
+        descriptionEn: 'One of Saudi football\'s oldest clubs with a passionate Eastern fanbase.'
       },
       {
         id: 'club_neom_sc',
@@ -501,7 +501,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         colors: { primary: '#164e63', secondary: '#ffffff', accent: '#0ea5e9' },
         keyStars: ['أنجيلو أوغبونا', 'سلطان الغنام', 'ديفيد أوزوكو'],
         descriptionAr: 'مشروع المستقبل؛ ناد فتي طموح يمثل رؤية سعودية جديدة في كرة القدم.',
-        descriptionEn: 'Ambitious newcomer representing Saudi Arabia's football future. (Free to start!)'
+        descriptionEn: 'Ambitious newcomer representing Saudi Arabia\'s football future. (Free to start!)'
       },
       {
         id: 'club_al_hazem_saudi',
@@ -615,7 +615,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         colors: { primary: '#0f172a', secondary: '#eab308', accent: '#ffffff' },
         keyStars: ['كوامي كوانا', 'عبدالعزيز الحسن', 'محمد الرشيدي'],
         descriptionAr: 'فريق العاصمة؛ يقاتل بضراوة من أجل البقاء في مصاف الأندية الكبرى.',
-        descriptionEn: 'The capital's underdog fighting hard for top-flight survival.'
+        descriptionEn: 'The capital\'s underdog fighting hard for top-flight survival.'
       },
       {
         id: 'club_damac',
@@ -1062,7 +1062,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         colors: { primary: '#166534', secondary: '#ffffff', accent: '#eab308' },
         keyStars: ['أحمد سامي', 'كريم فؤاد', 'زياد عبدالسلام'],
         descriptionAr: 'القوة الصاعدة في الكرة المصرية؛ إدارة طموحة ومشروع رياضي متكامل.',
-        descriptionEn: 'Egypt's rising power with ambitious management and a complete project.'
+        descriptionEn: 'Egypt\'s rising power with ambitious management and a complete project.'
       },
       {
         id: 'club_al_masry',
@@ -1119,7 +1119,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         colors: { primary: '#0f172a', secondary: '#eab308', accent: '#ffffff' },
         keyStars: ['محمود عبدالعزيز', 'أحمد الشيخ', 'محمد حمدي'],
         descriptionAr: 'عميد الأندية السكندرية؛ ملعب برج العرب حصن منيع أمام الخصوم.',
-        descriptionEn: 'Alexandria's oldest club with Borg El Arab as its fortress.'
+        descriptionEn: 'Alexandria\'s oldest club with Borg El Arab as its fortress.'
       },
       {
         id: 'club_pharco',
@@ -1195,7 +1195,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         colors: { primary: '#dc2626', secondary: '#ffffff', accent: '#0f172a' },
         keyStars: ['محمود كهربا', 'أحمد الشناوي', 'حسام عاشور'],
         descriptionAr: 'عميد الأندية المصرية؛ تاريخ عريق يمتد لأكثر من قرن من الزمان.',
-        descriptionEn: 'One of Egypt's oldest clubs, with over a century of football history.'
+        descriptionEn: 'One of Egypt\'s oldest clubs, with over a century of football history.'
       },
       {
         id: 'club_mokawloon',
@@ -1290,7 +1290,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         colors: { primary: '#0284c7', secondary: '#ffffff', accent: '#eab308' },
         keyStars: ['أحمد صبري', 'محمود فتح الله', 'يوسف رمضان'],
         descriptionAr: 'فريق صاعد حديثاً يخوض أولى تجاربه في أجواء الدوري الممتاز.',
-        descriptionEn: 'Newly promoted side making its debut among Egypt's elite.'
+        descriptionEn: 'Newly promoted side making its debut among Egypt\'s elite.'
       },
       {
         id: 'club_haras_hodoud',
@@ -1366,7 +1366,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         colors: { primary: '#0f172a', secondary: '#eab308', accent: '#ffffff' },
         keyStars: ['أحمد سامي', 'معاذ النني', 'حسين الشحات'],
         descriptionAr: 'مشروع أحمد حسن؛ استثمار كبير في الشباب ومنافسة قوية على البطولات.',
-        descriptionEn: 'Ahmed Hassan's project, heavily investing in youth and title contention.'
+        descriptionEn: 'Ahmed Hassan\'s project, heavily investing in youth and title contention.'
       }
     ]
   },

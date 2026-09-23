@@ -95,28 +95,43 @@ async function main() {
   for (const league of OFFICIAL_LEAGUES_CONFIG) {
     console.log(`Syncing ${league.nameEn} (${league.key})...`);
 
+    let rawTeams: any[] = [];
+    let matchedVia = '';
+
     const resolved = await resolveLeagueId(allLeagues, league.sportsDbNames);
-    if (!resolved) {
-      const nearby = allLeagues
-        .filter((l: any) => (l.strLeague || '').toLowerCase().includes(league.country.toLowerCase()) || (l.strCountry || '').toLowerCase() === league.country.toLowerCase())
-        .map((l: any) => l.strLeague)
-        .slice(0, 8);
-      console.error(`  -> could not resolve TheSportsDB league id for any of: ${league.sportsDbNames.join(', ')}.`);
-      console.error(`     nearby candidates for country "${league.country}": ${JSON.stringify(nearby)}`);
+    if (resolved) {
+      console.log(`  matched via all_leagues.php: "${resolved.matchedName}" (id=${resolved.id})`);
+      const teamsData = await callSportsDb(`/lookup_all_teams.php?id=${resolved.id}`);
+      requestsUsed += 1;
+      rawTeams = teamsData.teams || [];
+      matchedVia = resolved.matchedName;
+    } else {
+      // Fallback: not in the small curated all_leagues.php list (true for Egypt/Saudi) —
+      // search the full team DB directly by league name instead.
+      for (const name of league.sportsDbNames) {
+        const teamsData = await callSportsDb(`/search_all_teams.php?l=${encodeURIComponent(name)}`);
+        requestsUsed += 1;
+        const teams = (teamsData.teams || []).filter((t: any) => !t.strSport || t.strSport === 'Soccer');
+        if (teams.length > 0) {
+          console.log(`  matched via search_all_teams.php?l=${name}`);
+          rawTeams = teams;
+          matchedVia = name;
+          break;
+        }
+      }
+    }
+
+    if (rawTeams.length === 0) {
+      console.error(`  -> could not find any clubs for ${league.nameEn} via either method. Skipping.`);
       continue;
     }
-    console.log(`  matched TheSportsDB league "${resolved.matchedName}" (id=${resolved.id})`);
-
-    const teamsData = await callSportsDb(`/lookup_all_teams.php?id=${resolved.id}`);
-    requestsUsed += 1;
-    const rawTeams = teamsData.teams || [];
     console.log(`  -> ${rawTeams.length} clubs found`);
 
     const leagueDocId = `league_${league.key}`;
     batch.set(db.collection('leagues_cache').doc(leagueDocId), {
       id: leagueDocId,
       leagueKey: league.key,
-      sportsDbLeagueId: resolved.id,
+      matchedVia,
       name: league.name,
       nameEn: league.nameEn,
       country: league.country,

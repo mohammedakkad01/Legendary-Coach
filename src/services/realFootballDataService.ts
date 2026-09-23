@@ -125,6 +125,29 @@ export async function fetchFootballLayer1Cache() {
 }
 
 /**
+ * Fetch a single club's real, pre-synced full squad from Firestore
+ * (squads_cache/squad_<clubId>, written by scripts/syncSquadsData.ts).
+ * Returns null if that club hasn't been synced yet (script hasn't covered
+ * its league, or TheSportsDB had no match) — callers should fall back to
+ * the default/generated squad in that case.
+ */
+export async function fetchClubSquadCache(clubId: string): Promise<{
+  players: import('./footballApi').CachedSquadPlayer[];
+  matchedTeamName?: string;
+} | null> {
+  try {
+    const snap = await getDoc(doc(db, 'squads_cache', `squad_${clubId}`));
+    if (!snap.exists()) return null;
+    const data = snap.data() as any;
+    if (!data?.players || !Array.isArray(data.players) || data.players.length === 0) return null;
+    return { players: data.players, matchedTeamName: data.matchedTeamName };
+  } catch (err) {
+    console.warn(`Error fetching squad cache for club ${clubId}:`, err);
+    return null;
+  }
+}
+
+/**
  * LAYER 2 CLONING SERVICE
  * When user selects or customizes a club:
  * 1. Creates /user_saves/{userId}/club

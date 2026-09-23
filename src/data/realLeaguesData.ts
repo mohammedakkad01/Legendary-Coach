@@ -512,7 +512,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         leagueName: 'دوري روشن السعودي للمحترفين',
         leagueNameEn: 'Roshn Saudi League',
         badge: '',
-        stadiumName: 'Prince Abdullah bin Jalawi Stadium (Ha'il)',
+        stadiumName: 'Prince Abdullah bin Jalawi Stadium (Ha\'il)',
         city: 'الرس',
         isTopTier: false,
         gemCost: 0,
@@ -531,7 +531,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         leagueName: 'دوري روشن السعودي للمحترفين',
         leagueNameEn: 'Roshn Saudi League',
         badge: '',
-        stadiumName: 'Al-Majma'ah Sports City',
+        stadiumName: 'Al-Majma\'ah Sports City',
         city: 'المجمعة',
         isTopTier: false,
         gemCost: 0,
@@ -1100,7 +1100,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         colors: { primary: '#1d4ed8', secondary: '#ffffff', accent: '#f59e0b' },
         keyStars: ['أحمد رفعت', 'محمد عبدالرازق', 'محمود جاد الله'],
         descriptionAr: 'نادي شركات البترول؛ تنظيم إداري متميز وأداء كروي متوازن دوماً.',
-        descriptionEn: 'Petroleum companies' club known for stability and balanced performances.'
+        descriptionEn: 'Petroleum companies\' club known for stability and balanced performances.'
       },
       {
         id: 'club_smouha',
@@ -1143,7 +1143,7 @@ export const REAL_LEAGUES: RealLeague[] = [
       {
         id: 'club_talaea',
         name: 'طلائع الجيش',
-        nameEn: 'Tala'ea El Gaish SC',
+        nameEn: 'Tala\'ea El Gaish SC',
         country: 'مصر 🇪🇬',
         leagueId: 'egyptian_league',
         leagueName: 'الدوري المصري الممتاز',
@@ -1271,7 +1271,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         colors: { primary: '#dc2626', secondary: '#ffffff', accent: '#0f172a' },
         keyStars: ['محمد عبدالغني', 'أحمد سعيد', 'كريم حافظ'],
         descriptionAr: 'فريق عمال الغزل والنسيج؛ دعم جماهيري صناعي واسع في دلتا مصر.',
-        descriptionEn: 'Textile workers' club with strong industrial-town support in the Delta.'
+        descriptionEn: 'Textile workers\' club with strong industrial-town support in the Delta.'
       },
       {
         id: 'club_kahrabaa_ismailia',

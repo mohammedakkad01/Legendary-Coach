@@ -1,13 +1,12 @@
-name: Sync Football Data
+name: Sync Football Data (LEGACY TheSportsDB - do not run with API-Football sync)
 
 on:
-  workflow_dispatch: {}       # يسمح بالتشغيل اليدوي من تبويب Actions في GitHub
-  schedule:
-    - cron: '0 3 * * 1'       # كل يوم اثنين الساعة 3 صباحًا UTC (مرة أسبوعيًا، 6 طلبات فقط لكل تشغيل)
+  workflow_dispatch: {}       # تشغيل يدوي من تبويب Actions
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -20,7 +19,8 @@ jobs:
       - name: Install dependencies for the sync script
         run: npm install --no-save --legacy-peer-deps tsx firebase-admin
 
-      - name: Run sync script
+      - name: Run clubs sync
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          THESPORTSDB_API_KEY: ${{ secrets.THESPORTSDB_API_KEY }}
         run: npx tsx scripts/syncFootballData.ts

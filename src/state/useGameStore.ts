@@ -126,7 +126,7 @@ interface GameState {
   claimLoginBonus: () => { success: boolean; message: string };
   chooseClub: (club: Club) => void;
   setClubSelectionModalOpen: (open: boolean) => void;
-  selectLeagueAndClub: (clubConfig: RealClubConfig) => { success: boolean; message: string };
+  selectLeagueAndClub: (clubConfig: RealClubConfig, realSquad?: Player[]) => { success: boolean; message: string };
   
   // Daily Missions & Squad Fatigue Actions
   claimDailyMission: (missionId: string) => { success: boolean; message: string };
@@ -339,7 +339,7 @@ export const useGameStore = create<GameState>((set, get) => {
       set({ clubSelectionModalOpen: open });
     },
 
-    selectLeagueAndClub: (clubConfig: RealClubConfig) => {
+    selectLeagueAndClub: (clubConfig: RealClubConfig, realSquad?: Player[]) => {
       const state = get();
       const currentDiamonds = state.club.finances.diamonds || 0;
       const isAr = state.language === 'ar';
@@ -383,13 +383,18 @@ export const useGameStore = create<GameState>((set, get) => {
           totalSeasonRevenue: 0,
           totalSeasonExpenses: 0,
         },
-        footballSquad: REAL_INITIAL_PLAYER_CLUB.footballSquad.map(p => ({
-          ...p,
-          realTeam: clubConfig.nameEn,
-          matchesPlayed: 0,
-          goalsOrPoints: 0,
-          assists: 0,
-        }))
+        // Prefer the club's REAL, pre-synced squad (scripts/syncSquadsData.ts ->
+        // squads_cache, fetched & converted by the caller). Only falls back to the
+        // generic starter roster when that club hasn't been synced yet.
+        footballSquad: (realSquad && realSquad.length > 0)
+          ? realSquad
+          : REAL_INITIAL_PLAYER_CLUB.footballSquad.map(p => ({
+              ...p,
+              realTeam: clubConfig.nameEn,
+              matchesPlayed: 0,
+              goalsOrPoints: 0,
+              assists: 0,
+            }))
       };
 
       const newStandings = generateStandingsForLeague(clubConfig.leagueId, clubConfig.id, clubConfig.name);

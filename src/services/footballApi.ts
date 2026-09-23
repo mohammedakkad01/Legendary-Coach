@@ -206,6 +206,80 @@ export async function searchRealPlayersApi(query: string): Promise<ApiPlayerResu
   }
 }
 
+// Shape written by scripts/syncSquadsData.ts into Firestore's squads_cache/{squad_<clubId>}.players[]
+export interface CachedSquadPlayer {
+  idPlayer: string;
+  name: string;
+  nameEn: string;
+  position: PlayerPosition;
+  positionRaw?: string;
+  nationality?: string;
+  age: number;
+  number?: string;
+  photoUrl?: string;
+  overall: number;
+  potential: number;
+}
+
+/**
+ * Convert a pre-synced real squad player (from squads_cache, written by
+ * scripts/syncSquadsData.ts) into the game's full Player domain model.
+ * Names, positions, nationality, age and photo are real (TheSportsDB);
+ * overall/potential were already computed by the sync script using the
+ * same heuristic as convertApiPlayerToGamePlayer below, so both paths
+ * stay consistent.
+ */
+export function convertCachedSquadPlayerToGamePlayer(p: CachedSquadPlayer, realTeam?: string): Player {
+  const { position, overall, potential } = p;
+  const rarity: PlayerRarity =
+    overall >= 88 ? 'legend' : potential >= 88 ? 'prospect' : overall >= 80 ? 'rare' : 'standard';
+
+  const marketValue = Math.round(overall * overall * 18000);
+  const wage = Math.round(marketValue * 0.012);
+
+  return {
+    id: `squad_${p.idPlayer || Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    sport: 'football',
+    name: p.name,
+    nameEn: p.nameEn || p.name,
+    age: p.age,
+    nationality: p.nationality || 'دولي',
+    nationalityFlag: '🌍',
+    position,
+    secondaryPositions: position === 'ST' ? ['LW', 'RW'] : position === 'CB' ? ['CDM'] : ['CM'],
+    overall,
+    potential,
+    attributes: {
+      pace: position === 'ST' || position === 'LW' || position === 'RW' ? 80 : 68,
+      shooting: position === 'ST' ? 80 : 62,
+      passing: position === 'CM' || position === 'CAM' ? 78 : 66,
+      dribbling: position === 'LW' || position === 'RW' || position === 'CAM' ? 78 : 65,
+      defending: position === 'CB' || position === 'CDM' || position === 'LB' || position === 'RB' ? 76 : 40,
+      physical: 72,
+      goalkeeping: position === 'GK' ? overall : 10,
+    },
+    rarity,
+    personality: 'professional' as PlayerPersonality,
+    traits: ['لاعب حقيقي في التشكيلة الرسمية'],
+    photoUrl: p.photoUrl || undefined,
+    realTeam: realTeam || undefined,
+    morale: 90,
+    form: 7,
+    stamina: 92,
+    fatigue: 0,
+    injuredWeeks: 0,
+    suspendedMatches: 0,
+    contractYears: 3,
+    wage,
+    marketValue,
+    matchesPlayed: 0,
+    goalsOrPoints: 0,
+    assists: 0,
+    cleanSheetsOrRebounds: 0,
+    averageRating: 6.8,
+  };
+}
+
 /**
  * Map API position string to Game PlayerPosition
  */

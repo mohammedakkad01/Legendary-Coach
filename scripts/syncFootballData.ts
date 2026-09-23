@@ -37,8 +37,11 @@ const OFFICIAL_LEAGUES_CONFIG = [
   { key: 'la_liga', name: 'الدوري الإسباني (La Liga)', nameEn: 'La Liga', country: 'Spain', sportsDbNames: ['Spanish La Liga'] },
   { key: 'ligue_1', name: 'الدوري الفرنسي (Ligue 1)', nameEn: 'Ligue 1', country: 'France', sportsDbNames: ['French Ligue 1'] },
   { key: 'bundesliga', name: 'الدوري الألماني (Bundesliga)', nameEn: 'Bundesliga', country: 'Germany', sportsDbNames: ['German Bundesliga'] },
-  { key: 'egyptian_league', name: 'الدوري المصري الممتاز', nameEn: 'Egyptian Premier League', country: 'Egypt', sportsDbNames: ['Egyptian Premier League'], seedTeamName: 'Al Ahly' },
-  { key: 'saudi_pro_league', name: 'دوري روشن السعودي', nameEn: 'Saudi Pro League', country: 'Saudi Arabia', sportsDbNames: ['Saudi Professional League', 'Saudi Pro League', 'Saudi Arabian Premier League'], seedTeamName: 'Al Hilal' },
+  // NOTE: egyptian_league and saudi_pro_league are intentionally NOT synced via TheSportsDB.
+  // The free v1 tier doesn't reliably index these leagues (Saudi returns 0 matches, Egypt
+  // returns an incomplete ~10 clubs). Both are now fully curated by hand in
+  // src/data/realLeaguesData.ts (18 Saudi Pro League clubs, 21 Egyptian Premier League clubs
+  // for the 2025-26 season) — no API call, no rate limit, 100% reliable.
 ];
 
 async function callSportsDb(endpoint: string) {

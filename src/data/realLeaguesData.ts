@@ -33,6 +33,7 @@ const CLUB_NAME_ALIASES: Record<string, string> = {
   rajacasablanca: 'rajaclubathletic',
   internazionale: 'intermilan',
   milan: 'acmilan',
+  alhazm: 'alhazem',
 };
 export function normalizeClubName(raw: string): string {
   const base = (raw || '')
@@ -86,7 +87,7 @@ export function mergeLiveClubsIntoLeagues(
       const cur = league.clubs.find(c => !usedCurated.has(c.id) && sameClub(c.nameEn, liveName));
       if (cur) {
         usedCurated.add(cur.id);
-        return { ...cur, badge: lc.logo || cur.badge, stadiumName: cur.stadiumName || lc.venue || '' };
+        return { ...cur, badge: lc.logo || cur.badge, stadiumName: cur.stadiumName || lc.venue || '', apiTeamId: String(lc.idTeam) };
       }
       return {
         id: `club_api_${lc.idTeam}`,
@@ -105,7 +106,8 @@ export function mergeLiveClubsIntoLeagues(
         colors: { primary: '#334155', secondary: '#ffffff', accent: '#64748b' },
         keyStars: [],
         descriptionAr: 'نادٍ رسمي مزامَن مباشرة من بيانات الدوري الحقيقية.',
-        descriptionEn: 'Officially licensed club synced live from real league data.'
+        descriptionEn: 'Officially licensed club synced live from real league data.',
+        apiTeamId: String(lc.idTeam)
       };
     });
 
@@ -136,6 +138,7 @@ export interface RealClubConfig {
   keyStars: string[];
   descriptionAr: string;
   descriptionEn: string;
+  apiTeamId?: string; // معرّف النادي في API-Football (يُضاف عند الدمج مع clubs_cache) — يستخدمه سكربت التشكيلات
 }
 
 export interface RealLeague {

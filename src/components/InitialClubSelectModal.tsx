@@ -335,6 +335,16 @@ export const InitialClubSelectModal: React.FC = () => {
                   </h3>
                 </div>
 
+                {/* تنبيه: هذا الدوري لا يزال يعرض القائمة الاحتياطية الجزئية فقط
+                    لأن المزامنة الحقيقية (clubs_cache) لم تصل بعد لهذا الدوري */}
+                {selectedLeague.isLiveSynced === false && (
+                  <div className="text-[11px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2 py-1">
+                    {isAr
+                      ? 'قائمة جزئية مؤقتة — لم تصل بيانات المزامنة الكاملة لهذا الدوري بعد'
+                      : 'Partial placeholder list — full sync data not received yet for this league'}
+                  </div>
+                )}
+
                 {/* Filter Pills & Search */}
                 <div className="flex items-center flex-wrap gap-2">
                   <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-bold">

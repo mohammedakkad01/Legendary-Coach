@@ -25,11 +25,42 @@ export interface CachedClubDoc {
   updatedAt?: string;
 }
 
+// ---- مطابقة أسماء الأندية بين القائمة المنسّقة يدوياً وبيانات API ----
+// (Newcastle = Newcastle United، Inter = Inter Milan، Bayern München = Bayern Munich ...)
+const CLUB_NAME_STOPWORDS = new Set(['fc', 'sc', 'cf', 'afc', 'cd', 'club', 'de', 'bc', 'ssc', 'fk']);
+const CLUB_NAME_ALIASES: Record<string, string> = {
+  bayernmunchen: 'bayernmunich',
+  rajacasablanca: 'rajaclubathletic',
+  internazionale: 'intermilan',
+  milan: 'acmilan',
+};
+export function normalizeClubName(raw: string): string {
+  const base = (raw || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[0-9]/g, ' ')
+    .split(/[^a-z]+/)
+    .filter(w => w && !CLUB_NAME_STOPWORDS.has(w))
+    .join('');
+  return CLUB_NAME_ALIASES[base] || base;
+}
+function sameClub(a: string, b: string): boolean {
+  const x = normalizeClubName(a);
+  const y = normalizeClubName(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+  return short.length >= 4 && long.includes(short);
+}
+
 /**
- * Merges live-synced clubs (Firestore clubs_cache, keyed by doc id) into the static
- * REAL_LEAGUES roster. Clubs already curated by name are left untouched (their hand-written
- * description/keyStars/colors are kept); any club present in the live cache but missing from
- * the curated list is appended with sensible defaults and a real badge/venue from TheSportsDB.
+ * يدمج الأندية المزامَنة (Firestore clubs_cache) مع القائمة المنسّقة يدوياً REAL_LEAGUES.
+ *  - قائمة API هي المرجع لعضوية الدوري في الموسم الحالي (إن كانت كاملة ≥ 16 نادياً).
+ *  - النادي المطابق لنادٍ منسّق يحتفظ بمعرّفه وبياناته (الألوان، النجوم، الوصف، الجواهر)
+ *    ويأخذ الشعار من API.
+ *  - النادي المنسّق الذي لا يوجد في قائمة API يُحذف (انتقل لدوري آخر/هبط) — إلا إذا كانت
+ *    قائمة API ناقصة (< 16) فنُبقيه حتى لا نفقد أندية.
+ *  - الدوريات بلا بيانات مزامَنة (السعودي الممتاز والمصري) تبقى كما هي.
  */
 export function mergeLiveClubsIntoLeagues(
   leagues: RealLeague[],
@@ -46,33 +77,21 @@ export function mergeLiveClubsIntoLeagues(
   return leagues.map(league => {
     const liveClubs = clubsByLeagueKey.get(league.id);
     if (!liveClubs || liveClubs.length === 0) {
-      // لم تصل أي بيانات من clubs_cache لهذا الدوري — على الأغلب لأن
-      // GitHub Action (sync-football-data.yml) لم يُشغَّل بنجاح بعد أو
-      // السر FIREBASE_SERVICE_ACCOUNT غير مضبوط. نعرض تحذيرًا واضحًا في
-      // الـ console بدل الفشل الصامت، ونعلّم الدوري بأنه لا يزال بالبيانات
-      // الاحتياطية الجزئية فقط (isLiveSynced=false) ليُستخدم هذا العلم في الواجهة.
-      console.warn(
-        `[realLeaguesData] لا توجد بيانات مزامَنة لدوري "${league.nameEn}" (${league.id}) في clubs_cache — ` +
-        `يتم حاليًا عرض ${league.clubs.length} نادٍ احتياطي فقط بدل القائمة الكاملة. ` +
-        `شغّل GitHub Action "Sync Football Data" يدويًا وتحقق من السر FIREBASE_SERVICE_ACCOUNT.`
-      );
       return { ...league, isLiveSynced: false };
     }
 
-    const normalize = (s: string) =>
-      (s || '')
-        .toLowerCase()
-        .replace(/\b(fc|sc|cf|club|afc|cd)\b/g, '')
-        .replace(/[^a-z0-9]/g, '')
-        .trim();
-
-    const existingNames = new Set(league.clubs.map(c => normalize(c.nameEn)));
-    const additions: RealClubConfig[] = liveClubs
-      .filter(lc => !existingNames.has(normalize(lc.nameEn || lc.name || '')))
-      .map(lc => ({
+    const usedCurated = new Set<string>();
+    const merged: RealClubConfig[] = liveClubs.map(lc => {
+      const liveName = lc.nameEn || lc.name || '';
+      const cur = league.clubs.find(c => !usedCurated.has(c.id) && sameClub(c.nameEn, liveName));
+      if (cur) {
+        usedCurated.add(cur.id);
+        return { ...cur, badge: lc.logo || cur.badge, stadiumName: cur.stadiumName || lc.venue || '' };
+      }
+      return {
         id: `club_api_${lc.idTeam}`,
-        name: lc.name,
-        nameEn: lc.nameEn || lc.name,
+        name: liveName,
+        nameEn: liveName,
         country: league.country,
         leagueId: league.id,
         leagueName: league.name,
@@ -87,10 +106,15 @@ export function mergeLiveClubsIntoLeagues(
         keyStars: [],
         descriptionAr: 'نادٍ رسمي مزامَن مباشرة من بيانات الدوري الحقيقية.',
         descriptionEn: 'Officially licensed club synced live from real league data.'
-      }));
+      };
+    });
 
-    if (additions.length === 0) return { ...league, isLiveSynced: true };
-    return { ...league, clubs: [...league.clubs, ...additions], isLiveSynced: true };
+    const liveIsComplete = liveClubs.length >= 16;
+    const leftovers = liveIsComplete ? [] : league.clubs.filter(c => !usedCurated.has(c.id));
+    const all = [...merged, ...leftovers].sort(
+      (a, b) => Number(b.isTopTier) - Number(a.isTopTier) || b.starRating - a.starRating || a.nameEn.localeCompare(b.nameEn)
+    );
+    return { ...league, clubs: all, isLiveSynced: true };
   });
 }
 

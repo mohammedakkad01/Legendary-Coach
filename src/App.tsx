@@ -30,6 +30,7 @@ import { DailyMissionsModal } from './components/DailyMissionsModal';
 import { MatchResultsCharacterModal } from './components/MatchResultsCharacterModal';
 import { TacticalDuelModal } from './components/TacticalDuelModal';
 import { PreMatchView } from './components/PreMatchView';
+import { RoundSummaryView } from './components/RoundSummaryView';
 
 function MainAppLayout() {
   const { activeTab, language, preMatchModalOpen } = useGameStore();
@@ -80,6 +81,8 @@ function MainAppLayout() {
         return <VIPClubView />;
       case 'editor':
         return <DataPackEditorView />;
+      case 'round_summary':
+        return <RoundSummaryView />;
       default:
         return <DashboardView />;
     }

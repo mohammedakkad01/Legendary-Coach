@@ -6,13 +6,16 @@
  * Ranks, promotion zone, goal differences, recent form guide, and fixture kick-off.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useGameStore } from '../state/useGameStore';
 import { Trophy, Flame, ChevronRight, Database, Sparkles, Calendar } from 'lucide-react';
+import { LeagueStatsPanel } from './LeagueStatsPanel';
 
 export const LeagueTableView: React.FC = () => {
   const { leagueStandings, club, startNewMatch, language, setActiveTab } = useGameStore();
   const isAr = language === 'ar';
+  const [view, setView] = useState<'table' | 'stats'>('table');
+  const currentRound = leagueStandings.find(s => s.clubId === club.id)?.played ?? 0;
 
   // Sort standings by points desc, then GD desc, then GF desc
   const sorted = [...leagueStandings].sort((a, b) => {
@@ -66,7 +69,28 @@ export const LeagueTableView: React.FC = () => {
         </div>
       </div>
 
+      {/* Table / Player stats switch */}
+      <div className="flex gap-2">
+        {([
+          { id: 'table', ar: 'جدول الترتيب', en: 'Standings' },
+          { id: 'stats', ar: 'إحصائيات اللاعبين', en: 'Player Stats' },
+        ] as const).map(t => (
+          <button
+            key={t.id}
+            onClick={() => setView(t.id)}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer ${
+              view === t.id ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30' : 'bg-slate-800/70 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {isAr ? t.ar : t.en}
+          </button>
+        ))}
+      </div>
+
+      {view === 'stats' && <LeagueStatsPanel />}
+
       {/* Standings Table */}
+      {view === 'table' && (
       <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
         <div className="overflow-x-auto">
           <table className="w-full text-right text-xs">
@@ -176,9 +200,10 @@ export const LeagueTableView: React.FC = () => {
             </div>
           </div>
 
-          <span>{isAr ? 'الموسم 1 • الجولة 6' : 'Season 1 • Round 6'}</span>
+          <span>{isAr ? `الجولة ${currentRound}` : `Round ${currentRound}`}</span>
         </div>
       </div>
+      )}
 
     </div>
   );

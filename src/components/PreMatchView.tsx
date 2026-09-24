@@ -23,8 +23,10 @@ import {
   ArrowLeft, 
   Sparkles,
   Sliders,
-  CheckCircle2
+  CheckCircle2,
+  Calendar
 } from 'lucide-react';
+import { countdownLabel, formatFixtureDate } from '../utils/fixtureDate';
 
 export const PreMatchView: React.FC = () => {
   const { 
@@ -53,7 +55,19 @@ export const PreMatchView: React.FC = () => {
     winProbability,
     drawProbability,
     lossProbability,
+    technicalGap,
+    expectedUserGoals,
+    expectedOpponentGoals,
+    mostLikelyScore,
+    opponentStarters,
   } = preMatchPreview;
+
+  const gapColor = technicalGap > 1 ? 'text-emerald-400' : technicalGap < -1 ? 'text-rose-400' : 'text-amber-400';
+  const gapText = technicalGap > 1
+    ? (isAr ? `أفضلية فنية لك بفارق ${technicalGap}` : `You lead by ${technicalGap}`)
+    : technicalGap < -1
+    ? (isAr ? `الخصم أقوى بفارق ${Math.abs(technicalGap)}` : `Opponent leads by ${Math.abs(technicalGap)}`)
+    : (isAr ? 'مستوى متقارب' : 'Evenly matched');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-md overflow-y-auto animate-fadeIn">
@@ -148,6 +162,15 @@ export const PreMatchView: React.FC = () => {
           </div>
         </div>
 
+        {/* Kick-off date */}
+        <div className="mt-3 flex items-center justify-center gap-2 text-xs font-bold text-slate-300">
+          <Calendar className="w-3.5 h-3.5 text-sky-400" />
+          <span>{formatFixtureDate(fixture.date, isAr)}</span>
+          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black">
+            {countdownLabel(fixture.date, isAr)}
+          </span>
+        </div>
+
         {/* Expected Win/Draw/Loss Odds */}
         <div className="mt-5 bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
           <div className="flex items-center justify-between text-xs font-black mb-2 text-slate-300">
@@ -182,6 +205,18 @@ export const PreMatchView: React.FC = () => {
               style={{ width: `${lossProbability}%` }}
               title={`Loss: ${lossProbability}%`}
             />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-center">
+            <div className="bg-slate-950/70 rounded-xl border border-slate-800 p-2.5">
+              <span className="text-[10px] text-slate-500 font-bold block">{isAr ? 'النتيجة الأرجح' : 'Most likely score'}</span>
+              <span className="font-mono text-lg font-black text-white">{mostLikelyScore}</span>
+              <span className="text-[10px] text-slate-500 block">{isAr ? `متوسط الأهداف ${expectedUserGoals} - ${expectedOpponentGoals}` : `xG ${expectedUserGoals} - ${expectedOpponentGoals}`}</span>
+            </div>
+            <div className="bg-slate-950/70 rounded-xl border border-slate-800 p-2.5">
+              <span className="text-[10px] text-slate-500 font-bold block">{isAr ? 'الفارق الفني' : 'Technical gap'}</span>
+              <span className={`font-mono text-lg font-black ${gapColor}`}>{technicalGap > 0 ? `+${technicalGap}` : technicalGap}</span>
+              <span className={`text-[10px] block font-bold ${gapColor}`}>{gapText}</span>
+            </div>
           </div>
           <span className="text-[10px] text-slate-400 text-center block mt-1.5 font-bold">
             {isAr 
@@ -238,7 +273,7 @@ export const PreMatchView: React.FC = () => {
                 {isAr ? 'قوة الخصم المتوقعة' : 'Opponent Power'}
               </span>
               <span className="text-[10px] font-bold text-slate-500">
-                {opponentClub.footballSquad.length} {isAr ? 'لاعباً' : 'players'}
+                {opponentClub.footballSquad.length} {isAr ? 'لاعباً' : 'players'} · {isAr ? `الأساسيون ${opponentStarters}` : `XI ${opponentStarters}`}
               </span>
             </div>
 

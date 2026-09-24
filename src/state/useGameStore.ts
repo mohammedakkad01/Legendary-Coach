@@ -26,7 +26,11 @@ import {
   TacticalDuelOrder,
   Fixture,
   PreMatchData,
-  DuelRoom
+  DuelRoom,
+  PlayerStats,
+  RoundSummary,
+  RoundMatchResult,
+  RoundPerformer
 } from '../types/game';
 import { 
   REAL_INITIAL_PLAYER_CLUB, 
@@ -48,6 +52,21 @@ import {
   DUEL_PIECES_CATALOG 
 } from '../data/tacticalDuelData';
 import { FootballMatchEngine } from '../engine/footballEngine';
+import { SeededRandom } from '../engine/prng';
+import {
+  SimTeam,
+  PlayerMatchDelta,
+  registerClubSquad,
+  getCachedClubSquad,
+  hasClubSquad,
+  withStableIds,
+  pickStartingXI,
+  simulateAiMatch,
+  deltasFromUserMatch,
+  applyDeltasToStats,
+  applyResultToStandings,
+  getOtherPairings,
+} from '../engine/matchdaySimulator';
 import { BasketballMatchEngine } from '../engine/basketballEngine';
 import { soundEffects } from '../audio/soundFX';
 import confetti from 'canvas-confetti';
@@ -69,7 +88,8 @@ export type GameTab =
   | 'editor'
   | 'scout'
   | 'football_api'
-  | 'tactical_duel';
+  | 'tactical_duel'
+  | 'round_summary';
 
 interface GameState {
   currentSport: SportType;
@@ -111,6 +131,11 @@ interface GameState {
   leagueStandings: LeagueStanding[];
   leagueFixtures: Fixture[]; // full season calendar for the player's league — consumed in order by startNewMatch()
   matchHistory: MatchRecord[];
+
+  // Matchday simulation & league-wide player statistics
+  tournamentStats: PlayerStats[];      // season totals for EVERY player in the league
+  simulatedMatchdays: number[];        // matchdays whose non-user games were already played
+  lastRoundSummary: RoundSummary | null; // shown by RoundSummaryView
 
   // Live Match Simulation
   activeEngine: FootballMatchEngine | null;
@@ -185,6 +210,7 @@ interface GameState {
   unlockMatchSpeed2x: (currency: 'coins' | 'diamonds') => { success: boolean; message: string };
   submitInteractiveDecision: (optionId: string) => void;
   instantSimulateMatch: () => void;
+  simulateMatchday: (matchday: number) => RoundSummary | null;
 
   // Daily & VIP
   claimedVipUpgradeChests: number[]; // VIP levels where the one-time upgrade chest was opened
@@ -229,6 +255,8 @@ export const useGameStore = create<GameState>((set, get) => {
         leagueStandings: state.leagueStandings || current.leagueStandings,
         leagueFixtures: state.leagueFixtures || current.leagueFixtures,
         matchHistory: state.matchHistory || current.matchHistory,
+        tournamentStats: state.tournamentStats || current.tournamentStats,
+        simulatedMatchdays: state.simulatedMatchdays || current.simulatedMatchdays,
         storyMissions: state.storyMissions || current.storyMissions,
         scoutMarket: state.scoutMarket || current.scoutMarket,
         claimedVipUpgradeChests: state.claimedVipUpgradeChests || current.claimedVipUpgradeChests,
@@ -237,6 +265,189 @@ export const useGameStore = create<GameState>((set, get) => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch {
       // ignore
+    }
+  };
+
+  // ---------------------------------------------------------------------
+  // Matchday simulation helpers (see src/engine/matchdaySimulator.ts)
+  // ---------------------------------------------------------------------
+  const stripYouSuffix = (name: string) => name.replace(' (فريقك)', '');
+  const clubNameOf = (clubId: string): string => {
+    const st = get();
+    if (clubId === st.club.id) return st.club.name;
+    return stripYouSuffix(st.leagueStandings.find(x => x.clubId === clubId)?.clubName || clubId);
+  };
+
+  // Squad for any non-user club: cached real squad, else a deterministic synthetic one.
+  const resolveAiTeam = (clubId: string): SimTeam => {
+    let squad = getCachedClubSquad(clubId);
+    if (!squad) {
+      const cfg = REAL_LEAGUES.flatMap(l => l.clubs).find(c => c.id === clubId);
+      if (cfg) {
+        squad = withStableIds(clubId, generateSyntheticOpponentSquad(cfg));
+        registerClubSquad(clubId, squad);
+      }
+    }
+    return { clubId, clubName: clubNameOf(clubId), xi: pickStartingXI(squad || []) };
+  };
+
+  const resolveUserTeam = (): SimTeam => {
+    const st = get();
+    const byId = new Map(st.club.footballSquad.map(p => [p.id, p]));
+    const lineup = st.club.footballLineup.map(id => byId.get(id)).filter((p): p is Player => !!p);
+    return {
+      clubId: st.club.id,
+      clubName: st.club.name,
+      xi: lineup.length >= 11 ? lineup : pickStartingXI(st.club.footballSquad),
+    };
+  };
+
+  // The live engine fields the opponent as: first GK + first 10 outfielders.
+  const resolveOpponentTeam = (clubId: string, clubName: string): SimTeam => {
+    const squad = getCachedClubSquad(clubId);
+    if (!squad) return resolveAiTeam(clubId);
+    const gk = squad.find(p => p.position === 'GK');
+    const outfield = squad.filter(p => p.position !== 'GK').slice(0, 10);
+    return { clubId, clubName, xi: [gk, ...outfield].filter((p): p is Player => !!p) };
+  };
+
+  // Background-load real squads for the rest of the league (once per session)
+  // so AI clubs keep real names/ids from round to round.
+  const checkedSquadIds = new Set<string>();
+  let squadPrefetchPromise: Promise<void> = Promise.resolve();
+  const prefetchLeagueSquads = () => {
+    const st = get();
+    const queue = st.leagueStandings
+      .map(x => x.clubId)
+      .filter(id => id !== st.club.id && !hasClubSquad(id) && !checkedSquadIds.has(id));
+    if (queue.length === 0) return;
+    queue.forEach(id => checkedSquadIds.add(id));
+    const worker = async () => {
+      while (queue.length > 0) {
+        const id = queue.shift() as string;
+        try {
+          const cached = await fetchClubSquadCache(id);
+          if (cached && cached.players.length > 0) {
+            const name = clubNameOf(id);
+            registerClubSquad(id, withStableIds(id, cached.players.map(p => convertCachedSquadPlayerToGamePlayer(p, name))));
+          }
+        } catch {
+          // fall back to synthetic squad
+        }
+      }
+    };
+    squadPrefetchPromise = Promise.all([worker(), worker(), worker()]).then(() => undefined);
+  };
+
+  const runSimulateMatchday = (matchday: number): RoundSummary | null => {
+    const state = get();
+    const done = new Set(state.simulatedMatchdays);
+    if (done.has(matchday)) {
+      return state.lastRoundSummary?.matchday === matchday ? state.lastRoundSummary : null;
+    }
+
+    const clubIds = state.leagueStandings.map(x => x.clubId);
+    const fixtures = state.leagueFixtures;
+    let standings = state.leagueStandings;
+    let stats = state.tournamentStats;
+
+    // Older saves: user matchdays played before this feature never had the rest
+    // of their round played. Catch those up first (standings/stats only).
+    const catchUp = fixtures
+      .filter(f => f.played && f.matchday < matchday && !done.has(f.matchday))
+      .map(f => f.matchday)
+      .sort((a, b) => a - b);
+
+    let summary: RoundSummary | null = null;
+
+    for (const m of [...catchUp, matchday]) {
+      const isCurrent = m === matchday;
+      const rng = new SeededRandom((Date.now() ^ Math.imul(m + 1, 2654435761)) >>> 0);
+      const results: RoundMatchResult[] = [];
+      const roundDeltas: PlayerMatchDelta[] = [];
+
+      // The user's own game (standings were already updated when it finished).
+      if (isCurrent) {
+        const fx = fixtures.find(f => f.matchday === m);
+        const rec = state.activeMatchRecord;
+        const hasRecord = !!rec && rec.isFinished && rec.matchDay === m;
+        if (hasRecord && rec) {
+          const deltas = deltasFromUserMatch(rec, resolveUserTeam(), resolveOpponentTeam(rec.awayClubId, rec.awayClubName), rng);
+          stats = applyDeltasToStats(stats, deltas);
+          roundDeltas.push(...deltas);
+        }
+        const oppId = hasRecord && rec ? rec.awayClubId : fx?.opponentClubId;
+        const userScore = hasRecord && rec ? rec.homeScore : fx?.homeScore;
+        const oppScore = hasRecord && rec ? rec.awayScore : fx?.awayScore;
+        if (oppId && userScore !== undefined && oppScore !== undefined) {
+          const userHome = fx ? fx.isHome : true;
+          results.push({
+            homeClubId: userHome ? state.club.id : oppId,
+            homeClubName: userHome ? state.club.name : clubNameOf(oppId),
+            awayClubId: userHome ? oppId : state.club.id,
+            awayClubName: userHome ? clubNameOf(oppId) : state.club.name,
+            homeScore: userHome ? userScore : oppScore,
+            awayScore: userHome ? oppScore : userScore,
+            isUserMatch: true,
+          });
+        }
+      }
+
+      // Every other match of the round.
+      for (const [homeId, awayId] of getOtherPairings(clubIds, state.club.id, fixtures, m)) {
+        const out = simulateAiMatch(resolveAiTeam(homeId), resolveAiTeam(awayId), rng);
+        standings = applyResultToStandings(standings, homeId, awayId, out.homeScore, out.awayScore);
+        stats = applyDeltasToStats(stats, out.deltas);
+        roundDeltas.push(...out.deltas);
+        results.push({
+          homeClubId: homeId,
+          homeClubName: clubNameOf(homeId),
+          awayClubId: awayId,
+          awayClubName: clubNameOf(awayId),
+          homeScore: out.homeScore,
+          awayScore: out.awayScore,
+          isUserMatch: false,
+        });
+      }
+
+      done.add(m);
+
+      if (isCurrent) {
+        const topPerformers: RoundPerformer[] = [...roundDeltas]
+          .sort((a, b) => b.rating - a.rating || (b.goals + b.assists) - (a.goals + a.assists))
+          .slice(0, 5)
+          .map(d => ({
+            playerId: d.playerId,
+            name: d.name,
+            clubId: d.clubId,
+            clubName: clubNameOf(d.clubId),
+            position: d.position,
+            rating: d.rating,
+            goals: d.goals,
+            assists: d.assists,
+            yellowCards: d.yellowCards,
+            redCards: d.redCards,
+          }));
+        summary = { matchday: m, results, topPerformers };
+      }
+    }
+
+    const simulatedMatchdays = [...done].sort((a, b) => a - b);
+    set({ leagueStandings: standings, tournamentStats: stats, simulatedMatchdays, lastRoundSummary: summary });
+    saveToStorage({ leagueStandings: standings, tournamentStats: stats, simulatedMatchdays });
+    return summary;
+  };
+
+  // Called when the user's match ends: play the rest of the round, then show the summary.
+  const finishRound = async (matchday: number) => {
+    try {
+      await Promise.race([squadPrefetchPromise, new Promise<void>(resolve => setTimeout(resolve, 2500))]);
+      get().simulateMatchday(matchday);
+    } catch (err) {
+      console.error('Matchday simulation failed:', err);
+    }
+    if (get().lastRoundSummary?.matchday === matchday) {
+      set({ activeTab: 'round_summary' });
     }
   };
 
@@ -296,6 +507,9 @@ export const useGameStore = create<GameState>((set, get) => {
     leagueStandings: initialSave?.leagueStandings || REAL_INITIAL_STANDINGS,
     leagueFixtures: initialSave?.leagueFixtures || [],
     matchHistory: initialSave?.matchHistory || [],
+    tournamentStats: initialSave?.tournamentStats || [],
+    simulatedMatchdays: initialSave?.simulatedMatchdays || [],
+    lastRoundSummary: null,
 
     activeEngine: null,
     activeMatchRecord: null,
@@ -354,8 +568,11 @@ export const useGameStore = create<GameState>((set, get) => {
         club: updatedClub,
         leagueStandings: REAL_INITIAL_STANDINGS,
         matchHistory: [],
+        tournamentStats: [],
+        simulatedMatchdays: [],
+        lastRoundSummary: null,
       });
-      saveToStorage({ club: updatedClub, leagueStandings: REAL_INITIAL_STANDINGS, matchHistory: [] });
+      saveToStorage({ club: updatedClub, leagueStandings: REAL_INITIAL_STANDINGS, matchHistory: [], tournamentStats: [], simulatedMatchdays: [] });
     },
 
     setClubSelectionModalOpen: (open: boolean) => {
@@ -471,6 +688,9 @@ export const useGameStore = create<GameState>((set, get) => {
         leagueStandings: newStandings,
         leagueFixtures: newFixtures,
         matchHistory: [],
+        tournamentStats: [],
+        simulatedMatchdays: [],
+        lastRoundSummary: null,
         hasSelectedInitialClub: true,
         clubSelectionModalOpen: false,
       });
@@ -480,6 +700,8 @@ export const useGameStore = create<GameState>((set, get) => {
         leagueStandings: newStandings,
         leagueFixtures: newFixtures,
         matchHistory: [],
+        tournamentStats: [],
+        simulatedMatchdays: [],
         hasSelectedInitialClub: true,
       });
 
@@ -826,8 +1048,16 @@ export const useGameStore = create<GameState>((set, get) => {
       const state = get();
       let fixtures = state.leagueFixtures;
       if (!fixtures || fixtures.length === 0 || fixtures.every(f => f.played)) {
+        const isSeasonRollover = !!fixtures && fixtures.length > 0;
         fixtures = generateFixturesForLeague(state.club.divisionId, state.club.id);
         set({ leagueFixtures: fixtures });
+        if (isSeasonRollover) {
+          // New season: matchdays restart at 1, so table, stats and the
+          // "already simulated" list must restart with them.
+          const freshStandings = generateStandingsForLeague(state.club.divisionId, state.club.id, state.club.name);
+          set({ leagueStandings: freshStandings, tournamentStats: [], simulatedMatchdays: [], lastRoundSummary: null });
+          saveToStorage({ leagueFixtures: fixtures, leagueStandings: freshStandings, tournamentStats: [], simulatedMatchdays: [] });
+        }
       }
       const nextFixture = fixtures.find(f => !f.played) || fixtures[0];
       const league = REAL_LEAGUES.find(l => l.id === state.club.divisionId);
@@ -847,7 +1077,10 @@ export const useGameStore = create<GameState>((set, get) => {
       if (!opponentSquad && opponentConfig) {
         opponentSquad = generateSyntheticOpponentSquad(opponentConfig);
       }
-      const finalSquad = opponentSquad || REAL_OPPONENT_CLUBS[0].footballSquad;
+      // Stable ids so this opponent's stats stay attached to the same players across rounds/sessions.
+      const finalSquad = withStableIds(nextFixture.opponentClubId, opponentSquad || REAL_OPPONENT_CLUBS[0].footballSquad);
+      registerClubSquad(nextFixture.opponentClubId, finalSquad);
+      prefetchLeagueSquads(); // load the rest of the league's squads in the background
       const oGk = finalSquad.find(p => p.position === 'GK');
       const oOutfield = finalSquad.filter(p => p.position !== 'GK').slice(0, 10);
       const opponentLineup = [oGk, ...oOutfield].filter((p): p is Player => !!p).map(p => p.id);
@@ -1233,6 +1466,9 @@ export const useGameStore = create<GameState>((set, get) => {
           leagueFixtures: updatedFixtures,
           vipPoints: state.vipPoints + (won ? 80 : 35),
         });
+
+        // Play the rest of this matchday, then open the round summary.
+        void finishRound(finalRecord.matchDay);
         return;
       }
 
@@ -1566,7 +1802,12 @@ export const useGameStore = create<GameState>((set, get) => {
         leagueFixtures: updatedFixtures,
         vipPoints: state.vipPoints + (won ? 80 : 35),
       });
+
+      // Play the rest of this matchday, then open the round summary.
+      void finishRound(finalRecord.matchDay);
     },
+
+    simulateMatchday: (matchday) => runSimulateMatchday(matchday),
 
     upgradeVipWithDiamonds: () => {
       const state = get();
@@ -2133,6 +2374,9 @@ export const useGameStore = create<GameState>((set, get) => {
         storyMissions: STORY_CHAPTER_1_MISSIONS,
         leagueStandings: REAL_INITIAL_STANDINGS,
         matchHistory: [],
+        tournamentStats: [],
+        simulatedMatchdays: [],
+        lastRoundSummary: null,
         activeTab: 'dashboard',
         isMatchLive: false,
       });

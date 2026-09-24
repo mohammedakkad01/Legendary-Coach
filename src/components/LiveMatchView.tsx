@@ -51,6 +51,7 @@ export const LiveMatchView: React.FC = () => {
     setPostMatchAnalyst,
     vipPoints,
     setActiveTab,
+    lastRoundSummary,
     language 
   } = useGameStore();
 
@@ -523,6 +524,15 @@ export const LiveMatchView: React.FC = () => {
                 <MessageSquare className="w-4 h-4 text-blue-200" />
                 <span>{isAr ? '🎙️ تقرير الكابتن منصور (رجل المباراة والتحليل الفني)' : '🎙️ Captain Mansoor Report (MVP & Tactical Analysis)'}</span>
               </button>
+
+              {lastRoundSummary && (
+                <button
+                  onClick={() => setActiveTab('round_summary')}
+                  className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-black text-xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>{isAr ? '📋 ملخص الجولة (نتائج الفرق الأخرى ونجوم الجولة)' : '📋 Round Summary (other results & top performers)'}</span>
+                </button>
+              )}
 
               <button
                 onClick={() => startNewMatch()}

@@ -173,6 +173,42 @@
         "lastTrainingDate": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "userId", "realName", "baseOverall", "currentOverall"]
+    },
+    "DuelRoom": {
+      "title": "DuelRoom",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "hostUid": { "type": "string" },
+        "hostClubName": { "type": "string" },
+        "guestUid": { "type": ["string", "null"] },
+        "guestClubName": { "type": ["string", "null"] },
+        "status": { "type": "string", "enum": ["waiting", "active", "finished", "abandoned"] },
+        "round": { "type": "number" },
+        "maxRounds": { "type": "number" },
+        "hostHp": { "type": "number" },
+        "guestHp": { "type": "number" },
+        "hostDraftedPieceIds": { "type": "array", "items": { "type": "string" } },
+        "guestDraftedPieceIds": { "type": "array", "items": { "type": "string" } },
+        "lastRoundResult": { "type": ["object", "null"] },
+        "winner": { "type": ["string", "null"], "enum": ["host", "guest", "draw", null] },
+        "currentRoundDeadline": { "type": ["number", "null"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "hostUid", "hostClubName", "status", "round", "maxRounds", "hostHp", "guestHp", "createdAt", "updatedAt"]
+    },
+    "DuelPlayerOrder": {
+      "title": "DuelPlayerOrder",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "round": { "type": "number" },
+        "pieceId": { "type": "string" },
+        "stance": { "type": "string", "enum": ["attack", "defend", "flank"] },
+        "submittedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "round", "pieceId", "stance", "submittedAt"]
     }
   },
   "firestore": {
@@ -211,6 +247,14 @@
     "/user_saves/{userId}/club/players/{playerId}": {
       "schema": "UserPlayerSave",
       "description": "Layer 2: User personal player clones with dynamic progression"
+    },
+    "/duel_rooms/{roomId}": {
+      "schema": "DuelRoom",
+      "description": "Tactical Battle Maker PvP Realtime Room"
+    },
+    "/duel_rooms/{roomId}/orders/{orderUid}": {
+      "schema": "DuelPlayerOrder",
+      "description": "Secret unrevealed tactical stance and piece selection for duel round"
     }
   }
 }

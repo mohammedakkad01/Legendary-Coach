@@ -92,6 +92,39 @@ service cloud.firestore {
         data.currentOverall is number && data.currentOverall >= 30 && data.currentOverall <= 99;
     }
 
+    // Validation for Tactical Duel PvP Room
+    function isValidDuelRoom(data) {
+      return data.keys().hasAll(['id', 'hostUid', 'hostClubName', 'status', 'round', 'maxRounds', 'hostHp', 'guestHp', 'createdAt', 'updatedAt']) &&
+        data.id is string && data.id.size() <= 64 &&
+        data.hostUid is string && data.hostUid.size() <= 128 &&
+        data.hostClubName is string && data.hostClubName.size() > 0 && data.hostClubName.size() <= 100 &&
+        data.status is string && (data.status == 'waiting' || data.status == 'active' || data.status == 'finished' || data.status == 'abandoned') &&
+        data.round is number && data.round >= 1 && data.round <= 20 &&
+        data.maxRounds is number && data.maxRounds >= 1 && data.maxRounds <= 20 &&
+        data.hostHp is number && data.hostHp >= 0 && data.hostHp <= 100 &&
+        data.guestHp is number && data.guestHp >= 0 && data.guestHp <= 100 &&
+        (!('guestUid' in data) || data.guestUid == null || (data.guestUid is string && data.guestUid.size() <= 128)) &&
+        (!('guestClubName' in data) || data.guestClubName == null || (data.guestClubName is string && data.guestClubName.size() <= 100)) &&
+        (!('winner' in data) || data.winner == null || data.winner == 'host' || data.winner == 'guest' || data.winner == 'draw') &&
+        data.createdAt is string && data.updatedAt is string;
+    }
+
+    // Validation for Tactical Duel Player Order
+    function isValidDuelOrder(data) {
+      return data.keys().hasAll(['uid', 'round', 'pieceId', 'stance', 'submittedAt']) &&
+        data.keys().hasOnly(['uid', 'round', 'pieceId', 'stance', 'submittedAt']) &&
+        data.uid is string && data.uid == request.auth.uid &&
+        data.round is number && data.round >= 1 && data.round <= 20 &&
+        data.pieceId is string && data.pieceId.size() > 0 && data.pieceId.size() <= 64 &&
+        data.stance is string && (data.stance == 'attack' || data.stance == 'defend' || data.stance == 'flank') &&
+        data.submittedAt is string;
+    }
+
+    // Helper: is user an authorized participant of this room
+    function isRoomParticipant(room) {
+      return isSignedIn() && (request.auth.uid == room.hostUid || (room.guestUid != null && request.auth.uid == room.guestUid));
+    }
+
     // User profiles
     match /users/{userId} {
       allow get: if isOwner(userId);
@@ -164,6 +197,77 @@ service cloud.firestore {
           allow update: if isOwner(userId) && isValidId(playerId) && isValidUserPlayerSave(incoming()) && incoming().userId == existing().userId;
           allow delete: if isOwner(userId) && isValidId(playerId);
         }
+      }
+    }
+
+    // ==========================================
+    // LAYER 3: Tactical Battle Maker Realtime PvP Rooms
+    // Path: /duel_rooms/{roomId}
+    // Subcollection: /orders/{orderUid}
+    // Zero-Knowledge / Anti-Cheat Simultaneous Stance Reveal
+    // ==========================================
+    match /duel_rooms/{roomId} {
+      // Allow reading room document if participant or joining (waiting room)
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+
+      // Create room (Host initialization)
+      allow create: if isSignedIn() &&
+        incoming().hostUid == request.auth.uid &&
+        incoming().status == 'waiting' &&
+        incoming().round == 1 &&
+        isValidDuelRoom(incoming());
+
+      // Update room state (Join room, advance rounds, resolve match)
+      allow update: if isSignedIn() &&
+        // Joining empty waiting room as guest
+        ((existing().status == 'waiting' &&
+          existing().guestUid == null &&
+          incoming().guestUid == request.auth.uid &&
+          incoming().status == 'active' &&
+          isValidDuelRoom(incoming())) ||
+        // State updates by registered participants (resolving rounds or leaving)
+        (isRoomParticipant(existing()) &&
+          isValidDuelRoom(incoming())));
+
+      allow delete: if isSignedIn() && existing().hostUid == request.auth.uid;
+
+      // -----------------------------------------------------------------------
+      // SECRET ORDERS SUBCOLLECTION (Zero-Knowledge Stance Concealment)
+      // Path: /duel_rooms/{roomId}/orders/{orderUid}
+      // Anti-Cheat Guarantee:
+      // 1. You can only create/update your OWN order doc (orderUid == request.auth.uid).
+      // 2. You can only read opponent's order AFTER you have submitted your own order for the current round!
+      // -----------------------------------------------------------------------
+      match /orders/{orderUid} {
+        // Player reading an order:
+        // - Always allowed to read their OWN order document.
+        // - Allowed to read OPPONENT's order ONLY IF the requester's own order document exists
+        //   and was submitted for the SAME round (both committed their stance).
+        allow get: if isSignedIn() && (
+          request.auth.uid == orderUid ||
+          (
+            exists(/databases/$(database)/documents/duel_rooms/$(roomId)/orders/$(request.auth.uid)) &&
+            get(/databases/$(database)/documents/duel_rooms/$(roomId)/orders/$(request.auth.uid)).data.round == resource.data.round
+          )
+        );
+
+        // Disallow arbitrary collection listing to prevent leaking opponent choices via query
+        allow list: if false;
+
+        // Player submitting their secret choice
+        allow create: if isSignedIn() &&
+          request.auth.uid == orderUid &&
+          isValidDuelOrder(incoming()) &&
+          incoming().round == get(/databases/$(database)/documents/duel_rooms/$(roomId)).data.round;
+
+        // Player updating their secret choice for the current round
+        allow update: if isSignedIn() &&
+          request.auth.uid == orderUid &&
+          isValidDuelOrder(incoming()) &&
+          incoming().round == get(/databases/$(database)/documents/duel_rooms/$(roomId)).data.round;
+
+        allow delete: if isSignedIn() && request.auth.uid == orderUid;
       }
     }
   }

@@ -169,6 +169,29 @@ class SoundEffectsEngine {
   public playLevelUp() {
     this.playFanfare();
   }
+
+  /** Negative / Error Buzz */
+  public playBuzz() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(140, now);
+    osc.frequency.linearRampToValueAtTime(100, now + 0.18);
+
+    gain.gain.setValueAtTime(0.15 * this.volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.18);
+  }
 }
 
 export const soundEffects = new SoundEffectsEngine();

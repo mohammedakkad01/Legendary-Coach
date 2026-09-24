@@ -25,7 +25,8 @@ import {
   DuelPiece,
   TacticalDuelOrder,
   Fixture,
-  PreMatchData
+  PreMatchData,
+  DuelRoom
 } from '../types/game';
 import { 
   REAL_INITIAL_PLAYER_CLUB, 
@@ -148,6 +149,7 @@ interface GameState {
   startTacticalDuel: (difficulty?: 'novice' | 'tactical') => void;
   selectDuelPieceAndStance: (pieceId: string, stance: TacticalStance) => void;
   submitDuelRoundOrder: () => void;
+  syncPvPRoomToDuelState: (room: DuelRoom, currentUid: string) => void;
   closeTacticalDuel: () => void;
   setTacticalDuelModalOpen: (open: boolean) => void;
   
@@ -2025,6 +2027,66 @@ export const useGameStore = create<GameState>((set, get) => {
     closeTacticalDuel: () => {
       set({
         isTacticalDuelModalOpen: false,
+      });
+    },
+
+    syncPvPRoomToDuelState: (room: DuelRoom, currentUid: string) => {
+      const isHost = room.hostUid === currentUid;
+      const opponentName = isHost 
+        ? (room.guestClubName || 'المدرب الضيف (في الانتظار...)') 
+        : room.hostClubName;
+
+      const playerHp = isHost ? room.hostHp : room.guestHp;
+      const opponentHp = isHost ? room.guestHp : room.hostHp;
+
+      // Extract player's drafted pieces from catalog
+      const playerPieceIds = isHost ? room.hostDraftedPieceIds : room.guestDraftedPieceIds;
+      const draftedPieces = playerPieceIds
+        .map(id => DUEL_PIECES_CATALOG.find(p => p.id === id))
+        .filter(Boolean) as DuelPiece[];
+
+      // Winner mapping
+      let winner: 'player' | 'opponent' | 'draw' | null = null;
+      if (room.winner) {
+        if (room.winner === 'draw') winner = 'draw';
+        else if ((isHost && room.winner === 'host') || (!isHost && room.winner === 'guest')) {
+          winner = 'player';
+        } else {
+          winner = 'opponent';
+        }
+      }
+
+      const existingDuel = get().tacticalDuel;
+      const history = room.lastRoundResult 
+        ? (existingDuel?.history?.some(h => h.round === room.lastRoundResult?.round)
+            ? existingDuel.history
+            : [room.lastRoundResult, ...(existingDuel?.history || [])])
+        : (existingDuel?.history || []);
+
+      const isNewRound = existingDuel?.round !== room.round;
+
+      set({
+        tacticalDuel: {
+          isActive: true,
+          matchId: room.id,
+          opponentName,
+          opponentAvatar: isHost ? '⚔️' : '🛡️',
+          opponentIsBot: false,
+          round: room.round,
+          maxRounds: room.maxRounds,
+          playerHp,
+          opponentHp,
+          draftedPieces: draftedPieces.length > 0 ? draftedPieces : (existingDuel?.draftedPieces || getRandomDuelDraft(4)),
+          selectedPieceId: isNewRound ? (draftedPieces[0]?.id || null) : (existingDuel?.selectedPieceId || draftedPieces[0]?.id || null),
+          selectedStance: isNewRound ? 'attack' : (existingDuel?.selectedStance || 'attack'),
+          isOrderSubmitted: isNewRound ? false : (existingDuel?.isOrderSubmitted || false),
+          isRevealing: false,
+          history,
+          winner,
+          roomId: room.id,
+          pvpRole: isHost ? 'host' : 'guest',
+        },
+        isTacticalDuelModalOpen: true,
       });
     },
 

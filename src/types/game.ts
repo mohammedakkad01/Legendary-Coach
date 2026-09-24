@@ -169,6 +169,12 @@ export interface Club {
   basketballLineup: string[]; // 5 starter player IDs
   basketballBench: string[];  // 7 bench player IDs
   basketballTactics: BasketballTactics;
+
+  // PvP Tactical Duel ELO & Record
+  duelRating?: number; // Starts at 1200
+  duelWins?: number;
+  duelLosses?: number;
+  duelDraws?: number;
 }
 
 export interface MatchEvent {
@@ -455,4 +461,41 @@ export interface TacticalDuelState {
   isRevealing: boolean;
   history: TacticalDuelRoundResult[];
   winner: 'player' | 'opponent' | 'draw' | null;
+  // Realtime PvP extension
+  roomId?: string | null;
+  pvpRole?: 'host' | 'guest' | null;
+  opponentSubmittedOrder?: boolean;
+}
+
+// -------------------------------------------------------------
+// Realtime PvP Duel Room & Multi-player Firestore Schemas
+// -------------------------------------------------------------
+export type DuelRoomStatus = 'waiting' | 'active' | 'finished' | 'abandoned';
+
+export interface DuelRoom {
+  id: string; // Short code e.g. "TC-8492"
+  hostUid: string;
+  hostClubName: string;
+  guestUid: string | null;
+  guestClubName: string | null;
+  status: DuelRoomStatus;
+  round: number;
+  maxRounds: number;
+  hostHp: number;
+  guestHp: number;
+  hostDraftedPieceIds: string[];
+  guestDraftedPieceIds: string[];
+  lastRoundResult: TacticalDuelRoundResult | null;
+  winner: 'host' | 'guest' | 'draw' | null;
+  currentRoundDeadline: number | null; // epoch timestamp in ms for timeout protection
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DuelPlayerOrderDoc {
+  uid: string;
+  round: number;
+  pieceId: string;
+  stance: TacticalStance;
+  submittedAt: string;
 }

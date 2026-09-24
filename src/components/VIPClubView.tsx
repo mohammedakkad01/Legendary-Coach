@@ -92,7 +92,7 @@ export const VIPClubView: React.FC = () => {
       {/* Toast Feedback Notification */}
       {feedbackMessage && (
         <div 
-          className={`p-4 rounded-2xl border text-sm font-bold flex items-center justify-between shadow-xl transition-all animate-bounce ${
+          className={`p-4 rounded-2xl border text-sm font-bold flex items-center justify-between shadow-xl ${
             feedbackMessage.type === 'success' 
               ? 'bg-emerald-950/90 border-emerald-500 text-emerald-200' 
               : 'bg-rose-950/90 border-rose-500 text-rose-200'
@@ -113,8 +113,14 @@ export const VIPClubView: React.FC = () => {
 
       {/* Main VIP Dashboard Header */}
       <div className="relative bg-gradient-to-r from-amber-950/90 via-slate-900 to-yellow-950/90 border border-amber-500/50 rounded-3xl p-6 sm:p-8 shadow-2xl overflow-hidden">
-        <div className="absolute top-0 right-1/4 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-10 w-64 h-64 bg-yellow-500/10 rounded-full blur-2xl pointer-events-none" />
+        {/* Soft glow via gradients (no CSS blur filter: huge blur layers blank/crash mobile GPUs) */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              'radial-gradient(circle at 75% 0%, rgba(245,158,11,0.14), transparent 45%), radial-gradient(circle at 10% 100%, rgba(234,179,8,0.10), transparent 40%)',
+          }}
+        />
 
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="space-y-2">

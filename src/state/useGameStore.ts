@@ -109,8 +109,10 @@ interface GameState {
   lastEnergyUpdate: number;
   vipPoints: number;
   vipClaimedToday: boolean;
+  lastVipClaimDate: string | null;
   checkInStreak: number;
   checkInClaimedToday: boolean;
+  lastCheckInDate: string | null;
 
   // Daily Missions System
   dailyMissions: DailyMission[];
@@ -226,6 +228,11 @@ interface GameState {
 }
 
 export const useGameStore = create<GameState>((set, get) => {
+  // Calendar-day string (YYYY-MM-DD) used to gate "once per day" claims
+  // (VIP daily chest, coach daily check-in) against real day changes
+  // instead of an in-memory flag that resets on every page refresh.
+  const getTodayStr = () => new Date().toISOString().split('T')[0];
+
   // Load saved state if present
   const loadSavedState = () => {
     try {
@@ -248,7 +255,10 @@ export const useGameStore = create<GameState>((set, get) => {
         club: state.club || current.club,
         energy: state.energy !== undefined ? state.energy : current.energy,
         vipPoints: state.vipPoints !== undefined ? state.vipPoints : current.vipPoints,
+        lastVipClaimDate: state.lastVipClaimDate !== undefined ? state.lastVipClaimDate : current.lastVipClaimDate,
         checkInStreak: state.checkInStreak !== undefined ? state.checkInStreak : current.checkInStreak,
+        lastCheckInDate: state.lastCheckInDate !== undefined ? state.lastCheckInDate : current.lastCheckInDate,
+        dailyMissions: state.dailyMissions || current.dailyMissions,
         hasClaimedLoginBonus: state.hasClaimedLoginBonus !== undefined ? state.hasClaimedLoginBonus : current.hasClaimedLoginBonus,
         isGuest: state.isGuest !== undefined ? state.isGuest : current.isGuest,
         hasSelectedInitialClub: state.hasSelectedInitialClub !== undefined ? state.hasSelectedInitialClub : current.hasSelectedInitialClub,
@@ -471,10 +481,12 @@ export const useGameStore = create<GameState>((set, get) => {
     energy: initialSave?.energy || 100,
     lastEnergyUpdate: Date.now(),
     vipPoints: initialSave?.vipPoints || 0, // Starts from ZERO!
-    vipClaimedToday: false,
+    lastVipClaimDate: initialSave?.lastVipClaimDate || null,
+    vipClaimedToday: !!initialSave?.lastVipClaimDate && initialSave.lastVipClaimDate === getTodayStr(),
     claimedVipUpgradeChests: initialSave?.claimedVipUpgradeChests || [1], // Level 1 is claimed initially or claimable
     checkInStreak: initialSave?.checkInStreak || 0, // Starts from ZERO!
-    checkInClaimedToday: false,
+    lastCheckInDate: initialSave?.lastCheckInDate || null,
+    checkInClaimedToday: !!initialSave?.lastCheckInDate && initialSave.lastCheckInDate === getTodayStr(),
 
     dailyMissions: initialSave?.dailyMissions || INITIAL_DAILY_MISSIONS,
     isDailyMissionsModalOpen: false,
@@ -1973,13 +1985,17 @@ export const useGameStore = create<GameState>((set, get) => {
         },
       };
 
+      const todayStr = getTodayStr();
+
       set({
         vipClaimedToday: true,
+        lastVipClaimDate: todayStr,
         club: updatedClub,
       });
 
       saveToStorage({
         club: updatedClub,
+        lastVipClaimDate: todayStr,
       });
 
       return {
@@ -2000,18 +2016,30 @@ export const useGameStore = create<GameState>((set, get) => {
       const newStreak = (state.checkInStreak % 7) + 1;
       const rewardCoins = newStreak * 8000;
       const rewardVip = 30 + newStreak * 15;
+      const todayStr = getTodayStr();
+
+      const updatedClub = {
+        ...state.club,
+        finances: {
+          ...state.club.finances,
+          coins: state.club.finances.coins + rewardCoins,
+        },
+      };
+      const updatedVipPoints = state.vipPoints + rewardVip;
 
       set({
         checkInClaimedToday: true,
+        lastCheckInDate: todayStr,
         checkInStreak: newStreak,
-        vipPoints: state.vipPoints + rewardVip,
-        club: {
-          ...state.club,
-          finances: {
-            ...state.club.finances,
-            coins: state.club.finances.coins + rewardCoins,
-          },
-        },
+        vipPoints: updatedVipPoints,
+        club: updatedClub,
+      });
+
+      saveToStorage({
+        club: updatedClub,
+        vipPoints: updatedVipPoints,
+        checkInStreak: newStreak,
+        lastCheckInDate: todayStr,
       });
     },
 

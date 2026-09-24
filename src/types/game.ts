@@ -368,6 +368,52 @@ export interface LeagueStanding {
   form: ('W' | 'D' | 'L')[];
 }
 
+// -------------------------------------------------------------
+// Tournament (league-wide) player statistics & matchday summaries
+// -------------------------------------------------------------
+// Accumulated across the whole season for EVERY player in the league
+// (not only the user's squad). `matchRatings.length` = appearances.
+export interface PlayerStats {
+  playerId: string;
+  name: string;
+  clubId: string;
+  goals: number;
+  assists: number;
+  yellowCards: number;
+  redCards: number;
+  matchRatings: number[];
+}
+
+export interface RoundMatchResult {
+  homeClubId: string;
+  homeClubName: string;
+  awayClubId: string;
+  awayClubName: string;
+  homeScore: number;
+  awayScore: number;
+  isUserMatch: boolean;
+}
+
+// One player's line for a single matchday (shown in "Top Performers")
+export interface RoundPerformer {
+  playerId: string;
+  name: string;
+  clubId: string;
+  clubName: string;
+  position: PlayerPosition;
+  rating: number;
+  goals: number;
+  assists: number;
+  yellowCards: number;
+  redCards: number;
+}
+
+export interface RoundSummary {
+  matchday: number;
+  results: RoundMatchResult[];
+  topPerformers: RoundPerformer[]; // top 5 by rating
+}
+
 // Daily & Weekly Mission System
 export interface DailyMission {
   id: string;

@@ -25,6 +25,7 @@ import {
   Filter,
   ShieldAlert
 } from 'lucide-react';
+import { countdownLabel, formatFixtureDate } from '../utils/fixtureDate';
 
 export const LeagueCalendarView: React.FC = () => {
   const { 
@@ -207,6 +208,17 @@ export const LeagueCalendarView: React.FC = () => {
                     {fix.isHome ? <Home className="w-3.5 h-3.5" /> : <Plane className="w-3.5 h-3.5" />}
                     <span>{fix.isHome ? (isAr ? 'على أرضك' : 'Home') : (isAr ? 'خارج أرضك' : 'Away')}</span>
                   </span>
+                </div>
+
+                {/* Real calendar date */}
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 -mt-1 mb-1">
+                  <span className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-sky-400" />
+                    <span>{formatFixtureDate(fix.date, isAr)}</span>
+                  </span>
+                  {!fix.played && (
+                    <span className={isNext ? 'text-emerald-400' : 'text-slate-500'}>{countdownLabel(fix.date, isAr)}</span>
+                  )}
                 </div>
 
                 {/* Match Opponent & Club Clash Info */}

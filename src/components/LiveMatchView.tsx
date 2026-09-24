@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { generatePostMatchCharacter } from '../data/matchAnalystData';
 import { VIP_LEVELS } from '../data/vipData';
+import { NextMatchCard } from './NextMatchCard';
 
 export const LiveMatchView: React.FC = () => {
   const { 
@@ -86,31 +87,7 @@ export const LiveMatchView: React.FC = () => {
   }, [activeMatchRecord?.events.length]);
 
   if (!activeMatchRecord && !isMatchLive) {
-    return (
-      <div className="max-w-4xl mx-auto p-6 text-center space-y-6">
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 space-y-4 shadow-2xl">
-          <div className="w-16 h-16 rounded-2xl bg-sky-500/20 text-sky-400 mx-auto flex items-center justify-center text-3xl">
-            ⚽
-          </div>
-          <h2 className="text-2xl font-black font-heading text-white">
-            {isAr ? 'لا توجد مباراة جارية حالياً' : 'No Active Match Currently'}
-          </h2>
-          <p className="text-slate-400 text-sm max-w-md mx-auto">
-            {isAr ? 'الفريق جاهز في غرفة الملابس وينتظر صافرة البداية! انطلق لخوض مباراتك الرسمية في دوري التحدي.' : 'The squad is geared up in the locker room. Kick off your next competitive league clash!'}
-          </p>
-          <button
-            id="btn_start_match_main"
-            disabled={isLoadingMatch}
-            onClick={() => startNewMatch()}
-            className="px-8 py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-slate-950 font-black text-base shadow-xl shadow-emerald-500/30 cursor-pointer transition-all"
-          >
-            {isLoadingMatch 
-              ? (isAr ? 'جاري تحضير المعاينة التكتيكية...' : 'Preparing Match Preview...') 
-              : (isAr ? 'صافرة البداية — معاينة وخوض المباراة' : 'Kick Off — Preview & Play Match')}
-          </button>
-        </div>
-      </div>
-    );
+    return <NextMatchCard />;
   }
 
   const record = activeMatchRecord!;

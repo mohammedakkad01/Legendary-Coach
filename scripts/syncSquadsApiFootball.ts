@@ -24,7 +24,7 @@ const SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT;
 const MAX_REQUESTS = Number(process.env.MAX_REQUESTS || 85);
 const REFRESH_DAYS = Number(process.env.REFRESH_DAYS || 30);
 const BASE = 'https://v3.football.api-sports.io';
-const DELAY_MS = 6500; // المجاني: 10 طلبات/دقيقة
+const DELAY_MS = 8000; // المجاني: 10 طلبات/دقيقة — نستخدم ~7 فقط كهامش أمان (بعد حادثة الإيقاف)
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 // أولوية المعالجة: الدوريات الكبرى أولاً
@@ -68,6 +68,7 @@ async function main() {
   console.log(`clubs total: ${all.length} | need squad: ${pending.length} | budget: ${MAX_REQUESTS} requests`);
 
   let used = 0, ok = 0, remaining: number | null = null;
+  let fatal = '';
   const failed: string[] = [];
   const perLeague: Record<string, number> = {};
 
@@ -82,7 +83,16 @@ async function main() {
       if (res.status === 429) { console.warn('HTTP 429 — quota reached, stopping.'); break; }
       const body: any = await res.json().catch(() => ({}));
       const errs = body.errors && (Array.isArray(body.errors) ? body.errors : Object.values(body.errors));
-      if (errs && errs.length) { console.warn(`  [err] ${club.nameEn}: ${JSON.stringify(body.errors)}`); failed.push(club.nameEn); continue; }
+      if (errs && errs.length) {
+        const msg = JSON.stringify(body.errors);
+        // حساب موقوف / مفتاح خاطئ / صلاحية: أوقف كل الطلبات فوراً (لا تكمل الضغط على الخدمة)
+        if (/suspend|access|token|key|subscription/i.test(msg) || res.status === 401 || res.status === 403) {
+          console.error(`\n⛔ توقف فوري — الخدمة رفضت الحساب/المفتاح: ${msg}`);
+          fatal = msg;
+          break;
+        }
+        console.warn(`  [err] ${club.nameEn}: ${msg}`); failed.push(club.nameEn); continue;
+      }
       const raw = body.response?.[0]?.players || [];
       if (raw.length === 0) { console.warn(`  [empty] ${club.nameEn} (team ${club.apiTeamId})`); failed.push(`${club.nameEn} (empty)`); continue; }
 
@@ -103,6 +113,7 @@ async function main() {
   }
 
   const left = pending.length - ok - failed.length;
+  if (fatal) console.error(`تم إيقاف التشغيل بسبب: ${fatal}`);
   console.log('\n=========== SUMMARY ===========');
   console.log(`saved this run: ${ok} | failed: ${failed.length} | still pending: ${Math.max(0, left)} | requests used: ${used} | remaining today: ${remaining ?? '?'}`);
   console.log('per league:', JSON.stringify(perLeague));
@@ -110,6 +121,7 @@ async function main() {
   if (left > 0) console.log('⏭️  تبقّت أندية — سيكمل التشغيل التالي (بعد تصفير الحصة اليومية 00:00 UTC) تلقائياً.');
 
   const id = `squad_log_${Date.now()}`;
-  await db.collection('sync_logs').doc(id).set({ id, timestamp: new Date().toISOString(), source: 'api-football-squads', requestsUsed: used, saved: ok, failed, pending: Math.max(0, left), status: failed.length ? 'partial' : 'success' });
+  await db.collection('sync_logs').doc(id).set({ id, timestamp: new Date().toISOString(), source: 'api-football-squads', requestsUsed: used, saved: ok, failed, pending: Math.max(0, left), status: fatal ? 'aborted' : failed.length ? 'partial' : 'success', fatal });
+  if (fatal) process.exit(1);
 }
 main().catch(e => { console.error('Squad sync failed:', e); process.exit(1); });

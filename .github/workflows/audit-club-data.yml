@@ -1,0 +1,19 @@
+name: Audit Club Data
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-save --legacy-peer-deps tsx
+      - name: Audit (with badge URL checks)
+        env:
+          CHECK_URLS: '1'
+        run: npx tsx scripts/auditClubData.ts

@@ -238,6 +238,21 @@ export interface MatchRecord {
   date: string;
 }
 
+// A single scheduled league match (the season calendar).
+// Generated once per league via generateFixturesForLeague() in realLeaguesData.ts
+// and consumed in order by startNewMatch() so the opponent always follows the
+// real fixture list instead of a random/fixed team.
+export interface Fixture {
+  matchday: number;
+  opponentClubId: string;
+  opponentClubName: string;
+  opponentBadge: string;
+  isHome: boolean;
+  played: boolean;
+  homeScore?: number;
+  awayScore?: number;
+}
+
 export interface DialogueConsequence {
   boardTrustChange?: number;
   fanMoodChange?: number;

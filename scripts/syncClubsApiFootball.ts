@@ -22,7 +22,7 @@ const DRY_RUN = process.env.DRY_RUN === '1';
 const SEASON = process.env.SEASON || '2024';
 const SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT;
 const BASE = 'https://v3.football.api-sports.io';
-const DELAY_MS = 6500; // المجاني: 10 طلبات/دقيقة
+const DELAY_MS = 8000; // المجاني: 10 طلبات/دقيقة — نستخدم ~7 فقط كهامش أمان (بعد حادثة الإيقاف)
 
 interface LeagueCfg {
   key: string; afId: number; name: string; nameEn: string; country: string;

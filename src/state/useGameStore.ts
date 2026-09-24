@@ -23,7 +23,8 @@ import {
   TacticalDuelState,
   TacticalStance,
   DuelPiece,
-  TacticalDuelOrder
+  TacticalDuelOrder,
+  Fixture
 } from '../types/game';
 import { 
   REAL_INITIAL_PLAYER_CLUB, 
@@ -31,7 +32,9 @@ import {
   REAL_INITIAL_STANDINGS, 
   REAL_INITIAL_SCOUT_MARKET 
 } from '../data/realFootballData';
-import { RealClubConfig, generateStandingsForLeague } from '../data/realLeaguesData';
+import { RealClubConfig, REAL_LEAGUES, generateStandingsForLeague, generateFixturesForLeague, generateSyntheticOpponentSquad } from '../data/realLeaguesData';
+import { fetchClubSquadCache } from '../services/realFootballDataService';
+import { convertCachedSquadPlayerToGamePlayer } from '../services/footballApi';
 import { STORY_CHAPTER_1_MISSIONS } from '../data/storyChapter1';
 import { VIP_LEVELS } from '../data/vipData';
 import { INITIAL_DAILY_MISSIONS } from '../data/dailyMissionsData';
@@ -103,6 +106,7 @@ interface GameState {
 
   // League & Competitions
   leagueStandings: LeagueStanding[];
+  leagueFixtures: Fixture[]; // full season calendar for the player's league — consumed in order by startNewMatch()
   matchHistory: MatchRecord[];
 
   // Live Match Simulation
@@ -163,7 +167,8 @@ interface GameState {
   selectMission: (id: number | null) => void;
 
   // Match Operations
-  startNewMatch: (opponentClubId?: string) => void;
+  startNewMatch: () => Promise<void>;
+  isLoadingMatch: boolean;
   stepMatchMinute: () => void;
   toggleMatchPause: () => void;
   setMatchSpeed: (speed: number) => void;
@@ -211,6 +216,7 @@ export const useGameStore = create<GameState>((set, get) => {
         isGuest: state.isGuest !== undefined ? state.isGuest : current.isGuest,
         hasSelectedInitialClub: state.hasSelectedInitialClub !== undefined ? state.hasSelectedInitialClub : current.hasSelectedInitialClub,
         leagueStandings: state.leagueStandings || current.leagueStandings,
+        leagueFixtures: state.leagueFixtures || current.leagueFixtures,
         matchHistory: state.matchHistory || current.matchHistory,
         storyMissions: state.storyMissions || current.storyMissions,
         scoutMarket: state.scoutMarket || current.scoutMarket,
@@ -276,12 +282,14 @@ export const useGameStore = create<GameState>((set, get) => {
     selectedMissionId: null,
 
     leagueStandings: initialSave?.leagueStandings || REAL_INITIAL_STANDINGS,
+    leagueFixtures: initialSave?.leagueFixtures || [],
     matchHistory: initialSave?.matchHistory || [],
 
     activeEngine: null,
     activeMatchRecord: null,
     isMatchLive: false,
     isMatchPaused: false,
+    isLoadingMatch: false,
     matchSpeed: 1,
     currentMatchMinute: 0,
     pendingInteractiveEvent: null,
@@ -427,11 +435,26 @@ export const useGameStore = create<GameState>((set, get) => {
             }))
       };
 
+      // Bug fix: footballLineup used to stay as the 11 hard-coded 'rp_*' ids
+      // from REAL_INITIAL_PLAYER_CLUB even when a real synced squad (with its
+      // own 'squad_*' ids) was loaded above, so the lineup->squad lookup in
+      // the match engine silently matched nothing. Rebuild it from whatever
+      // squad the club actually has: first goalkeeper + first 10 outfielders.
+      const gk = updatedClub.footballSquad.find(p => p.position === 'GK');
+      const outfield = updatedClub.footballSquad.filter(p => p.position !== 'GK').slice(0, 10);
+      updatedClub.footballLineup = [gk, ...outfield].filter((p): p is Player => !!p).map(p => p.id);
+      updatedClub.footballBench = updatedClub.footballSquad
+        .filter(p => !updatedClub.footballLineup.includes(p.id))
+        .slice(0, 4)
+        .map(p => p.id);
+
       const newStandings = generateStandingsForLeague(clubConfig.leagueId, clubConfig.id, clubConfig.name);
+      const newFixtures = generateFixturesForLeague(clubConfig.leagueId, clubConfig.id);
 
       set({
         club: updatedClub,
         leagueStandings: newStandings,
+        leagueFixtures: newFixtures,
         matchHistory: [],
         hasSelectedInitialClub: true,
         clubSelectionModalOpen: false,
@@ -440,6 +463,7 @@ export const useGameStore = create<GameState>((set, get) => {
       saveToStorage({
         club: updatedClub,
         leagueStandings: newStandings,
+        leagueFixtures: newFixtures,
         matchHistory: [],
         hasSelectedInitialClub: true,
       });
@@ -783,10 +807,60 @@ export const useGameStore = create<GameState>((set, get) => {
       });
     },
 
-    startNewMatch: (opponentClubId) => {
+    startNewMatch: async () => {
       const state = get();
-      const opponent = REAL_OPPONENT_CLUBS.find(c => c.id === opponentClubId) || REAL_OPPONENT_CLUBS[0];
-      
+
+      // Pick the next unplayed fixture from this season's real calendar
+      // instead of always the same hard-coded team. If the season is over
+      // (every fixture played), start a fresh season against the same
+      // league's clubs rather than falling back to the old static list.
+      let fixtures = state.leagueFixtures;
+      if (!fixtures || fixtures.length === 0 || fixtures.every(f => f.played)) {
+        fixtures = generateFixturesForLeague(state.club.divisionId, state.club.id);
+        set({ leagueFixtures: fixtures });
+      }
+      const nextFixture = fixtures.find(f => !f.played) || fixtures[0];
+
+      const league = REAL_LEAGUES.find(l => l.id === state.club.divisionId);
+      const opponentConfig = league?.clubs.find(c => c.id === nextFixture.opponentClubId);
+
+      set({ isLoadingMatch: true });
+
+      // Prefer the opponent's real, pre-synced squad (Firestore squads_cache,
+      // written ahead of time by scripts/syncSquadsData.ts) so real clubs use
+      // their real players. Falls back to a distinct generated squad (scaled
+      // to the club's starRating) instead of literally cloning the player's
+      // own squad, which is what REAL_OPPONENT_CLUBS did for every opponent.
+      let opponentSquad: Player[] | null = null;
+      try {
+        const cached = await fetchClubSquadCache(nextFixture.opponentClubId);
+        if (cached && cached.players.length > 0) {
+          opponentSquad = cached.players.map(p => convertCachedSquadPlayerToGamePlayer(p, nextFixture.opponentClubName));
+        }
+      } catch (e) {
+        console.warn('Could not fetch opponent squad cache, using generated squad:', e);
+      }
+      if (!opponentSquad && opponentConfig) {
+        opponentSquad = generateSyntheticOpponentSquad(opponentConfig);
+      }
+      const finalSquad = opponentSquad || REAL_OPPONENT_CLUBS[0].footballSquad;
+      const oGk = finalSquad.find(p => p.position === 'GK');
+      const oOutfield = finalSquad.filter(p => p.position !== 'GK').slice(0, 10);
+      const opponentLineup = [oGk, ...oOutfield].filter((p): p is Player => !!p).map(p => p.id);
+
+      const opponent: Club = {
+        ...REAL_INITIAL_PLAYER_CLUB,
+        id: nextFixture.opponentClubId,
+        name: nextFixture.opponentClubName,
+        nameEn: opponentConfig?.nameEn || nextFixture.opponentClubName,
+        city: opponentConfig ? `${opponentConfig.city}، ${opponentConfig.country}` : '',
+        colors: opponentConfig?.colors || REAL_INITIAL_PLAYER_CLUB.colors,
+        logoUrl: nextFixture.opponentBadge,
+        footballSquad: finalSquad,
+        footballLineup: opponentLineup,
+      };
+
+      set({ isLoadingMatch: false });
       soundEffects.playWhistle(false);
 
       if (state.currentSport === 'football') {
@@ -844,8 +918,8 @@ export const useGameStore = create<GameState>((set, get) => {
               awayXg: 0,
             },
             isFinished: false,
-            competition: 'دوري التحدي للدرجة الثانية',
-            matchDay: state.matchHistory.length + 1,
+            competition: opponentConfig?.leagueNameEn ? (league?.name || 'الدوري') : 'دوري التحدي للدرجة الثانية',
+            matchDay: nextFixture.matchday,
             date: new Date().toISOString().split('T')[0],
           },
         });
@@ -918,8 +992,37 @@ export const useGameStore = create<GameState>((set, get) => {
               form: [(won ? 'W' : (drawn ? 'D' : 'L')) as ('W'|'D'|'L'), ...s.form.slice(0, 4)],
             };
           }
+          // Also update the opponent's own row, so the table reflects this
+          // result on both sides instead of only ever moving the player's row.
+          if (s.clubId === state.activeMatchRecord?.awayClubId) {
+            const oppWon = !won && !drawn;
+            const oppDrawn = drawn;
+            const oppPts = oppWon ? 3 : (oppDrawn ? 1 : 0);
+            return {
+              ...s,
+              played: s.played + 1,
+              won: s.won + (oppWon ? 1 : 0),
+              drawn: s.drawn + (oppDrawn ? 1 : 0),
+              lost: s.lost + (won ? 1 : 0),
+              goalsFor: s.goalsFor + res.awayScore,
+              goalsAgainst: s.goalsAgainst + res.homeScore,
+              goalDifference: s.goalDifference + (res.awayScore - res.homeScore),
+              points: s.points + oppPts,
+              form: [(oppWon ? 'W' : (oppDrawn ? 'D' : 'L')) as ('W'|'D'|'L'), ...s.form.slice(0, 4)],
+            };
+          }
           return s;
         });
+
+        // Mark this fixture as played on the season calendar with its final
+        // score, so startNewMatch() moves on to the next real opponent
+        // instead of replaying the same one.
+        const finishedMatchday = state.activeMatchRecord?.matchDay;
+        const updatedFixtures = state.leagueFixtures.map(f =>
+          f.matchday === finishedMatchday && f.opponentClubId === state.activeMatchRecord?.awayClubId
+            ? { ...f, played: true, homeScore: res.homeScore, awayScore: res.awayScore }
+            : f
+        );
 
         const finalRecord: MatchRecord = {
           id: `match_${Date.now()}`,
@@ -934,8 +1037,8 @@ export const useGameStore = create<GameState>((set, get) => {
           events: res.events,
           stats: res.stats,
           isFinished: true,
-          competition: 'دوري أبطال الأساطير',
-          matchDay: state.matchHistory.length + 1,
+          competition: state.activeMatchRecord?.competition || 'الدوري',
+          matchDay: state.activeMatchRecord?.matchDay || state.matchHistory.length + 1,
           date: new Date().toISOString().split('T')[0],
         };
 
@@ -1007,6 +1110,7 @@ export const useGameStore = create<GameState>((set, get) => {
           activeMatchRecord: finalRecord,
           matchHistory: [finalRecord, ...state.matchHistory],
           leagueStandings: updatedStandings,
+          leagueFixtures: updatedFixtures,
           vipPoints: state.vipPoints + (won ? 80 : 35),
           dailyMissions: updatedMissions,
           postMatchAnalyst: analystFeedback,
@@ -1016,6 +1120,7 @@ export const useGameStore = create<GameState>((set, get) => {
           club: updatedClub,
           dailyMissions: updatedMissions,
           leagueStandings: updatedStandings,
+          leagueFixtures: updatedFixtures,
           vipPoints: state.vipPoints + (won ? 80 : 35),
         });
         return;

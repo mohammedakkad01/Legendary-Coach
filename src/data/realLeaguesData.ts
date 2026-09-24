@@ -8,8 +8,9 @@
  * Challenger / Mid-tier clubs are Free (0 💎).
  */
 
-import { Club, LeagueStanding } from '../types/game';
+import { Club, LeagueStanding, Fixture, Player, PlayerPosition, PlayerRarity } from '../types/game';
 import { REAL_INITIAL_PLAYER_CLUB } from './realFootballData';
+import { SeededRandom } from '../engine/prng';
 
 // Shape written by scripts/syncFootballData.ts into Firestore's clubs_cache/{club_<idTeam>}
 // (source: TheSportsDB — no numeric-ID mapping needed, it already uses our own league keys)
@@ -30,7 +31,8 @@ export interface CachedClubDoc {
 const CLUB_NAME_STOPWORDS = new Set(['fc', 'sc', 'cf', 'afc', 'cd', 'club', 'de', 'bc', 'ssc', 'fk']);
 const CLUB_NAME_ALIASES: Record<string, string> = {
   bayernmunchen: 'bayernmunich',
-  rajacasablanca: 'rajaclubathletic',
+  rajacasablanca: 'rajaathletic',   // Raja Casablanca (API) = Raja Club Athletic (curated)
+  albaten: 'albatin',               // Al Baten (API) = Al-Batin FC (curated)
   internazionale: 'intermilan',
   milan: 'acmilan',
   alhazm: 'alhazem',
@@ -387,7 +389,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         leagueId: 'saudi_pro_league',
         leagueName: 'دوري روشن السعودي للمحترفين',
         leagueNameEn: 'Roshn Saudi League',
-        badge: 'https://r2.thesportsdb.com/images/media/team/badge/5trzvq1660439102.png',
+        badge: '', // ⚠️ رابط مُختلَق (نفس معرّف شعار الدوري) — أُزيل حتى نجلب الشعار الحقيقي
         stadiumName: 'Kingdom Arena',
         city: 'الرياض',
         isTopTier: true,
@@ -1024,7 +1026,7 @@ export const REAL_LEAGUES: RealLeague[] = [
         leagueId: 'egyptian_league',
         leagueName: 'الدوري المصري الممتاز',
         leagueNameEn: 'Egyptian Premier League',
-        badge: 'https://r2.thesportsdb.com/images/media/team/badge/3rkv511676916584.png',
+        badge: '', // ⚠️ رابط مُختلَق (نفس معرّف شعار الدوري) — أُزيل حتى نجلب الشعار الحقيقي
         stadiumName: 'Cairo International Stadium',
         city: 'القاهرة',
         isTopTier: true,
@@ -1737,4 +1739,139 @@ export function generateStandingsForLeague(leagueId: string, playerClubId: strin
   });
 
   return standings;
+}
+
+/**
+ * Generate the full season calendar for a league: every other real club in
+ * that league, played once at home and once away (a proper round-robin),
+ * in a deterministic (seeded) order so the schedule is stable for a given
+ * club/league pair instead of re-shuffling on every reload.
+ *
+ * This replaces the old behaviour where every match was played against a
+ * single hard-coded team (REAL_OPPONENT_CLUBS[0]) — startNewMatch() should
+ * now always draw the opponent from the next unplayed Fixture here.
+ */
+export function generateFixturesForLeague(leagueId: string, playerClubId: string): Fixture[] {
+  const league = REAL_LEAGUES.find(l => l.id === leagueId) || REAL_LEAGUES[0];
+  const opponents = league.clubs.filter(c => c.id !== playerClubId);
+
+  const rng = new SeededRandom(hashStringToSeed(`${leagueId}_${playerClubId}`));
+  const shuffled = [...opponents];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = rng.nextRange(0, i);
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  const fixtures: Fixture[] = [];
+  let matchday = 1;
+  // First round: alternate home/away so it isn't "all home games then all away"
+  shuffled.forEach((c, idx) => {
+    fixtures.push({
+      matchday: matchday++,
+      opponentClubId: c.id,
+      opponentClubName: c.name,
+      opponentBadge: c.badge,
+      isHome: idx % 2 === 0,
+      played: false,
+    });
+  });
+  // Second round: reverse fixture, opposite venue
+  [...shuffled].reverse().forEach((c, idx) => {
+    fixtures.push({
+      matchday: matchday++,
+      opponentClubId: c.id,
+      opponentClubName: c.name,
+      opponentBadge: c.badge,
+      isHome: idx % 2 !== 0,
+      played: false,
+    });
+  });
+
+  return fixtures;
+}
+
+function hashStringToSeed(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+// ---- Synthetic opponent squads (fallback when squads_cache has no real, ----
+// ---- API-synced roster yet for this club) --------------------------------
+// Every previous "opponent" club literally spread REAL_INITIAL_PLAYER_CLUB,
+// so all of them played with the exact same 15 named players as the user's
+// own club (see src/data/realFootballData.ts::REAL_OPPONENT_CLUBS). This
+// generates a distinct, deterministic (seeded by club id) squad instead,
+// scaled around the club's own starRating, so opponents are no longer
+// clones of the player's squad. It is a stand-in only — real player names
+// still require a synced squads_cache entry (scripts/syncSquadsData.ts),
+// which needs the API-Football sync to resume.
+const GENERIC_FIRST_NAMES = ['كريم', 'ياسين', 'عمر', 'بلال', 'حمزة', 'إلياس', 'طارق', 'زياد', 'أنس', 'رامي', 'سامي', 'وائل', 'فادي', 'نبيل', 'مراد'];
+const GENERIC_LAST_NAMES = ['الشمري', 'بن يوسف', 'الحمداني', 'دياباتي', 'كوليبالي', 'فيريرا', 'موراليس', 'بيلتران', 'ماركوفيتش', 'أوزيل', 'صالح', 'دهان', 'الغامدي', 'بوتشيتي', 'راشفورد'];
+const SQUAD_TEMPLATE: { pos: PlayerPosition; isStarter: boolean }[] = [
+  { pos: 'GK', isStarter: true },
+  { pos: 'CB', isStarter: true }, { pos: 'CB', isStarter: true }, { pos: 'LB', isStarter: true }, { pos: 'RB', isStarter: true },
+  { pos: 'CDM', isStarter: true }, { pos: 'CM', isStarter: true }, { pos: 'CAM', isStarter: true },
+  { pos: 'LW', isStarter: true }, { pos: 'RW', isStarter: true }, { pos: 'ST', isStarter: true },
+  { pos: 'GK', isStarter: false },
+  { pos: 'CB', isStarter: false }, { pos: 'CM', isStarter: false }, { pos: 'ST', isStarter: false },
+];
+
+export function generateSyntheticOpponentSquad(clubConfig: RealClubConfig): Player[] {
+  const rng = new SeededRandom(hashStringToSeed(clubConfig.id));
+  // starRating (3.5–5.0) -> base overall (~68–88), so top-tier clubs field stronger squads.
+  const baseOverall = Math.round(58 + (clubConfig.starRating / 5) * 30);
+
+  return SQUAD_TEMPLATE.map((slot, idx) => {
+    const variance = rng.nextRange(-4, 5);
+    const overall = Math.max(55, Math.min(90, baseOverall + variance - (slot.isStarter ? 0 : 6)));
+    const potential = Math.min(94, overall + rng.nextRange(0, 6));
+    const rarity: PlayerRarity = overall >= 85 ? 'legend' : overall >= 78 ? 'rare' : overall >= 70 ? 'prospect' : 'standard';
+    const first = rng.pick(GENERIC_FIRST_NAMES);
+    const last = rng.pick(GENERIC_LAST_NAMES);
+    return {
+      id: `${clubConfig.id}_p${idx + 1}`,
+      sport: 'football',
+      name: `${first} ${last}`,
+      nameEn: `${first} ${last}`,
+      age: rng.nextRange(19, 33),
+      nationality: clubConfig.country,
+      nationalityFlag: '🌍',
+      position: slot.pos,
+      secondaryPositions: [],
+      overall,
+      potential,
+      attributes: {
+        pace: slot.pos === 'ST' || slot.pos === 'LW' || slot.pos === 'RW' ? overall : overall - 12,
+        shooting: slot.pos === 'ST' ? overall : overall - 18,
+        passing: slot.pos === 'CM' || slot.pos === 'CAM' ? overall : overall - 10,
+        dribbling: slot.pos === 'LW' || slot.pos === 'RW' || slot.pos === 'CAM' ? overall : overall - 14,
+        defending: slot.pos === 'CB' || slot.pos === 'CDM' || slot.pos === 'LB' || slot.pos === 'RB' ? overall : overall - 30,
+        physical: overall - 8,
+        goalkeeping: slot.pos === 'GK' ? overall : 10,
+      },
+      rarity,
+      personality: 'professional',
+      traits: [],
+      morale: 80,
+      form: rng.nextRange(5, 8),
+      stamina: 95,
+      fatigue: 0,
+      injuredWeeks: 0,
+      suspendedMatches: 0,
+      contractYears: 2,
+      wage: Math.round(overall * 40),
+      marketValue: Math.round(overall * overall * 12000),
+      photoUrl: undefined,
+      realTeam: clubConfig.nameEn,
+      matchesPlayed: 0,
+      goalsOrPoints: 0,
+      assists: 0,
+      cleanSheetsOrRebounds: 0,
+      averageRating: 6.5,
+    };
+  });
 }

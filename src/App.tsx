@@ -19,6 +19,7 @@ import { TrainingAcademyView } from './components/TrainingAcademyView';
 import { TransfersMarketView } from './components/TransfersMarketView';
 import { ClubFacilitiesView } from './components/ClubFacilitiesView';
 import { LeagueTableView } from './components/LeagueTableView';
+import { LeagueCalendarView } from './components/LeagueCalendarView';
 import { VIPClubView } from './components/VIPClubView';
 import { DataPackEditorView } from './components/DataPackEditorView';
 import { FootballApiView } from './components/FootballApiView';
@@ -28,9 +29,10 @@ import { InitialClubSelectModal } from './components/InitialClubSelectModal';
 import { DailyMissionsModal } from './components/DailyMissionsModal';
 import { MatchResultsCharacterModal } from './components/MatchResultsCharacterModal';
 import { TacticalDuelModal } from './components/TacticalDuelModal';
+import { PreMatchView } from './components/PreMatchView';
 
 function MainAppLayout() {
-  const { activeTab, language } = useGameStore();
+  const { activeTab, language, preMatchModalOpen } = useGameStore();
   const { authModalOpen, setAuthModalOpen, user, loading } = useFirebase();
   const isAr = language === 'ar';
 
@@ -72,6 +74,8 @@ function MainAppLayout() {
         return <ClubFacilitiesView />;
       case 'league':
         return <LeagueTableView />;
+      case 'calendar':
+        return <LeagueCalendarView />;
       case 'vip':
         return <VIPClubView />;
       case 'editor':
@@ -111,6 +115,9 @@ function MainAppLayout() {
 
       {/* Simultaneous Reveal Tactical Duel (صانع المعارك) */}
       <TacticalDuelModal />
+
+      {/* Pre-Match Tactical Preview (معاينة ما قبل صافرة البداية) */}
+      {preMatchModalOpen && <PreMatchView />}
 
       {/* Footer */}
       <footer className="bg-slate-950/90 border-t border-slate-900 py-4 px-4 text-center text-xs text-slate-500">

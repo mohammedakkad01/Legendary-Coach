@@ -24,7 +24,8 @@ import {
   TacticalStance,
   DuelPiece,
   TacticalDuelOrder,
-  Fixture
+  Fixture,
+  PreMatchData
 } from '../types/game';
 import { 
   REAL_INITIAL_PLAYER_CLUB, 
@@ -62,6 +63,7 @@ export type GameTab =
   | 'transfers' 
   | 'club' 
   | 'league' 
+  | 'calendar'
   | 'vip' 
   | 'editor'
   | 'scout'
@@ -114,7 +116,11 @@ interface GameState {
   activeMatchRecord: MatchRecord | null;
   isMatchLive: boolean;
   isMatchPaused: boolean;
+  isLoadingMatch: boolean;
+  preMatchPreview: PreMatchData | null;
+  preMatchModalOpen: boolean;
   matchSpeed: number; // 1, 2, 4
+  unlockedSpeed2x: boolean; // Purchased via Coins or Diamonds
   currentMatchMinute: number;
   pendingInteractiveEvent: MatchEvent | null;
 
@@ -167,11 +173,14 @@ interface GameState {
   selectMission: (id: number | null) => void;
 
   // Match Operations
+  openPreMatchPreview: () => Promise<void>;
+  closePreMatchPreview: () => void;
   startNewMatch: () => Promise<void>;
-  isLoadingMatch: boolean;
+  confirmStartMatch: () => void;
   stepMatchMinute: () => void;
   toggleMatchPause: () => void;
   setMatchSpeed: (speed: number) => void;
+  unlockMatchSpeed2x: (currency: 'coins' | 'diamonds') => { success: boolean; message: string };
   submitInteractiveDecision: (optionId: string) => void;
   instantSimulateMatch: () => void;
 
@@ -221,6 +230,7 @@ export const useGameStore = create<GameState>((set, get) => {
         storyMissions: state.storyMissions || current.storyMissions,
         scoutMarket: state.scoutMarket || current.scoutMarket,
         claimedVipUpgradeChests: state.claimedVipUpgradeChests || current.claimedVipUpgradeChests,
+        unlockedSpeed2x: state.unlockedSpeed2x !== undefined ? state.unlockedSpeed2x : current.unlockedSpeed2x,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch {
@@ -290,7 +300,10 @@ export const useGameStore = create<GameState>((set, get) => {
     isMatchLive: false,
     isMatchPaused: false,
     isLoadingMatch: false,
+    preMatchPreview: null,
+    preMatchModalOpen: false,
     matchSpeed: 1,
+    unlockedSpeed2x: initialSave?.unlockedSpeed2x ?? false,
     currentMatchMinute: 0,
     pendingInteractiveEvent: null,
 
@@ -807,30 +820,19 @@ export const useGameStore = create<GameState>((set, get) => {
       });
     },
 
-    startNewMatch: async () => {
+    openPreMatchPreview: async () => {
       const state = get();
-
-      // Pick the next unplayed fixture from this season's real calendar
-      // instead of always the same hard-coded team. If the season is over
-      // (every fixture played), start a fresh season against the same
-      // league's clubs rather than falling back to the old static list.
       let fixtures = state.leagueFixtures;
       if (!fixtures || fixtures.length === 0 || fixtures.every(f => f.played)) {
         fixtures = generateFixturesForLeague(state.club.divisionId, state.club.id);
         set({ leagueFixtures: fixtures });
       }
       const nextFixture = fixtures.find(f => !f.played) || fixtures[0];
-
       const league = REAL_LEAGUES.find(l => l.id === state.club.divisionId);
       const opponentConfig = league?.clubs.find(c => c.id === nextFixture.opponentClubId);
 
       set({ isLoadingMatch: true });
 
-      // Prefer the opponent's real, pre-synced squad (Firestore squads_cache,
-      // written ahead of time by scripts/syncSquadsData.ts) so real clubs use
-      // their real players. Falls back to a distinct generated squad (scaled
-      // to the club's starRating) instead of literally cloning the player's
-      // own squad, which is what REAL_OPPONENT_CLUBS did for every opponent.
       let opponentSquad: Player[] | null = null;
       try {
         const cached = await fetchClubSquadCache(nextFixture.opponentClubId);
@@ -860,20 +862,105 @@ export const useGameStore = create<GameState>((set, get) => {
         footballLineup: opponentLineup,
       };
 
-      set({ isLoadingMatch: false });
+      // Calculate Player Team Power from starting XI
+      const userLineupPlayers = state.club.footballSquad.filter(p => state.club.footballLineup.includes(p.id));
+      const userEffectiveSquad = userLineupPlayers.length > 0 ? userLineupPlayers : state.club.footballSquad.slice(0, 11);
+      
+      const calcAtk = (players: Player[]) => {
+        const sum = players.reduce((acc, p) => {
+          const pace = p.attributes?.pace || p.overall;
+          const shoot = p.attributes?.shooting || p.overall;
+          const pass = p.attributes?.passing || p.overall;
+          const dribble = p.attributes?.dribbling || p.overall;
+          return acc + (pace * 0.2 + shoot * 0.35 + pass * 0.25 + dribble * 0.2);
+        }, 0);
+        return Math.round(sum / Math.max(1, players.length));
+      };
+
+      const calcDef = (players: Player[]) => {
+        const sum = players.reduce((acc, p) => {
+          const def = p.attributes?.defending || p.overall;
+          const phys = p.attributes?.physical || p.overall;
+          const gk = p.position === 'GK' ? (p.attributes?.goalkeeping || p.overall) : def;
+          return acc + (def * 0.4 + phys * 0.3 + gk * 0.3);
+        }, 0);
+        return Math.round(sum / Math.max(1, players.length));
+      };
+
+      let activeVipTier = VIP_LEVELS[0];
+      for (const tier of VIP_LEVELS) {
+        if (state.vipPoints >= tier.pointsRequired) {
+          activeVipTier = tier;
+        }
+      }
+      const vipAttackBoost = activeVipTier.attackBoostPercent || 0;
+      const vipDefenseBoost = activeVipTier.defenseBoostPercent || 0;
+
+      const baseUserAtk = calcAtk(userEffectiveSquad);
+      const baseUserDef = calcDef(userEffectiveSquad);
+      const userAtk = Math.round(baseUserAtk * (1 + vipAttackBoost / 100));
+      const userDef = Math.round(baseUserDef * (1 + vipDefenseBoost / 100));
+
+      const oppLineupPlayers = opponent.footballSquad.filter(p => opponent.footballLineup.includes(p.id));
+      const oppEffectiveSquad = oppLineupPlayers.length > 0 ? oppLineupPlayers : opponent.footballSquad.slice(0, 11);
+      const oppAtk = calcAtk(oppEffectiveSquad);
+      const oppDef = calcDef(oppEffectiveSquad);
+
+      // Win probability formula based on net power difference
+      const userTotal = (userAtk + userDef) / 2;
+      const oppTotal = (oppAtk + oppDef) / 2;
+      const homeAdvantage = nextFixture.isHome ? 2.5 : -1.5;
+      const diff = (userTotal - oppTotal) + homeAdvantage;
+
+      let win = Math.round(40 + diff * 1.8);
+      let loss = Math.round(32 - diff * 1.5);
+      win = Math.max(12, Math.min(82, win));
+      loss = Math.max(10, Math.min(80, loss));
+      let draw = Math.max(8, 100 - win - loss);
+      const totalOdds = win + draw + loss;
+      win = Math.round((win / totalOdds) * 100);
+      loss = Math.round((loss / totalOdds) * 100);
+      draw = 100 - win - loss;
+
+      const previewData: PreMatchData = {
+        fixture: nextFixture,
+        competition: opponentConfig?.leagueNameEn ? (league?.name || 'الدوري') : 'دوري التحدي للدرجة الثانية',
+        opponentClub: opponent,
+        userAttackPower: userAtk,
+        userDefensePower: userDef,
+        userVipAttackBoost: vipAttackBoost,
+        userVipDefenseBoost: vipDefenseBoost,
+        opponentAttackPower: oppAtk,
+        opponentDefensePower: oppDef,
+        winProbability: win,
+        drawProbability: draw,
+        lossProbability: loss,
+      };
+
+      set({
+        isLoadingMatch: false,
+        preMatchPreview: previewData,
+        preMatchModalOpen: true,
+      });
+    },
+
+    closePreMatchPreview: () => {
+      set({ preMatchModalOpen: false, preMatchPreview: null });
+    },
+
+    confirmStartMatch: () => {
+      const state = get();
+      if (!state.preMatchPreview) return;
+      const opponent = state.preMatchPreview.opponentClub;
+      const nextFixture = state.preMatchPreview.fixture;
+      const competition = state.preMatchPreview.competition;
+      const vipAttackBoost = state.preMatchPreview.userVipAttackBoost;
+      const vipDefenseBoost = state.preMatchPreview.userVipDefenseBoost;
+
+      set({ preMatchModalOpen: false, preMatchPreview: null, isLoadingMatch: false });
       soundEffects.playWhistle(false);
 
       if (state.currentSport === 'football') {
-        // Calculate player VIP boosts
-        let activeVipTier = VIP_LEVELS[0];
-        for (const tier of VIP_LEVELS) {
-          if (state.vipPoints >= tier.pointsRequired) {
-            activeVipTier = tier;
-          }
-        }
-        const vipAttackBoost = activeVipTier.attackBoostPercent || 0;
-        const vipDefenseBoost = activeVipTier.defenseBoostPercent || 0;
-
         const engine = new FootballMatchEngine(
           state.club, 
           opponent, 
@@ -918,34 +1005,55 @@ export const useGameStore = create<GameState>((set, get) => {
               awayXg: 0,
             },
             isFinished: false,
-            competition: opponentConfig?.leagueNameEn ? (league?.name || 'الدوري') : 'دوري التحدي للدرجة الثانية',
+            competition,
             matchDay: nextFixture.matchday,
             date: new Date().toISOString().split('T')[0],
           },
         });
-      } else {
-        // Basketball match
-        const bballEngine = new BasketballMatchEngine(state.club, opponent, Date.now(), state.club.basketballTactics);
-        const record = bballEngine.simulateFullGame();
-        soundEffects.playFanfare();
-        confetti({ particleCount: 70, spread: 80 });
-
-        set({
-          activeMatchRecord: record,
-          isMatchLive: false,
-          activeTab: 'match',
-          matchHistory: [record, ...state.matchHistory],
-          vipPoints: state.vipPoints + 60,
-          club: {
-            ...state.club,
-            finances: {
-              ...state.club.finances,
-              coins: state.club.finances.coins + 22000,
-              reputation: state.club.finances.reputation + 45,
-            },
-          },
-        });
       }
+    },
+
+    startNewMatch: async () => {
+      const state = get();
+      if (state.currentSport === 'football') {
+        await state.openPreMatchPreview();
+        return;
+      }
+
+      // Basketball match
+      let fixtures = state.leagueFixtures;
+      if (!fixtures || fixtures.length === 0 || fixtures.every(f => f.played)) {
+        fixtures = generateFixturesForLeague(state.club.divisionId, state.club.id);
+        set({ leagueFixtures: fixtures });
+      }
+      const nextFixture = fixtures.find(f => !f.played) || fixtures[0];
+      const opponent: Club = {
+        ...REAL_INITIAL_PLAYER_CLUB,
+        id: nextFixture.opponentClubId,
+        name: nextFixture.opponentClubName,
+        logoUrl: nextFixture.opponentBadge,
+      };
+
+      const bballEngine = new BasketballMatchEngine(state.club, opponent, Date.now(), state.club.basketballTactics);
+      const record = bballEngine.simulateFullGame();
+      soundEffects.playFanfare();
+      confetti({ particleCount: 70, spread: 80 });
+
+      set({
+        activeMatchRecord: record,
+        isMatchLive: false,
+        activeTab: 'match',
+        matchHistory: [record, ...state.matchHistory],
+        vipPoints: state.vipPoints + 60,
+        club: {
+          ...state.club,
+          finances: {
+            ...state.club.finances,
+            coins: state.club.finances.coins + 22000,
+            reputation: state.club.finances.reputation + 45,
+          },
+        },
+      });
     },
 
     stepMatchMinute: () => {
@@ -1158,8 +1266,128 @@ export const useGameStore = create<GameState>((set, get) => {
     },
 
     setMatchSpeed: (speed) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+
+      // Check access permission for 2x
+      if (speed === 2 && !state.unlockedSpeed2x) {
+        soundEffects.playBuzz();
+        return;
+      }
+
+      // Check access permission for 4x (VIP 10+)
+      if (speed === 4) {
+        let currentVipTier = VIP_LEVELS[0];
+        for (const tier of VIP_LEVELS) {
+          if (state.vipPoints >= tier.pointsRequired) {
+            currentVipTier = tier;
+          }
+        }
+        if (!currentVipTier.unlockedSpeed4x) {
+          soundEffects.playBuzz();
+          return;
+        }
+      }
+
       soundEffects.playTap();
       set({ matchSpeed: speed });
+    },
+
+    unlockMatchSpeed2x: (currency) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+
+      if (state.unlockedSpeed2x) {
+        return {
+          success: true,
+          message: isAr ? 'سرعة 2x مفتوحة بالفعل!' : '2x speed is already unlocked!'
+        };
+      }
+
+      const DIAMOND_COST = 50;
+      const COIN_COST = 30000;
+
+      if (currency === 'diamonds') {
+        const userDiamonds = state.club.finances.diamonds || 0;
+        if (userDiamonds < DIAMOND_COST) {
+          soundEffects.playBuzz();
+          return {
+            success: false,
+            message: isAr 
+              ? `رصيد الجواهر غير كافٍ! تحتاج إلى ${DIAMOND_COST} جوهرة 💎 (رصيدك: ${userDiamonds} 💎).`
+              : `Insufficient diamonds! Need ${DIAMOND_COST} 💎 (You have: ${userDiamonds} 💎).`
+          };
+        }
+
+        const updatedClub = {
+          ...state.club,
+          finances: {
+            ...state.club.finances,
+            diamonds: userDiamonds - DIAMOND_COST,
+          }
+        };
+
+        soundEffects.playFanfare();
+        confetti({ particleCount: 60, spread: 70 });
+
+        set({
+          unlockedSpeed2x: true,
+          matchSpeed: 2,
+          club: updatedClub,
+        });
+
+        saveToStorage({
+          unlockedSpeed2x: true,
+          club: updatedClub,
+        });
+
+        return {
+          success: true,
+          message: isAr 
+            ? `تم فتح ميزة تسريع المباراة 2x بنجاح مقابل ${DIAMOND_COST} جوهرة 💎!`
+            : `Successfully unlocked 2x Match Speed for ${DIAMOND_COST} Diamonds 💎!`
+        };
+      } else {
+        const userCoins = state.club.finances.coins || 0;
+        if (userCoins < COIN_COST) {
+          soundEffects.playBuzz();
+          return {
+            success: false,
+            message: isAr 
+              ? `رصيد الكوينز غير كافٍ! تحتاج إلى ${COIN_COST.toLocaleString()} كوينز 🪙 (رصيدك: ${userCoins.toLocaleString()} 🪙).`
+              : `Insufficient coins! Need ${COIN_COST.toLocaleString()} coins 🪙 (You have: ${userCoins.toLocaleString()} 🪙).`
+          };
+        }
+
+        const updatedClub = {
+          ...state.club,
+          finances: {
+            ...state.club.finances,
+            coins: userCoins - COIN_COST,
+          }
+        };
+
+        soundEffects.playFanfare();
+        confetti({ particleCount: 60, spread: 70 });
+
+        set({
+          unlockedSpeed2x: true,
+          matchSpeed: 2,
+          club: updatedClub,
+        });
+
+        saveToStorage({
+          unlockedSpeed2x: true,
+          club: updatedClub,
+        });
+
+        return {
+          success: true,
+          message: isAr 
+            ? `تم فتح ميزة تسريع المباراة 2x بنجاح مقابل ${COIN_COST.toLocaleString()} كوينز 🪙!`
+            : `Successfully unlocked 2x Match Speed for ${COIN_COST.toLocaleString()} Coins 🪙!`
+        };
+      }
     },
 
     submitInteractiveDecision: (optionId) => {
@@ -1177,16 +1405,165 @@ export const useGameStore = create<GameState>((set, get) => {
       const state = get();
       if (!state.activeEngine || !state.isMatchLive) return;
 
-      // Simulate steps until match is completed or safety limit reached
-      let safetyCounter = 0;
-      while (get().isMatchLive && safetyCounter < 120) {
-        safetyCounter++;
-        // If an interactive prompt paused the match, auto-clear it so simulation proceeds
-        if (get().isMatchPaused) {
-          set({ isMatchPaused: false, pendingInteractiveEvent: null });
+      // Simulate directly to completion using the engine without triggering synchronous UI loops or duplicate confetti freezes
+      const res = state.activeEngine.simulateToCompletion();
+
+      // Sound and visual effects for full-time completion
+      soundEffects.playWhistle(false);
+      soundEffects.playFanfare();
+      confetti({ particleCount: 80, spread: 90 });
+
+      // Update standings & finances
+      const won = res.homeScore > res.awayScore;
+      const drawn = res.homeScore === res.awayScore;
+      const pts = won ? 3 : (drawn ? 1 : 0);
+      const matchIncome = state.club.finances.ticketPrice * 5200 + state.club.finances.sponsorIncomePerMatch;
+
+      const updatedStandings = state.leagueStandings.map(s => {
+        if (s.clubId === state.club.id) {
+          return {
+            ...s,
+            played: s.played + 1,
+            won: s.won + (won ? 1 : 0),
+            drawn: s.drawn + (drawn ? 1 : 0),
+            lost: s.lost + (!won && !drawn ? 1 : 0),
+            goalsFor: s.goalsFor + res.homeScore,
+            goalsAgainst: s.goalsAgainst + res.awayScore,
+            goalDifference: s.goalDifference + (res.homeScore - res.awayScore),
+            points: s.points + pts,
+            form: [(won ? 'W' : (drawn ? 'D' : 'L')) as ('W'|'D'|'L'), ...s.form.slice(0, 4)],
+          };
         }
-        get().stepMatchMinute();
+        if (s.clubId === state.activeMatchRecord?.awayClubId) {
+          const oppWon = !won && !drawn;
+          const oppDrawn = drawn;
+          const oppPts = oppWon ? 3 : (oppDrawn ? 1 : 0);
+          return {
+            ...s,
+            played: s.played + 1,
+            won: s.won + (oppWon ? 1 : 0),
+            drawn: s.drawn + (oppDrawn ? 1 : 0),
+            lost: s.lost + (won ? 1 : 0),
+            goalsFor: s.goalsFor + res.awayScore,
+            goalsAgainst: s.goalsAgainst + res.homeScore,
+            goalDifference: s.goalDifference + (res.awayScore - res.homeScore),
+            points: s.points + oppPts,
+            form: [(oppWon ? 'W' : (oppDrawn ? 'D' : 'L')) as ('W'|'D'|'L'), ...s.form.slice(0, 4)],
+          };
+        }
+        return s;
+      });
+
+      // Update fixture played status on season calendar
+      const finishedMatchday = state.activeMatchRecord?.matchDay;
+      const updatedFixtures = state.leagueFixtures.map(f =>
+        f.matchday === finishedMatchday && f.opponentClubId === state.activeMatchRecord?.awayClubId
+          ? { ...f, played: true, homeScore: res.homeScore, awayScore: res.awayScore }
+          : f
+      );
+
+      const finalRecord: MatchRecord = {
+        id: `match_${Date.now()}`,
+        sport: 'football',
+        seed: Date.now(),
+        homeClubId: state.club.id,
+        homeClubName: state.club.name,
+        awayClubId: state.activeMatchRecord?.awayClubId || REAL_OPPONENT_CLUBS[0].id,
+        awayClubName: state.activeMatchRecord?.awayClubName || REAL_OPPONENT_CLUBS[0].name,
+        homeScore: res.homeScore,
+        awayScore: res.awayScore,
+        events: res.events,
+        stats: res.stats,
+        isFinished: true,
+        competition: state.activeMatchRecord?.competition || 'الدوري',
+        matchDay: state.activeMatchRecord?.matchDay || state.matchHistory.length + 1,
+        date: new Date().toISOString().split('T')[0],
+      };
+
+      // Squad Fatigue Simulation
+      const lineupIds = new Set(state.club.footballLineup);
+      const updatedSquad = state.club.footballSquad.map((p) => {
+        if (lineupIds.has(p.id)) {
+          return {
+            ...p,
+            fatigue: Math.min(100, (p.fatigue || 0) + 20),
+            stamina: Math.max(10, (p.stamina || 100) - 22),
+          };
+        } else {
+          return {
+            ...p,
+            fatigue: Math.max(0, (p.fatigue || 0) - 15),
+            stamina: Math.min(100, (p.stamina || 100) + 15),
+          };
+        }
+      });
+
+      // Missions Progress
+      const currentMissions = state.dailyMissions || INITIAL_DAILY_MISSIONS;
+      const updatedMissions = currentMissions.map((m) => {
+        if (m.isClaimed) return m;
+        if (m.id === 'mission_play_matches') {
+          return { ...m, current: Math.min(m.target, m.current + 1) };
+        }
+        if (m.id === 'mission_score_goals') {
+          return { ...m, current: Math.min(m.target, m.current + res.homeScore) };
+        }
+        if (m.id === 'mission_clean_sheet' && res.awayScore === 0) {
+          return { ...m, current: Math.min(m.target, m.current + 1) };
+        }
+        if (m.id === 'weekly_win_matches' && won) {
+          return { ...m, current: Math.min(m.target, m.current + 1) };
+        }
+        return m;
+      });
+
+      // VIP loss mitigation
+      let activeVipTier = VIP_LEVELS[0];
+      for (const tier of VIP_LEVELS) {
+        if (state.vipPoints >= tier.pointsRequired) {
+          activeVipTier = tier;
+        }
       }
+      const mitigationFactor = 1 - ((activeVipTier.lossMitigationPercent || 0) / 100);
+      const boardPenalty = Math.round(3 * mitigationFactor);
+      const fanPenalty = Math.round(4 * mitigationFactor);
+
+      const updatedClub = {
+        ...state.club,
+        footballSquad: updatedSquad,
+        boardTrust: Math.min(100, Math.max(0, state.club.boardTrust + (won ? 4 : (drawn ? 0 : -boardPenalty)))),
+        fanMood: Math.min(100, Math.max(0, state.club.fanMood + (won ? 6 : (drawn ? 1 : -fanPenalty)))),
+        finances: {
+          ...state.club.finances,
+          coins: state.club.finances.coins + matchIncome,
+          reputation: state.club.finances.reputation + (won ? 35 : 10),
+        },
+      };
+
+      const analystFeedback = generatePostMatchCharacter(finalRecord, updatedClub, state.language === 'ar');
+
+      set({
+        isMatchLive: false,
+        isMatchPaused: false,
+        pendingInteractiveEvent: null,
+        currentMatchMinute: 90,
+        activeMatchRecord: finalRecord,
+        matchHistory: [finalRecord, ...state.matchHistory],
+        leagueStandings: updatedStandings,
+        leagueFixtures: updatedFixtures,
+        vipPoints: state.vipPoints + (won ? 80 : 35),
+        dailyMissions: updatedMissions,
+        postMatchAnalyst: analystFeedback,
+        club: updatedClub,
+      });
+
+      saveToStorage({
+        club: updatedClub,
+        dailyMissions: updatedMissions,
+        leagueStandings: updatedStandings,
+        leagueFixtures: updatedFixtures,
+        vipPoints: state.vipPoints + (won ? 80 : 35),
+      });
     },
 
     upgradeVipWithDiamonds: () => {

@@ -312,6 +312,23 @@ export class FootballMatchEngine {
     this.pendingInteractiveMoment = null;
   }
 
+  /** Simulate remaining minutes to completion (for instant simulation) */
+  public simulateToCompletion(): SimulationStepResult {
+    while (this.minute < 90) {
+      this.pendingInteractiveMoment = null; // Auto-resolve any interactive pause
+      this.stepMinute();
+    }
+    this.pendingInteractiveMoment = null;
+    return {
+      currentMinute: this.minute,
+      homeScore: this.homeScore,
+      awayScore: this.awayScore,
+      events: this.events,
+      stats: this.stats,
+      isFinished: true,
+    };
+  }
+
   /** Simulate the full match at once (for instant results / background leagues) */
   public simulateFullMatch(): MatchRecord {
     while (this.minute < 90) {

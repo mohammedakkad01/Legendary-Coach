@@ -6,7 +6,7 @@
  * Real-time tactical radar, animated pitch, interactive decisions, commentary feed, and match stats.
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../state/useGameStore';
 import { 
   Play, 
@@ -19,7 +19,12 @@ import {
   FileText, 
   AlertCircle,
   MessageSquare,
-  Crown
+  Crown,
+  Lock,
+  Sparkles,
+  Coins,
+  Gem,
+  X
 } from 'lucide-react';
 import { generatePostMatchCharacter } from '../data/matchAnalystData';
 import { VIP_LEVELS } from '../data/vipData';
@@ -31,22 +36,28 @@ export const LiveMatchView: React.FC = () => {
     isMatchLive, 
     isMatchPaused, 
     matchSpeed, 
+    unlockedSpeed2x,
     currentMatchMinute, 
     pendingInteractiveEvent,
     stepMatchMinute, 
     toggleMatchPause, 
     setMatchSpeed, 
+    unlockMatchSpeed2x,
     submitInteractiveDecision, 
     instantSimulateMatch,
     startNewMatch,
+    isLoadingMatch,
     postMatchAnalyst,
     setPostMatchAnalyst,
     vipPoints,
+    setActiveTab,
     language 
   } = useGameStore();
 
   const isAr = language === 'ar';
   const commentaryEndRef = useRef<HTMLDivElement>(null);
+  const [speedModalOpen, setSpeedModalOpen] = useState(false);
+  const [speedPurchaseNotice, setSpeedPurchaseNotice] = useState<string | null>(null);
 
   // Calculate current VIP Tier for tactical boost indicator
   let currentVipTier = VIP_LEVELS[0];
@@ -88,10 +99,13 @@ export const LiveMatchView: React.FC = () => {
           </p>
           <button
             id="btn_start_match_main"
+            disabled={isLoadingMatch}
             onClick={() => startNewMatch()}
-            className="px-8 py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-base shadow-xl shadow-emerald-500/30 cursor-pointer"
+            className="px-8 py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-slate-950 font-black text-base shadow-xl shadow-emerald-500/30 cursor-pointer transition-all"
           >
-            {isAr ? 'صافرة البداية — انطلاق المباراة الآن' : 'Kick Off — Start Match Now'}
+            {isLoadingMatch 
+              ? (isAr ? 'جاري تحضير المعاينة التكتيكية...' : 'Preparing Match Preview...') 
+              : (isAr ? 'صافرة البداية — معاينة وخوض المباراة' : 'Kick Off — Preview & Play Match')}
           </button>
         </div>
       </div>
@@ -188,19 +202,69 @@ export const LiveMatchView: React.FC = () => {
                 <span>{isMatchPaused ? (isAr ? 'استئناف' : 'Resume') : (isAr ? 'إيقاف مؤقت' : 'Pause')}</span>
               </button>
 
-              {/* Speed Buttons */}
-              <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-black">
-                {[1, 2, 4].map(spd => (
-                  <button
-                    key={spd}
-                    onClick={() => setMatchSpeed(spd)}
-                    className={`px-2.5 py-1 rounded-lg transition-all ${
-                      matchSpeed === spd ? 'bg-sky-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {spd}x
-                  </button>
-                ))}
+              {/* Speed Buttons with Lock Badges */}
+              <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs font-black gap-1">
+                {/* 1x - Free for everyone */}
+                <button
+                  key={1}
+                  onClick={() => setMatchSpeed(1)}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    matchSpeed === 1 ? 'bg-sky-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  1x
+                </button>
+
+                {/* 2x - Paid via Coins or Diamonds */}
+                <button
+                  key={2}
+                  onClick={() => {
+                    if (unlockedSpeed2x) {
+                      setMatchSpeed(2);
+                    } else {
+                      setSpeedModalOpen(true);
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                    matchSpeed === 2 
+                      ? 'bg-sky-500 text-slate-950 font-black' 
+                      : unlockedSpeed2x 
+                      ? 'text-slate-400 hover:text-white' 
+                      : 'text-amber-400/80 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30'
+                  }`}
+                  title={unlockedSpeed2x ? (isAr ? 'سرعة 2x مفتوحة' : '2x Unlocked') : (isAr ? 'اضغط لفتح سرعة 2x بالجواهر أو الكوينز' : 'Click to unlock 2x with Gems or Coins')}
+                >
+                  <span>2x</span>
+                  {!unlockedSpeed2x && <Lock className="w-3 h-3 text-amber-400" />}
+                </button>
+
+                {/* 4x - VIP 10+ Exclusive */}
+                {(() => {
+                  const isVip4xUnlocked = !!currentVipTier.unlockedSpeed4x;
+                  return (
+                    <button
+                      key={4}
+                      onClick={() => {
+                        if (isVip4xUnlocked) {
+                          setMatchSpeed(4);
+                        } else {
+                          setSpeedModalOpen(true);
+                        }
+                      }}
+                      className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                        matchSpeed === 4 
+                          ? 'bg-amber-500 text-slate-950 font-black' 
+                          : isVip4xUnlocked 
+                          ? 'text-slate-400 hover:text-white' 
+                          : 'text-purple-400/80 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30'
+                      }`}
+                      title={isVip4xUnlocked ? (isAr ? 'سرعة 4x متاحة لمستوى VIP الخاص بك' : '4x Unlocked for your VIP') : (isAr ? 'مقفلة: تتطلب رتبة VIP 10 فما فوق' : 'Locked: Requires VIP 10+')}
+                    >
+                      <span>4x</span>
+                      {!isVip4xUnlocked && <Lock className="w-3 h-3 text-purple-400" />}
+                    </button>
+                  );
+                })()}
               </div>
             </div>
 
@@ -325,25 +389,79 @@ export const LiveMatchView: React.FC = () => {
             </div>
           </div>
 
-          {/* Match Stats Comparison */}
-          <div className="grid grid-cols-3 gap-2 text-xs pt-2">
-            <div className="text-center bg-slate-950 p-2 rounded-xl border border-slate-800">
-              <span className="text-[10px] text-slate-400 block">{isAr ? 'التسديدات (على المرمى)' : 'Shots (On Target)'}</span>
-              <span className="font-black text-white">
-                {stats.homeShots} ({stats.homeShotsOnTarget}) - {stats.awayShots} ({stats.awayShotsOnTarget})
-              </span>
+          {/* Match Stats Comparison - Real Broadcast Styled */}
+          <div className="bg-slate-950/90 rounded-2xl p-3.5 border border-slate-800 space-y-2.5 shadow-inner">
+            <div className="flex items-center justify-between text-xs font-black text-slate-400 border-b border-slate-800/80 pb-1.5">
+              <span className="text-sky-400 truncate max-w-[120px]">{record.homeClubName}</span>
+              <span className="text-[11px] uppercase tracking-wider text-slate-500 font-bold">{isAr ? 'إحصائيات اللقاء' : 'Match Stats'}</span>
+              <span className="text-rose-400 truncate max-w-[120px] text-right">{record.awayClubName}</span>
             </div>
-            <div className="text-center bg-slate-950 p-2 rounded-xl border border-slate-800">
-              <span className="text-[10px] text-slate-400 block">{isAr ? 'الأهداف المتوقعة xG' : 'Expected Goals (xG)'}</span>
-              <span className="font-black text-amber-400">
-                {stats.homeXg} - {stats.awayXg}
-              </span>
+
+            {/* Possession Bar */}
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs font-bold">
+                <span className="text-sky-400 font-mono">{stats.homePossession}%</span>
+                <span className="text-[11px] text-slate-400">{isAr ? 'الاستحواذ' : 'Possession'}</span>
+                <span className="text-rose-400 font-mono">{stats.awayPossession}%</span>
+              </div>
+              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
+                <div className="bg-sky-500 transition-all duration-500" style={{ width: `${stats.homePossession}%` }} />
+                <div className="bg-rose-500 transition-all duration-500" style={{ width: `${stats.awayPossession}%` }} />
+              </div>
             </div>
-            <div className="text-center bg-slate-950 p-2 rounded-xl border border-slate-800">
-              <span className="text-[10px] text-slate-400 block">{isAr ? 'الركنيات / الأخطاء' : 'Corners / Fouls'}</span>
-              <span className="font-black text-emerald-400">
-                {stats.homeCorners} ({stats.homeFouls}) - {stats.awayCorners} ({stats.awayFouls})
-              </span>
+
+            {/* Shots Total & On Target */}
+            <div className="grid grid-cols-3 items-center text-xs py-1 border-t border-slate-900">
+              <div className="font-mono font-black text-sky-300">
+                {stats.homeShots} <span className="text-[10px] text-sky-400/70">({stats.homeShotsOnTarget})</span>
+              </div>
+              <div className="text-center text-[11px] text-slate-400 font-medium">
+                {isAr ? 'تسديدات (على المرمى)' : 'Shots (On Target)'}
+              </div>
+              <div className="font-mono font-black text-rose-300 text-right">
+                <span className="text-[10px] text-rose-400/70">({stats.awayShotsOnTarget})</span> {stats.awayShots}
+              </div>
+            </div>
+
+            {/* Expected Goals xG */}
+            <div className="grid grid-cols-3 items-center text-xs py-1 border-t border-slate-900">
+              <div className="font-mono font-black text-amber-400">
+                {stats.homeXg.toFixed(2)}
+              </div>
+              <div className="text-center text-[11px] text-slate-400 font-medium">
+                {isAr ? 'الأهداف المتوقعة xG' : 'Expected Goals (xG)'}
+              </div>
+              <div className="font-mono font-black text-amber-400 text-right">
+                {stats.awayXg.toFixed(2)}
+              </div>
+            </div>
+
+            {/* Corners & Fouls */}
+            <div className="grid grid-cols-3 items-center text-xs py-1 border-t border-slate-900">
+              <div className="font-mono font-black text-emerald-400">
+                {stats.homeCorners} <span className="text-[10px] text-slate-500">|</span> <span className="text-slate-300">{stats.homeFouls}</span>
+              </div>
+              <div className="text-center text-[11px] text-slate-400 font-medium">
+                {isAr ? 'ركنيات / أخطاء' : 'Corners / Fouls'}
+              </div>
+              <div className="font-mono font-black text-emerald-400 text-right">
+                <span className="text-slate-300">{stats.awayFouls}</span> <span className="text-slate-500">|</span> {stats.awayCorners}
+              </div>
+            </div>
+
+            {/* Yellow Cards */}
+            <div className="grid grid-cols-3 items-center text-xs py-1 border-t border-slate-900">
+              <div className="font-mono font-black text-amber-400 flex items-center gap-1">
+                <span className="w-2.5 h-3.5 bg-amber-400 rounded-sm inline-block shadow-sm" />
+                <span>{stats.homeYellowCards}</span>
+              </div>
+              <div className="text-center text-[11px] text-slate-400 font-medium">
+                {isAr ? 'البطاقات الصفراء' : 'Yellow Cards'}
+              </div>
+              <div className="font-mono font-black text-amber-400 flex items-center justify-end gap-1">
+                <span>{stats.awayYellowCards}</span>
+                <span className="w-2.5 h-3.5 bg-amber-400 rounded-sm inline-block shadow-sm" />
+              </div>
             </div>
           </div>
         </div>
@@ -418,6 +536,182 @@ export const LiveMatchView: React.FC = () => {
         </div>
 
       </div>
+
+      {/* Speed Unlock & VIP Privileges Modal */}
+      {speedModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2 text-amber-400">
+                <Zap className="w-5 h-5 text-amber-400" />
+                <h3 className="font-heading font-black text-lg text-white">
+                  {isAr ? 'ترقية سرعة محاكاة المباريات' : 'Match Speed Boost Upgrade'}
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setSpeedModalOpen(false);
+                  setSpeedPurchaseNotice(null);
+                }}
+                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Notification message */}
+            {speedPurchaseNotice && (
+              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold leading-relaxed">
+                {speedPurchaseNotice}
+              </div>
+            )}
+
+            {/* Option 1: 2x Speed Unlock */}
+            <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-xl bg-sky-500/20 text-sky-400 font-black text-sm flex items-center justify-center border border-sky-500/30">
+                    2x
+                  </span>
+                  <div>
+                    <h4 className="font-heading font-black text-sm text-white">
+                      {isAr ? 'السرعة المضاعفة (2x Speed)' : 'Double Speed (2x)'}
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      {isAr ? 'تسريع وقت المباراة بمقدار الضعف لتجربة لعب أكثر حيوية' : 'Doubles simulation tempo permanently for your career'}
+                    </p>
+                  </div>
+                </div>
+                {unlockedSpeed2x && (
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-black">
+                    {isAr ? 'مفتوحة لديك ✓' : 'Unlocked ✓'}
+                  </span>
+                )}
+              </div>
+
+              {!unlockedSpeed2x ? (
+                <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                  {/* Pay with Coins */}
+                  <button
+                    onClick={() => {
+                      const res = unlockMatchSpeed2x('coins');
+                      setSpeedPurchaseNotice(res.message);
+                      if (res.success) {
+                        setTimeout(() => setSpeedModalOpen(false), 1200);
+                      }
+                    }}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Coins className="w-4 h-4 text-amber-400" />
+                    <span>{isAr ? 'فتح بـ 30,000 كوينز' : '30,000 Coins'}</span>
+                  </button>
+
+                  {/* Pay with Diamonds */}
+                  <button
+                    onClick={() => {
+                      const res = unlockMatchSpeed2x('diamonds');
+                      setSpeedPurchaseNotice(res.message);
+                      if (res.success) {
+                        setTimeout(() => setSpeedModalOpen(false), 1200);
+                      }
+                    }}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-sky-500/20 transition cursor-pointer"
+                  >
+                    <Gem className="w-4 h-4 text-slate-950" />
+                    <span>{isAr ? 'فتح بـ 50 جوهرة 💎' : '50 Diamonds 💎'}</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setMatchSpeed(2);
+                    setSpeedModalOpen(false);
+                  }}
+                  className="w-full py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-black text-xs transition cursor-pointer"
+                >
+                  {isAr ? 'تفعيل سرعة 2x الآن' : 'Activate 2x Speed Now'}
+                </button>
+              )}
+            </div>
+
+            {/* Option 2: 4x Speed - VIP 10+ */}
+            <div className="bg-slate-950/80 border border-purple-500/30 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 font-black text-sm flex items-center justify-center border border-purple-500/30">
+                    4x
+                  </span>
+                  <div>
+                    <h4 className="font-heading font-black text-sm text-white flex items-center gap-1.5">
+                      <span>{isAr ? 'السرعة الفائقة (4x Ultra Speed)' : 'Ultra Speed (4x)'}</span>
+                      <Crown className="w-3.5 h-3.5 text-amber-400" />
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      {isAr ? 'ميزة حصرية لأعضاء نادي الأساطير رتبة VIP 10 فما فوق' : 'Exclusive VIP privilege for Glory Makers (VIP 10+)'}
+                    </p>
+                  </div>
+                </div>
+
+                {currentVipTier.unlockedSpeed4x ? (
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-black">
+                    {isAr ? 'مفتوحة لمستواك ✓' : 'VIP Unlocked ✓'}
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-black">
+                    {isAr ? `مستواك الحالي: VIP ${currentVipTier.level}` : `Current: VIP ${currentVipTier.level}`}
+                  </span>
+                )}
+              </div>
+
+              {currentVipTier.unlockedSpeed4x ? (
+                <button
+                  onClick={() => {
+                    setMatchSpeed(4);
+                    setSpeedModalOpen(false);
+                  }}
+                  className="w-full py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black text-xs shadow-md transition cursor-pointer"
+                >
+                  {isAr ? 'تفعيل سرعة 4x الفائقة' : 'Activate 4x Ultra Speed'}
+                </button>
+              ) : (
+                <div className="space-y-2 pt-1">
+                  <p className="text-[11px] text-purple-300 leading-relaxed">
+                    {isAr 
+                      ? 'لفتح سرعة 4x، قم بترقية حسابك في نادي الـ VIP حتى تصل للمستوى 10 (صانع المجد).' 
+                      : 'To unlock 4x Ultra Speed, advance your VIP tier to Level 10 (Glory Maker).'}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setSpeedModalOpen(false);
+                      setActiveTab('vip');
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-purple-600/30 transition cursor-pointer"
+                  >
+                    <Crown className="w-4 h-4 text-amber-300" />
+                    <span>{isAr ? 'الانتقال إلى نادي VIP للترقية' : 'Go to VIP Club & Upgrade'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Balances Status */}
+            <div className="flex items-center justify-between text-xs text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800">
+              <span className="font-bold">{isAr ? 'رصيدك الحالي:' : 'Your Balances:'}</span>
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-1 text-amber-400 font-mono font-bold">
+                  <Coins className="w-3.5 h-3.5" />
+                  <span>{(club.finances.coins || 0).toLocaleString()}</span>
+                </span>
+                <span className="flex items-center gap-1 text-sky-400 font-mono font-bold">
+                  <Gem className="w-3.5 h-3.5" />
+                  <span>{(club.finances.diamonds || 0).toLocaleString()}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

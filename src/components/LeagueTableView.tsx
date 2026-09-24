@@ -8,7 +8,7 @@
 
 import React from 'react';
 import { useGameStore } from '../state/useGameStore';
-import { Trophy, Flame, ChevronRight, Database, Sparkles } from 'lucide-react';
+import { Trophy, Flame, ChevronRight, Database, Sparkles, Calendar } from 'lucide-react';
 
 export const LeagueTableView: React.FC = () => {
   const { leagueStandings, club, startNewMatch, language, setActiveTab } = useGameStore();
@@ -39,7 +39,15 @@ export const LeagueTableView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => setActiveTab('calendar')}
+            className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/80 text-amber-300 font-bold text-xs sm:text-sm transition cursor-pointer"
+          >
+            <Calendar className="w-4 h-4 text-amber-400" />
+            <span>{isAr ? 'تقويم المباريات' : 'Fixtures Calendar'}</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('football_api')}
             className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-indigo-900/60 hover:bg-indigo-800/80 border border-indigo-500/40 text-indigo-200 font-bold text-xs sm:text-sm transition cursor-pointer"

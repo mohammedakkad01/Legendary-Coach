@@ -50,6 +50,7 @@ export const DashboardView: React.FC = () => {
     startTacticalDuel,
     runSquadRecoverySession,
     hasSelectedInitialClub,
+    isLoadingMatch,
     language 
   } = useGameStore();
 
@@ -140,11 +141,16 @@ export const DashboardView: React.FC = () => {
 
             <button
               id="btn_dashboard_kickoff"
+              disabled={isLoadingMatch}
               onClick={() => startNewMatch()}
-              className="flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 font-black text-sm sm:text-base shadow-xl shadow-emerald-500/30 group transition-all cursor-pointer"
+              className="flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-slate-950 font-black text-sm sm:text-base shadow-xl shadow-emerald-500/30 group transition-all cursor-pointer"
             >
-              <Flame className="w-5 h-5 text-slate-950 group-hover:scale-110 transition-transform" />
-              <span>{isAr ? 'خوض المباراة القادمة' : 'Play Next Match'}</span>
+              <Flame className={`w-5 h-5 text-slate-950 ${isLoadingMatch ? 'animate-spin' : 'group-hover:scale-110'} transition-transform`} />
+              <span>
+                {isLoadingMatch 
+                  ? (isAr ? 'جاري تحضير المعاينة...' : 'Loading Clash...') 
+                  : (isAr ? 'خوض المباراة القادمة' : 'Play Next Match')}
+              </span>
             </button>
           </div>
         </div>

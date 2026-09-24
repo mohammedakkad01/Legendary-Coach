@@ -17,7 +17,8 @@ import {
   MessageSquare, 
   ShieldCheck, 
   Sparkles, 
-  Trophy 
+  Trophy,
+  BarChart3
 } from 'lucide-react';
 import { useGameStore } from '../state/useGameStore';
 import confetti from 'canvas-confetti';
@@ -168,6 +169,82 @@ export const MatchResultsCharacterModal: React.FC = () => {
                 ★ {postMatchAnalyst.mvpRating.toFixed(1)}
               </div>
             </div>
+
+            {/* Full Match Statistics Summary */}
+            {record?.stats && (
+              <div className="p-3.5 rounded-xl bg-neutral-950/80 border border-neutral-800 space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-bold text-neutral-400 border-b border-neutral-800 pb-1.5">
+                  <span className="text-blue-400 truncate max-w-[110px]">{club.name}</span>
+                  <div className="flex items-center gap-1 text-[11px] text-neutral-400">
+                    <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
+                    <span>{isAr ? 'الملخص الإحصائي الشامل' : 'Full Match Stats Summary'}</span>
+                  </div>
+                  <span className="text-rose-400 truncate max-w-[110px] text-right">{opponentName}</span>
+                </div>
+
+                {/* Possession Bar */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-bold">
+                    <span className="text-blue-400 font-mono">
+                      {isHome ? record.stats.homePossession : record.stats.awayPossession}%
+                    </span>
+                    <span className="text-[10px] text-neutral-400">{isAr ? 'الاستحواذ' : 'Possession'}</span>
+                    <span className="text-rose-400 font-mono">
+                      {isHome ? record.stats.awayPossession : record.stats.homePossession}%
+                    </span>
+                  </div>
+                  <div className="w-full h-1 bg-neutral-800 rounded-full overflow-hidden flex">
+                    <div 
+                      className="bg-blue-500" 
+                      style={{ width: `${isHome ? record.stats.homePossession : record.stats.awayPossession}%` }} 
+                    />
+                    <div 
+                      className="bg-rose-500" 
+                      style={{ width: `${isHome ? record.stats.awayPossession : record.stats.homePossession}%` }} 
+                    />
+                  </div>
+                </div>
+
+                {/* Stats Key Metrics */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px]">
+                  {/* Shots */}
+                  <div className="bg-neutral-900/80 p-2 rounded-lg border border-neutral-800/80 text-center">
+                    <span className="text-[9px] text-neutral-400 block">{isAr ? 'التسديدات (على المرمى)' : 'Shots (On Target)'}</span>
+                    <span className="font-bold text-white font-mono">
+                      {isHome ? record.stats.homeShots : record.stats.awayShots} ({isHome ? record.stats.homeShotsOnTarget : record.stats.awayShotsOnTarget})
+                      {' - '}
+                      {isHome ? record.stats.awayShots : record.stats.homeShots} ({isHome ? record.stats.awayShotsOnTarget : record.stats.homeShotsOnTarget})
+                    </span>
+                  </div>
+
+                  {/* xG */}
+                  <div className="bg-neutral-900/80 p-2 rounded-lg border border-neutral-800/80 text-center">
+                    <span className="text-[9px] text-neutral-400 block">{isAr ? 'الأهداف المتوقعة xG' : 'Expected Goals (xG)'}</span>
+                    <span className="font-bold text-amber-400 font-mono">
+                      {isHome ? record.stats.homeXg.toFixed(2) : record.stats.awayXg.toFixed(2)} - {isHome ? record.stats.awayXg.toFixed(2) : record.stats.homeXg.toFixed(2)}
+                    </span>
+                  </div>
+
+                  {/* Corners */}
+                  <div className="bg-neutral-900/80 p-2 rounded-lg border border-neutral-800/80 text-center">
+                    <span className="text-[9px] text-neutral-400 block">{isAr ? 'الركنيات' : 'Corners'}</span>
+                    <span className="font-bold text-emerald-400 font-mono">
+                      {isHome ? record.stats.homeCorners : record.stats.awayCorners} - {isHome ? record.stats.awayCorners : record.stats.homeCorners}
+                    </span>
+                  </div>
+
+                  {/* Fouls & Yellows */}
+                  <div className="bg-neutral-900/80 p-2 rounded-lg border border-neutral-800/80 text-center">
+                    <span className="text-[9px] text-neutral-400 block">{isAr ? 'الأخطاء / الإنذارات' : 'Fouls / Yellow Cards'}</span>
+                    <span className="font-bold text-white font-mono">
+                      {isHome ? record.stats.homeFouls : record.stats.awayFouls} ({isHome ? record.stats.homeYellowCards : record.stats.awayYellowCards}🟨)
+                      {' - '}
+                      {isHome ? record.stats.awayFouls : record.stats.homeFouls} ({isHome ? record.stats.awayYellowCards : record.stats.homeYellowCards}🟨)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Tactical Advice for Next Game */}
             <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex items-start gap-3">

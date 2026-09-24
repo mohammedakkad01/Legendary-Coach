@@ -381,7 +381,9 @@ export const VIP_LEVELS: VIPPrivilege[] = [
     attackBoostPercent: 5.5,
     defenseBoostPercent: 5.5,
     lossMitigationPercent: 16.0,
+    unlockedSpeed4x: true,
     bonusesAr: [
+      '⚡ فتح السرعة الفائقة 4x في المباريات مجاناً ودائماً!',
       '⚔️ قوة الهجوم: +5.5%',
       '🛡️ قوة الدفاع: +5.5%',
       '🛡️ تقليل خسارة النقاط بنسبة 16%',
@@ -389,6 +391,7 @@ export const VIP_LEVELS: VIPPrivilege[] = [
       'إطار ذهبي متوهج لشعار النادي والمدرب'
     ],
     bonusesEn: [
+      '⚡ Permanently unlock 4x Ultra Match Speed for free!',
       '⚔️ Attack Power: +5.5%',
       '🛡️ Defense Power: +5.5%',
       '🛡️ 16% loss mitigation',

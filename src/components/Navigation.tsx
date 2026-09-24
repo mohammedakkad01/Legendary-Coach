@@ -20,7 +20,8 @@ import {
   Trophy, 
   Crown,
   Database,
-  Globe
+  Globe,
+  Calendar
 } from 'lucide-react';
 
 interface NavItem {
@@ -47,6 +48,7 @@ export const Navigation: React.FC = () => {
     { id: 'training', labelAr: 'التدريب', labelEn: 'Training', icon: Dumbbell },
     { id: 'club', labelAr: 'المرافق', labelEn: 'Facilities', icon: Building2 },
     { id: 'league', labelAr: 'الدوري', labelEn: 'League', icon: Trophy },
+    { id: 'calendar', labelAr: 'التقويم', labelEn: 'Calendar', icon: Calendar },
     { id: 'football_api', labelAr: 'مزامنة API', labelEn: 'API Sync', icon: Database, badge: '⚡' },
     { id: 'vip', labelAr: 'الـ VIP', labelEn: 'VIP', icon: Crown },
     { id: 'editor', labelAr: 'الحزم', labelEn: 'Packs', icon: Building2 },

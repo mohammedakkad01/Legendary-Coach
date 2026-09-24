@@ -253,6 +253,22 @@ export interface Fixture {
   awayScore?: number;
 }
 
+// Pre-match inspection data calculated before actual kickoff
+export interface PreMatchData {
+  fixture: Fixture;
+  competition: string;
+  opponentClub: Club;
+  userAttackPower: number;
+  userDefensePower: number;
+  userVipAttackBoost: number;
+  userVipDefenseBoost: number;
+  opponentAttackPower: number;
+  opponentDefensePower: number;
+  winProbability: number;   // 0 - 100
+  drawProbability: number;  // 0 - 100
+  lossProbability: number;  // 0 - 100
+}
+
 export interface DialogueConsequence {
   boardTrustChange?: number;
   fanMoodChange?: number;
@@ -329,6 +345,7 @@ export interface VIPPrivilege {
   unlockedSecondTrainingQueue?: boolean;
   unlockedSpecialBadge?: boolean;
   hasDailyExclusiveChest?: boolean;
+  unlockedSpeed4x?: boolean;
 }
 
 export interface LeagueStanding {

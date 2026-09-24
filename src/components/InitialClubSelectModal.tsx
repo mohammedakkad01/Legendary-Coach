@@ -12,8 +12,9 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGameStore } from '../state/useGameStore';
 import { useFirebase } from '../firebase/FirebaseContext';
-import { REAL_LEAGUES, RealLeague, RealClubConfig, mergeLiveClubsIntoLeagues } from '../data/realLeaguesData';
-import { cloneClubToUserSave, fetchFootballLayer1Cache, fetchClubSquadCache } from '../services/realFootballDataService';
+import { RealLeague, RealClubConfig, getActiveLeagues } from '../data/realLeaguesData';
+import { hydrateLiveLeagues } from '../services/liveLeaguesService';
+import { cloneClubToUserSave, fetchClubSquadCache } from '../services/realFootballDataService';
 import { convertCachedSquadPlayerToGamePlayer } from '../services/footballApi';
 import { 
   Trophy, 
@@ -61,13 +62,13 @@ export const InitialClubSelectModal: React.FC = () => {
   // Live rosters: starts as the static curated list, then enriched in the background with the
   // full real rosters synced into Firestore (leagues_cache/clubs_cache) — see
   // scripts/syncFootballData.ts. Falls back silently to the static list if offline/not synced yet.
-  const [leagues, setLeagues] = useState<RealLeague[]>(REAL_LEAGUES);
+  const [leagues, setLeagues] = useState<RealLeague[]>(getActiveLeagues());
 
   useEffect(() => {
     let cancelled = false;
-    fetchFootballLayer1Cache().then(({ clubs }) => {
-      if (cancelled || !clubs || Object.keys(clubs).length === 0) return;
-      setLeagues(mergeLiveClubsIntoLeagues(REAL_LEAGUES, clubs));
+    // Also publishes the merged list game-wide (standings, fixtures, opponents read it).
+    hydrateLiveLeagues().then((merged) => {
+      if (!cancelled) setLeagues(merged);
     });
     return () => { cancelled = true; };
   }, []);
@@ -129,6 +130,10 @@ export const InitialClubSelectModal: React.FC = () => {
     }
 
     setJoiningClubId(clubConfig.id);
+
+    // Make sure the full live club lists are the active ones BEFORE the standings and
+    // fixtures of the new career are generated (otherwise they'd use the small fallback list).
+    await hydrateLiveLeagues();
 
     // Try to fetch this club's REAL, pre-synced squad (squads_cache, from
     // scripts/syncSquadsData.ts) so the manager takes over with that club's
@@ -282,13 +287,13 @@ export const InitialClubSelectModal: React.FC = () => {
                   </h3>
                 </div>
                 <span className="text-xs text-slate-400 font-medium">
-                  {isAr ? `${REAL_LEAGUES.length} دوريات عالمية رسمية` : `${REAL_LEAGUES.length} Official World Leagues`}
+                  {isAr ? `${leagues.length} دوريات عالمية رسمية` : `${leagues.length} Official World Leagues`}
                 </span>
               </div>
 
               {/* League Cards Carousel / Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-                {REAL_LEAGUES.map((league) => {
+                {leagues.map((league) => {
                   const isSelected = selectedLeagueId === league.id;
                   return (
                     <button

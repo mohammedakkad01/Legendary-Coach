@@ -1697,11 +1697,111 @@ export const REAL_LEAGUES: RealLeague[] = [
   }
 ];
 
+// ---------------------------------------------------------------------------
+// Active leagues registry
+// ---------------------------------------------------------------------------
+// REAL_LEAGUES above is only the small hand-curated FALLBACK (a handful of clubs
+// per league). The full, real club lists live in Firestore (clubs_cache) and are
+// merged in by mergeLiveClubsIntoLeagues(). Every gameplay function (standings,
+// fixtures, opponent lookup, AI-vs-AI simulation) must read the SAME merged list
+// the club-selection screen shows — otherwise the league picker says "20 clubs"
+// while the table/fixtures/opponents are built from the 5-club fallback.
+// liveLeaguesService.hydrateLiveLeagues() fills this registry once at startup.
+let activeLeagues: RealLeague[] = REAL_LEAGUES;
+
+export function setActiveLeagues(leagues: RealLeague[]): void {
+  if (Array.isArray(leagues) && leagues.length > 0) activeLeagues = leagues;
+}
+
+export function getActiveLeagues(): RealLeague[] {
+  return activeLeagues;
+}
+
+export function getLeagueById(leagueId: string): RealLeague {
+  return activeLeagues.find(l => l.id === leagueId)
+    || REAL_LEAGUES.find(l => l.id === leagueId)
+    || activeLeagues[0]
+    || REAL_LEAGUES[0];
+}
+
+/** Find a club config by id in the merged (live) list, falling back to the curated one. */
+export function findClubConfig(clubId: string): RealClubConfig | undefined {
+  for (const l of activeLeagues) {
+    const c = l.clubs.find(x => x.id === clubId);
+    if (c) return c;
+  }
+  for (const l of REAL_LEAGUES) {
+    const c = l.clubs.find(x => x.id === clubId);
+    if (c) return c;
+  }
+  return undefined;
+}
+
+/**
+ * Last-resort config for a club that exists in the user's fixtures/standings but
+ * not in any known league list (e.g. an older save). Guarantees the opponent still
+ * gets its OWN deterministic squad instead of a shared fallback squad.
+ */
+export function buildFallbackClubConfig(clubId: string, name: string, badge: string, leagueId: string): RealClubConfig {
+  const league = getLeagueById(leagueId);
+  return {
+    id: clubId,
+    name,
+    nameEn: name,
+    country: league?.country || '',
+    leagueId: league?.id || leagueId,
+    leagueName: league?.name || '',
+    leagueNameEn: league?.nameEn || '',
+    badge,
+    stadiumName: '',
+    city: '',
+    isTopTier: false,
+    gemCost: 0,
+    starRating: 3.5,
+    colors: { primary: '#334155', secondary: '#ffffff', accent: '#64748b' },
+    keyStars: [],
+    descriptionAr: '',
+    descriptionEn: '',
+  };
+}
+
+// ---- Season calendar dates -------------------------------------------------
+const toISODate = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const addDays = (d: Date, n: number): Date => {
+  const r = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  r.setDate(r.getDate() + n);
+  return r;
+};
+
+/** The first Saturday strictly after `from` (matchdays are played weekly on Saturdays). */
+export function nextSaturday(from: Date = new Date()): Date {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const add = ((6 - d.getDay() + 7) % 7) || 7;
+  return addDays(d, add);
+}
+
+/**
+ * Gives every fixture a real calendar date (one matchday per week). Saves created
+ * before dates existed are migrated: the first unplayed match lands on the next
+ * Saturday, played ones go back a week each, remaining ones forward a week each.
+ * Returns the same array if every fixture already has a date.
+ */
+export function ensureFixtureDates(fixtures: Fixture[]): Fixture[] {
+  if (!fixtures || fixtures.length === 0) return fixtures;
+  if (fixtures.every(f => !!f.date)) return fixtures;
+  const firstUnplayed = fixtures.findIndex(f => !f.played);
+  const anchorIdx = firstUnplayed === -1 ? fixtures.length : firstUnplayed;
+  const anchor = nextSaturday();
+  return fixtures.map((f, i) => (f.date ? f : { ...f, date: toISODate(addDays(anchor, (i - anchorIdx) * 7)) }));
+}
+
 /**
  * Generate League Standings for a specific league
  */
 export function generateStandingsForLeague(leagueId: string, playerClubId: string, playerClubName: string): LeagueStanding[] {
-  const league = REAL_LEAGUES.find(l => l.id === leagueId) || REAL_LEAGUES[0];
+  const league = getLeagueById(leagueId);
   const standings: LeagueStanding[] = [];
 
   // Add the player's club first or in sequence
@@ -1751,8 +1851,8 @@ export function generateStandingsForLeague(leagueId: string, playerClubId: strin
  * single hard-coded team (REAL_OPPONENT_CLUBS[0]) — startNewMatch() should
  * now always draw the opponent from the next unplayed Fixture here.
  */
-export function generateFixturesForLeague(leagueId: string, playerClubId: string): Fixture[] {
-  const league = REAL_LEAGUES.find(l => l.id === leagueId) || REAL_LEAGUES[0];
+export function generateFixturesForLeague(leagueId: string, playerClubId: string, seasonStart: Date = nextSaturday()): Fixture[] {
+  const league = getLeagueById(leagueId);
   const opponents = league.clubs.filter(c => c.id !== playerClubId);
 
   const rng = new SeededRandom(hashStringToSeed(`${leagueId}_${playerClubId}`));
@@ -1773,6 +1873,7 @@ export function generateFixturesForLeague(leagueId: string, playerClubId: string
       opponentBadge: c.badge,
       isHome: idx % 2 === 0,
       played: false,
+      date: toISODate(addDays(seasonStart, fixtures.length * 7)), // index of this fixture = weeks after the first matchday
     });
   });
   // Second round: reverse fixture, opposite venue
@@ -1784,6 +1885,7 @@ export function generateFixturesForLeague(leagueId: string, playerClubId: string
       opponentBadge: c.badge,
       isHome: idx % 2 !== 0,
       played: false,
+      date: toISODate(addDays(seasonStart, fixtures.length * 7)), // index of this fixture = weeks after the first matchday
     });
   });
 
@@ -1809,8 +1911,66 @@ function hashStringToSeed(str: string): number {
 // clones of the player's squad. It is a stand-in only — real player names
 // still require a synced squads_cache entry (scripts/syncSquadsData.ts),
 // which needs the API-Football sync to resume.
-const GENERIC_FIRST_NAMES = ['كريم', 'ياسين', 'عمر', 'بلال', 'حمزة', 'إلياس', 'طارق', 'زياد', 'أنس', 'رامي', 'سامي', 'وائل', 'فادي', 'نبيل', 'مراد'];
-const GENERIC_LAST_NAMES = ['الشمري', 'بن يوسف', 'الحمداني', 'دياباتي', 'كوليبالي', 'فيريرا', 'موراليس', 'بيلتران', 'ماركوفيتش', 'أوزيل', 'صالح', 'دهان', 'الغامدي', 'بوتشيتي', 'راشفورد'];
+type NameRegion = 'en' | 'es' | 'it' | 'de' | 'fr' | 'sa' | 'eg' | 'ma';
+const NAME_POOLS: Record<NameRegion, { first: string[]; last: string[]; flag: string }> = {
+  en: {
+    flag: '🇬🇧',
+    first: ['James', 'Jack', 'Harry', 'Oliver', 'George', 'Charlie', 'Thomas', 'Callum', 'Jordan', 'Marcus', 'Declan', 'Kyle', 'Reece', 'Luke', 'Ben', 'Sam', 'Connor', 'Aaron', 'Tyler', 'Mason', 'Ryan', 'Jude', 'Ollie', 'Ethan'],
+    last: ['Walker', 'Bennett', 'Hughes', 'Foster', 'Palmer', 'Gray', 'Mitchell', 'Carter', 'Brooks', 'Ward', 'Fletcher', 'Barnes', 'Holland', 'Grant', 'Cole', 'Webb', 'Shaw', 'Harrison', 'Dixon', 'Lawson', 'Stone', 'Reid', 'Hayes', 'Miller'],
+  },
+  es: {
+    flag: '🇪🇸',
+    first: ['Álvaro', 'Sergio', 'Iván', 'Dani', 'Pablo', 'Adrián', 'Jorge', 'Hugo', 'Marcos', 'Rubén', 'Óscar', 'Nacho', 'Unai', 'Aitor', 'Raúl', 'Diego', 'Javi', 'Pedro', 'Carlos', 'Borja', 'Ángel', 'Mikel', 'Gonzalo', 'Fran'],
+    last: ['García', 'Martínez', 'López', 'Sánchez', 'Romero', 'Navarro', 'Iglesias', 'Ortega', 'Herrera', 'Molina', 'Castro', 'Vidal', 'Serrano', 'Cortés', 'Rubio', 'Marín', 'Gil', 'Campos', 'Pardo', 'Ibáñez', 'Soler', 'Vega', 'Prieto', 'Lozano'],
+  },
+  it: {
+    flag: '🇮🇹',
+    first: ['Marco', 'Luca', 'Matteo', 'Andrea', 'Federico', 'Davide', 'Simone', 'Lorenzo', 'Alessio', 'Nicolò', 'Riccardo', 'Giacomo', 'Emanuele', 'Stefano', 'Fabio', 'Gianluca', 'Daniele', 'Mattia', 'Filippo', 'Antonio', 'Claudio', 'Enrico', 'Manuel', 'Salvatore'],
+    last: ['Rossi', 'Bianchi', 'Romano', 'Colombo', 'Ricci', 'Marino', 'Greco', 'Bruno', 'Gallo', 'Conti', 'De Luca', 'Costa', 'Giordano', 'Mancini', 'Rinaldi', 'Moretti', 'Barbieri', 'Fontana', 'Santoro', 'Mariani', 'Ferraro', 'Caruso', 'Leone', 'Vitale'],
+  },
+  de: {
+    flag: '🇩🇪',
+    first: ['Lukas', 'Jonas', 'Felix', 'Maximilian', 'Leon', 'Niklas', 'Tim', 'Jan', 'Florian', 'Moritz', 'Kevin', 'Robin', 'Philipp', 'Sebastian', 'Fabian', 'Timo', 'Julian', 'Marvin', 'Tobias', 'Lars', 'Dominik', 'Patrick', 'Jannik', 'Nico'],
+    last: ['Müller', 'Schneider', 'Fischer', 'Weber', 'Becker', 'Hoffmann', 'Schäfer', 'Koch', 'Richter', 'Klein', 'Wolf', 'Schröder', 'Neumann', 'Braun', 'Zimmermann', 'Krüger', 'Hofmann', 'Hartmann', 'Lange', 'Schmitt', 'Werner', 'Krause', 'Meier', 'Lehmann'],
+  },
+  fr: {
+    flag: '🇫🇷',
+    first: ['Lucas', 'Hugo', 'Théo', 'Mathis', 'Enzo', 'Nathan', 'Maxime', 'Antoine', 'Baptiste', 'Clément', 'Romain', 'Kylian', 'Yanis', 'Adrien', 'Valentin', 'Corentin', 'Florian', 'Jordan', 'Bryan', 'Axel', 'Alexis', 'Loïc', 'Dylan', 'Rayan'],
+    last: ['Martin', 'Bernard', 'Dubois', 'Thomas', 'Robert', 'Richard', 'Petit', 'Durand', 'Leroy', 'Moreau', 'Simon', 'Laurent', 'Lefebvre', 'Michel', 'Garcia', 'David', 'Bertrand', 'Roux', 'Vincent', 'Fournier', 'Morel', 'Girard', 'Mercier', 'Blanc'],
+  },
+  sa: {
+    flag: '🇸🇦',
+    first: ['سالم', 'فهد', 'عبدالله', 'محمد', 'خالد', 'ناصر', 'سلطان', 'تركي', 'بندر', 'فيصل', 'ياسر', 'عبدالرحمن', 'مشاري', 'نايف', 'ماجد', 'راكان', 'عبدالعزيز', 'مهند', 'صالح', 'هزاع', 'متعب', 'أحمد', 'إبراهيم', 'حمد'],
+    last: ['الشمري', 'الدوسري', 'القحطاني', 'الغامدي', 'العتيبي', 'المالكي', 'الحربي', 'الزهراني', 'السبيعي', 'الشهراني', 'العنزي', 'البقمي', 'المطيري', 'الرشيدي', 'الشهري', 'العمري', 'السلمي', 'اليامي', 'الجهني', 'الأحمدي', 'البلوي', 'الظاهري', 'الفيفي', 'الخالدي'],
+  },
+  eg: {
+    flag: '🇪🇬',
+    first: ['محمود', 'أحمد', 'مصطفى', 'عمر', 'كريم', 'يوسف', 'إسلام', 'أحمد', 'طارق', 'حسام', 'وليد', 'رامي', 'شريف', 'هاني', 'عماد', 'مروان', 'زياد', 'أيمن', 'محمد', 'إبراهيم', 'باسم', 'ياسر', 'حازم', 'كمال'],
+    last: ['عبدالله', 'حسن', 'سعيد', 'الشناوي', 'فتحي', 'مرسي', 'عطية', 'زكريا', 'إمام', 'جابر', 'بدر', 'شحاتة', 'فرج', 'منصور', 'رمضان', 'صبحي', 'الحلواني', 'عبدالغني', 'السيد', 'مختار', 'نصر', 'خليل', 'عاشور', 'توفيق'],
+  },
+  ma: {
+    flag: '🇲🇦',
+    first: ['ياسين', 'أيوب', 'حمزة', 'إلياس', 'سفيان', 'أنس', 'بدر', 'عبدالحق', 'رضا', 'زكريا', 'هشام', 'مراد', 'يوسف', 'نبيل', 'عادل', 'إسماعيل', 'رشيد', 'أمين', 'طارق', 'سعيد', 'مروان', 'آدم', 'جواد', 'كريم'],
+    last: ['بنعلي', 'الإدريسي', 'العلوي', 'بنشرقي', 'الفاسي', 'التازي', 'الحداد', 'المرابط', 'السعدي', 'بوفال', 'حكيمي', 'الشرقاوي', 'العمراني', 'الزروالي', 'بنسعيد', 'الكرواني', 'أمرابط', 'الوردي', 'بنجلون', 'الصغير', 'لمرابط', 'بوصوفة', 'الهلالي', 'مزراوي'],
+  },
+};
+const FOREIGN_FLAG = '🌍';
+
+const LEAGUE_REGION: Record<string, NameRegion> = {
+  premier_league: 'en', championship: 'en',
+  la_liga: 'es', segunda_division: 'es',
+  serie_a: 'it', bundesliga: 'de', ligue_1: 'fr',
+  saudi_pro_league: 'sa', yelo_league: 'sa',
+  egyptian_league: 'eg', botola_pro: 'ma',
+};
+// League level: shifts the whole squad's rating so a Premier League side is not rated like a lower division one.
+const LEAGUE_LEVEL_OFFSET: Record<string, number> = {
+  premier_league: 2, la_liga: 2, serie_a: 1, bundesliga: 1, ligue_1: 0,
+  saudi_pro_league: -2, championship: -6, segunda_division: -7,
+  egyptian_league: -8, botola_pro: -9, yelo_league: -10,
+};
+
+// Starters first (the lineup is "GK + first 10 outfielders", bench = next 4), then the rest of the squad.
 const SQUAD_TEMPLATE: { pos: PlayerPosition; isStarter: boolean }[] = [
   { pos: 'GK', isStarter: true },
   { pos: 'CB', isStarter: true }, { pos: 'CB', isStarter: true }, { pos: 'LB', isStarter: true }, { pos: 'RB', isStarter: true },
@@ -1818,28 +1978,46 @@ const SQUAD_TEMPLATE: { pos: PlayerPosition; isStarter: boolean }[] = [
   { pos: 'LW', isStarter: true }, { pos: 'RW', isStarter: true }, { pos: 'ST', isStarter: true },
   { pos: 'GK', isStarter: false },
   { pos: 'CB', isStarter: false }, { pos: 'CM', isStarter: false }, { pos: 'ST', isStarter: false },
+  { pos: 'LB', isStarter: false }, { pos: 'RB', isStarter: false }, { pos: 'CDM', isStarter: false },
+  { pos: 'RW', isStarter: false }, { pos: 'LW', isStarter: false }, { pos: 'CAM', isStarter: false }, { pos: 'ST', isStarter: false },
 ];
 
 export function generateSyntheticOpponentSquad(clubConfig: RealClubConfig): Player[] {
   const rng = new SeededRandom(hashStringToSeed(clubConfig.id));
-  // starRating (3.5–5.0) -> base overall (~68–88), so top-tier clubs field stronger squads.
-  const baseOverall = Math.round(58 + (clubConfig.starRating / 5) * 30);
+  const region: NameRegion = LEAGUE_REGION[clubConfig.leagueId] || 'en';
+  const pool = NAME_POOLS[region];
+  // Each club gets its own strength: star rating + league level + a deterministic per-club
+  // jitter (API-synced clubs all default to 3.5 stars, which used to make every squad equal).
+  const clubJitter = (hashStringToSeed(`${clubConfig.id}#q`) % 9) - 4; // -4..+4
+  const leagueOffset = LEAGUE_LEVEL_OFFSET[clubConfig.leagueId] ?? -4;
+  const stars = Math.max(3, Math.min(5, clubConfig.starRating || 3.5));
+  const baseOverall = Math.max(58, Math.min(88, Math.round(52 + (stars / 5) * 32 + leagueOffset + clubJitter)));
+  const usedNames = new Set<string>();
 
   return SQUAD_TEMPLATE.map((slot, idx) => {
     const variance = rng.nextRange(-4, 5);
     const overall = Math.max(55, Math.min(90, baseOverall + variance - (slot.isStarter ? 0 : 6)));
     const potential = Math.min(94, overall + rng.nextRange(0, 6));
     const rarity: PlayerRarity = overall >= 85 ? 'legend' : overall >= 78 ? 'rare' : overall >= 70 ? 'prospect' : 'standard';
-    const first = rng.pick(GENERIC_FIRST_NAMES);
-    const last = rng.pick(GENERIC_LAST_NAMES);
+    // ~75% local names, ~25% foreign signings — never the same full name twice in one squad.
+    const isForeign = rng.nextRange(0, 99) < 25;
+    const namePool = isForeign ? NAME_POOLS[rng.pick(Object.keys(NAME_POOLS) as NameRegion[])] : pool;
+    let first = rng.pick(namePool.first);
+    let last = rng.pick(namePool.last);
+    let guard = 0;
+    while (usedNames.has(`${first} ${last}`) && guard++ < 20) {
+      first = rng.pick(namePool.first);
+      last = rng.pick(namePool.last);
+    }
+    usedNames.add(`${first} ${last}`);
     return {
       id: `${clubConfig.id}_p${idx + 1}`,
       sport: 'football',
       name: `${first} ${last}`,
       nameEn: `${first} ${last}`,
       age: rng.nextRange(19, 33),
-      nationality: clubConfig.country,
-      nationalityFlag: '🌍',
+      nationality: isForeign ? 'Foreign' : clubConfig.country,
+      nationalityFlag: isForeign ? FOREIGN_FLAG : pool.flag,
       position: slot.pos,
       secondaryPositions: [],
       overall,

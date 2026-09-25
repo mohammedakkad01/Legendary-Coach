@@ -38,7 +38,18 @@ import {
   REAL_INITIAL_STANDINGS, 
   REAL_INITIAL_SCOUT_MARKET 
 } from '../data/realFootballData';
-import { RealClubConfig, REAL_LEAGUES, generateStandingsForLeague, generateFixturesForLeague, generateSyntheticOpponentSquad } from '../data/realLeaguesData';
+import {
+  RealClubConfig,
+  generateStandingsForLeague,
+  generateFixturesForLeague,
+  generateSyntheticOpponentSquad,
+  findClubConfig,
+  buildFallbackClubConfig,
+  getLeagueById,
+  ensureFixtureDates,
+} from '../data/realLeaguesData';
+import { hydrateLiveLeagues } from '../services/liveLeaguesService';
+import { predictMatch, calcAttackPower, calcDefensePower } from '../engine/matchPrediction';
 import { fetchClubSquadCache } from '../services/realFootballDataService';
 import { convertCachedSquadPlayerToGamePlayer } from '../services/footballApi';
 import { STORY_CHAPTER_1_MISSIONS } from '../data/storyChapter1';
@@ -146,6 +157,7 @@ interface GameState {
   isMatchPaused: boolean;
   isLoadingMatch: boolean;
   preMatchPreview: PreMatchData | null;
+  nextMatchInsight: PreMatchData | null; // live preview of the next fixture, shown on the idle match screen
   preMatchModalOpen: boolean;
   matchSpeed: number; // 1, 2, 4
   unlockedSpeed2x: boolean; // Purchased via Coins or Diamonds
@@ -203,6 +215,7 @@ interface GameState {
 
   // Match Operations
   openPreMatchPreview: () => Promise<void>;
+  loadNextMatchInsight: () => Promise<void>;
   closePreMatchPreview: () => void;
   startNewMatch: () => Promise<void>;
   confirmStartMatch: () => void;
@@ -292,11 +305,12 @@ export const useGameStore = create<GameState>((set, get) => {
   const resolveAiTeam = (clubId: string): SimTeam => {
     let squad = getCachedClubSquad(clubId);
     if (!squad) {
-      const cfg = REAL_LEAGUES.flatMap(l => l.clubs).find(c => c.id === clubId);
-      if (cfg) {
-        squad = withStableIds(clubId, generateSyntheticOpponentSquad(cfg));
-        registerClubSquad(clubId, squad);
-      }
+      // Look the club up in the ACTIVE (live-merged) league list; if it's still unknown
+      // (older save), build a config from its standings name so it gets its OWN squad.
+      const st = get();
+      const cfg = findClubConfig(clubId) || buildFallbackClubConfig(clubId, clubNameOf(clubId), '', st.club.divisionId);
+      squad = withStableIds(clubId, generateSyntheticOpponentSquad(cfg));
+      registerClubSquad(clubId, squad);
     }
     return { clubId, clubName: clubNameOf(clubId), xi: pickStartingXI(squad || []) };
   };
@@ -347,6 +361,132 @@ export const useGameStore = create<GameState>((set, get) => {
       }
     };
     squadPrefetchPromise = Promise.all([worker(), worker(), worker()]).then(() => undefined);
+  };
+
+  // -----------------------------------------------------------------------
+  // Pre-match data: opponent from the REAL calendar, squads from both clubs,
+  // powers from the starting XIs (+ VIP), odds from a Poisson model.
+  // -----------------------------------------------------------------------
+  const buildPreMatchData = async (allowSeasonRollover: boolean): Promise<PreMatchData | null> => {
+    // Full live club lists first (a saved game reloads without going through the club picker).
+    await hydrateLiveLeagues();
+
+    let state = get();
+    if (!state.hasSelectedInitialClub) return null;
+
+    // Old careers that started from the small fallback list and haven't played anything yet
+    // are rebuilt on the complete league (nothing to lose: no matches, no stats).
+    const liveLeague = getLeagueById(state.club.divisionId);
+    const wantedTeams = liveLeague.clubs.filter(c => c.id !== state.club.id).length + 1;
+    const noProgress = !state.leagueFixtures.some(f => f.played) && state.simulatedMatchdays.length === 0;
+    if (noProgress && liveLeague.id === state.club.divisionId && wantedTeams > state.leagueStandings.length) {
+      const rebuiltStandings = generateStandingsForLeague(state.club.divisionId, state.club.id, state.club.name);
+      const rebuiltFixtures = generateFixturesForLeague(state.club.divisionId, state.club.id);
+      set({ leagueStandings: rebuiltStandings, leagueFixtures: rebuiltFixtures });
+      saveToStorage({ leagueStandings: rebuiltStandings, leagueFixtures: rebuiltFixtures });
+      state = get();
+    }
+
+    let fixtures = state.leagueFixtures;
+    if (!fixtures || fixtures.length === 0 || fixtures.every(f => f.played)) {
+      if (!allowSeasonRollover && fixtures && fixtures.length > 0) return null; // season finished
+      const isSeasonRollover = !!fixtures && fixtures.length > 0;
+      fixtures = generateFixturesForLeague(state.club.divisionId, state.club.id);
+      set({ leagueFixtures: fixtures });
+      if (isSeasonRollover) {
+        // New season: matchdays restart at 1, so table, stats and the
+        // "already simulated" list must restart with them.
+        const freshStandings = generateStandingsForLeague(state.club.divisionId, state.club.id, state.club.name);
+        set({ leagueStandings: freshStandings, tournamentStats: [], simulatedMatchdays: [], lastRoundSummary: null });
+        saveToStorage({ leagueFixtures: fixtures, leagueStandings: freshStandings, tournamentStats: [], simulatedMatchdays: [] });
+      } else {
+        saveToStorage({ leagueFixtures: fixtures });
+      }
+    }
+    const nextFixture = fixtures.find(f => !f.played);
+    if (!nextFixture) return null;
+
+    // Opponent config: live-merged list first; unknown clubs get a per-club fallback config
+    // (NEVER a shared squad — that was why every team had the same 11 + 4 players).
+    const opponentConfig: RealClubConfig =
+      findClubConfig(nextFixture.opponentClubId) ||
+      buildFallbackClubConfig(nextFixture.opponentClubId, nextFixture.opponentClubName, nextFixture.opponentBadge, state.club.divisionId);
+
+    let opponentSquad: Player[] | null = null;
+    try {
+      const cached = await fetchClubSquadCache(nextFixture.opponentClubId);
+      if (cached && cached.players.length > 0) {
+        opponentSquad = cached.players.map(p => convertCachedSquadPlayerToGamePlayer(p, nextFixture.opponentClubName));
+      }
+    } catch (e) {
+      console.warn('Could not fetch opponent squad cache, using generated squad:', e);
+    }
+    if (!opponentSquad) {
+      opponentSquad = generateSyntheticOpponentSquad(opponentConfig);
+    }
+    // Stable ids so this opponent's stats stay attached to the same players across rounds/sessions.
+    const finalSquad = withStableIds(nextFixture.opponentClubId, opponentSquad);
+    registerClubSquad(nextFixture.opponentClubId, finalSquad);
+    prefetchLeagueSquads(); // load the rest of the league's squads in the background
+    const oGk = finalSquad.find(p => p.position === 'GK');
+    const oOutfield = finalSquad.filter(p => p.position !== 'GK').slice(0, 10);
+    const opponentLineup = [oGk, ...oOutfield].filter((p): p is Player => !!p).map(p => p.id);
+
+    const opponent: Club = {
+      ...REAL_INITIAL_PLAYER_CLUB,
+      id: nextFixture.opponentClubId,
+      name: nextFixture.opponentClubName,
+      nameEn: opponentConfig.nameEn || nextFixture.opponentClubName,
+      city: opponentConfig.city ? `${opponentConfig.city}، ${opponentConfig.country}` : '',
+      colors: opponentConfig.colors,
+      logoUrl: nextFixture.opponentBadge,
+      footballSquad: finalSquad,
+      footballLineup: opponentLineup,
+    };
+
+    // Team power from the starting XIs
+    const userLineupPlayers = state.club.footballSquad.filter(p => state.club.footballLineup.includes(p.id));
+    const userEffectiveSquad = userLineupPlayers.length > 0 ? userLineupPlayers : state.club.footballSquad.slice(0, 11);
+    const oppLineupPlayers = opponent.footballSquad.filter(p => opponent.footballLineup.includes(p.id));
+    const oppEffectiveSquad = oppLineupPlayers.length > 0 ? oppLineupPlayers : opponent.footballSquad.slice(0, 11);
+
+    let activeVipTier = VIP_LEVELS[0];
+    for (const tier of VIP_LEVELS) {
+      if (state.vipPoints >= tier.pointsRequired) activeVipTier = tier;
+    }
+    const vipAttackBoost = activeVipTier.attackBoostPercent || 0;
+    const vipDefenseBoost = activeVipTier.defenseBoostPercent || 0;
+
+    const userAtk = Math.round(calcAttackPower(userEffectiveSquad) * (1 + vipAttackBoost / 100));
+    const userDef = Math.round(calcDefensePower(userEffectiveSquad) * (1 + vipDefenseBoost / 100));
+    const oppAtk = calcAttackPower(oppEffectiveSquad);
+    const oppDef = calcDefensePower(oppEffectiveSquad);
+
+    const odds = predictMatch(userAtk, userDef, oppAtk, oppDef, nextFixture.isHome);
+    const userOverall = Math.round((userAtk + userDef) / 2);
+    const opponentOverall = Math.round((oppAtk + oppDef) / 2);
+
+    return {
+      fixture: nextFixture,
+      competition: state.club.divisionName || getLeagueById(state.club.divisionId).name || 'الدوري',
+      opponentClub: opponent,
+      userAttackPower: userAtk,
+      userDefensePower: userDef,
+      userVipAttackBoost: vipAttackBoost,
+      userVipDefenseBoost: vipDefenseBoost,
+      opponentAttackPower: oppAtk,
+      opponentDefensePower: oppDef,
+      winProbability: odds.win,
+      drawProbability: odds.draw,
+      lossProbability: odds.loss,
+      userOverall,
+      opponentOverall,
+      technicalGap: userOverall - opponentOverall,
+      expectedUserGoals: odds.expectedUserGoals,
+      expectedOpponentGoals: odds.expectedOpponentGoals,
+      mostLikelyScore: odds.mostLikelyScore,
+      opponentStarters: oppEffectiveSquad.length,
+    };
   };
 
   const runSimulateMatchday = (matchday: number): RoundSummary | null => {
@@ -517,7 +657,7 @@ export const useGameStore = create<GameState>((set, get) => {
     selectedMissionId: null,
 
     leagueStandings: initialSave?.leagueStandings || REAL_INITIAL_STANDINGS,
-    leagueFixtures: initialSave?.leagueFixtures || [],
+    leagueFixtures: ensureFixtureDates(initialSave?.leagueFixtures || []),
     matchHistory: initialSave?.matchHistory || [],
     tournamentStats: initialSave?.tournamentStats || [],
     simulatedMatchdays: initialSave?.simulatedMatchdays || [],
@@ -529,6 +669,7 @@ export const useGameStore = create<GameState>((set, get) => {
     isMatchPaused: false,
     isLoadingMatch: false,
     preMatchPreview: null,
+    nextMatchInsight: null,
     preMatchModalOpen: false,
     matchSpeed: 1,
     unlockedSpeed2x: initialSave?.unlockedSpeed2x ?? false,
@@ -670,13 +811,9 @@ export const useGameStore = create<GameState>((set, get) => {
         // generic starter roster when that club hasn't been synced yet.
         footballSquad: (realSquad && realSquad.length > 0)
           ? realSquad
-          : REAL_INITIAL_PLAYER_CLUB.footballSquad.map(p => ({
-              ...p,
-              realTeam: clubConfig.nameEn,
-              matchesPlayed: 0,
-              goalsOrPoints: 0,
-              assists: 0,
-            }))
+          // No synced squad yet: give this club its OWN deterministic squad (names by league region,
+          // strength by club) instead of the shared starter roster every club used to get.
+          : withStableIds(clubConfig.id, generateSyntheticOpponentSquad(clubConfig))
       };
 
       // Bug fix: footballLineup used to stay as the 11 hard-coded 'rp_*' ids
@@ -1057,138 +1194,25 @@ export const useGameStore = create<GameState>((set, get) => {
     },
 
     openPreMatchPreview: async () => {
-      const state = get();
-      let fixtures = state.leagueFixtures;
-      if (!fixtures || fixtures.length === 0 || fixtures.every(f => f.played)) {
-        const isSeasonRollover = !!fixtures && fixtures.length > 0;
-        fixtures = generateFixturesForLeague(state.club.divisionId, state.club.id);
-        set({ leagueFixtures: fixtures });
-        if (isSeasonRollover) {
-          // New season: matchdays restart at 1, so table, stats and the
-          // "already simulated" list must restart with them.
-          const freshStandings = generateStandingsForLeague(state.club.divisionId, state.club.id, state.club.name);
-          set({ leagueStandings: freshStandings, tournamentStats: [], simulatedMatchdays: [], lastRoundSummary: null });
-          saveToStorage({ leagueFixtures: fixtures, leagueStandings: freshStandings, tournamentStats: [], simulatedMatchdays: [] });
-        }
-      }
-      const nextFixture = fixtures.find(f => !f.played) || fixtures[0];
-      const league = REAL_LEAGUES.find(l => l.id === state.club.divisionId);
-      const opponentConfig = league?.clubs.find(c => c.id === nextFixture.opponentClubId);
-
       set({ isLoadingMatch: true });
-
-      let opponentSquad: Player[] | null = null;
-      try {
-        const cached = await fetchClubSquadCache(nextFixture.opponentClubId);
-        if (cached && cached.players.length > 0) {
-          opponentSquad = cached.players.map(p => convertCachedSquadPlayerToGamePlayer(p, nextFixture.opponentClubName));
-        }
-      } catch (e) {
-        console.warn('Could not fetch opponent squad cache, using generated squad:', e);
+      const previewData = await buildPreMatchData(true);
+      if (!previewData) {
+        set({ isLoadingMatch: false });
+        return;
       }
-      if (!opponentSquad && opponentConfig) {
-        opponentSquad = generateSyntheticOpponentSquad(opponentConfig);
-      }
-      // Stable ids so this opponent's stats stay attached to the same players across rounds/sessions.
-      const finalSquad = withStableIds(nextFixture.opponentClubId, opponentSquad || REAL_OPPONENT_CLUBS[0].footballSquad);
-      registerClubSquad(nextFixture.opponentClubId, finalSquad);
-      prefetchLeagueSquads(); // load the rest of the league's squads in the background
-      const oGk = finalSquad.find(p => p.position === 'GK');
-      const oOutfield = finalSquad.filter(p => p.position !== 'GK').slice(0, 10);
-      const opponentLineup = [oGk, ...oOutfield].filter((p): p is Player => !!p).map(p => p.id);
-
-      const opponent: Club = {
-        ...REAL_INITIAL_PLAYER_CLUB,
-        id: nextFixture.opponentClubId,
-        name: nextFixture.opponentClubName,
-        nameEn: opponentConfig?.nameEn || nextFixture.opponentClubName,
-        city: opponentConfig ? `${opponentConfig.city}، ${opponentConfig.country}` : '',
-        colors: opponentConfig?.colors || REAL_INITIAL_PLAYER_CLUB.colors,
-        logoUrl: nextFixture.opponentBadge,
-        footballSquad: finalSquad,
-        footballLineup: opponentLineup,
-      };
-
-      // Calculate Player Team Power from starting XI
-      const userLineupPlayers = state.club.footballSquad.filter(p => state.club.footballLineup.includes(p.id));
-      const userEffectiveSquad = userLineupPlayers.length > 0 ? userLineupPlayers : state.club.footballSquad.slice(0, 11);
-      
-      const calcAtk = (players: Player[]) => {
-        const sum = players.reduce((acc, p) => {
-          const pace = p.attributes?.pace || p.overall;
-          const shoot = p.attributes?.shooting || p.overall;
-          const pass = p.attributes?.passing || p.overall;
-          const dribble = p.attributes?.dribbling || p.overall;
-          return acc + (pace * 0.2 + shoot * 0.35 + pass * 0.25 + dribble * 0.2);
-        }, 0);
-        return Math.round(sum / Math.max(1, players.length));
-      };
-
-      const calcDef = (players: Player[]) => {
-        const sum = players.reduce((acc, p) => {
-          const def = p.attributes?.defending || p.overall;
-          const phys = p.attributes?.physical || p.overall;
-          const gk = p.position === 'GK' ? (p.attributes?.goalkeeping || p.overall) : def;
-          return acc + (def * 0.4 + phys * 0.3 + gk * 0.3);
-        }, 0);
-        return Math.round(sum / Math.max(1, players.length));
-      };
-
-      let activeVipTier = VIP_LEVELS[0];
-      for (const tier of VIP_LEVELS) {
-        if (state.vipPoints >= tier.pointsRequired) {
-          activeVipTier = tier;
-        }
-      }
-      const vipAttackBoost = activeVipTier.attackBoostPercent || 0;
-      const vipDefenseBoost = activeVipTier.defenseBoostPercent || 0;
-
-      const baseUserAtk = calcAtk(userEffectiveSquad);
-      const baseUserDef = calcDef(userEffectiveSquad);
-      const userAtk = Math.round(baseUserAtk * (1 + vipAttackBoost / 100));
-      const userDef = Math.round(baseUserDef * (1 + vipDefenseBoost / 100));
-
-      const oppLineupPlayers = opponent.footballSquad.filter(p => opponent.footballLineup.includes(p.id));
-      const oppEffectiveSquad = oppLineupPlayers.length > 0 ? oppLineupPlayers : opponent.footballSquad.slice(0, 11);
-      const oppAtk = calcAtk(oppEffectiveSquad);
-      const oppDef = calcDef(oppEffectiveSquad);
-
-      // Win probability formula based on net power difference
-      const userTotal = (userAtk + userDef) / 2;
-      const oppTotal = (oppAtk + oppDef) / 2;
-      const homeAdvantage = nextFixture.isHome ? 2.5 : -1.5;
-      const diff = (userTotal - oppTotal) + homeAdvantage;
-
-      let win = Math.round(40 + diff * 1.8);
-      let loss = Math.round(32 - diff * 1.5);
-      win = Math.max(12, Math.min(82, win));
-      loss = Math.max(10, Math.min(80, loss));
-      let draw = Math.max(8, 100 - win - loss);
-      const totalOdds = win + draw + loss;
-      win = Math.round((win / totalOdds) * 100);
-      loss = Math.round((loss / totalOdds) * 100);
-      draw = 100 - win - loss;
-
-      const previewData: PreMatchData = {
-        fixture: nextFixture,
-        competition: opponentConfig?.leagueNameEn ? (league?.name || 'الدوري') : 'دوري التحدي للدرجة الثانية',
-        opponentClub: opponent,
-        userAttackPower: userAtk,
-        userDefensePower: userDef,
-        userVipAttackBoost: vipAttackBoost,
-        userVipDefenseBoost: vipDefenseBoost,
-        opponentAttackPower: oppAtk,
-        opponentDefensePower: oppDef,
-        winProbability: win,
-        drawProbability: draw,
-        lossProbability: loss,
-      };
-
       set({
         isLoadingMatch: false,
         preMatchPreview: previewData,
+        nextMatchInsight: previewData,
         preMatchModalOpen: true,
       });
+    },
+
+    // Lightweight version used by the idle match screen: same numbers as the pre-match
+    // preview, but never opens the modal and never starts a new season by itself.
+    loadNextMatchInsight: async () => {
+      const data = await buildPreMatchData(false);
+      set({ nextMatchInsight: data });
     },
 
     closePreMatchPreview: () => {

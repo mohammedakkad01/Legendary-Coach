@@ -29,7 +29,8 @@ import {
   Globe,
   Swords,
   Activity,
-  HeartPulse
+  HeartPulse,
+  FastForward
 } from 'lucide-react';
 
 export const DashboardView: React.FC = () => {
@@ -44,6 +45,7 @@ export const DashboardView: React.FC = () => {
     storyMissions, 
     setActiveTab, 
     startNewMatch, 
+    skipAndSimulateNextMatch,
     setClubSelectionModalOpen,
     dailyMissions,
     setDailyMissionsModalOpen,
@@ -51,6 +53,10 @@ export const DashboardView: React.FC = () => {
     runSquadRecoverySession,
     hasSelectedInitialClub,
     isLoadingMatch,
+    leagueStandings,
+    leagueFixtures,
+    matchHistory,
+    setSeasonFinaleModalOpen,
     language 
   } = useGameStore();
 
@@ -78,6 +84,21 @@ export const DashboardView: React.FC = () => {
 
   const nextMission = storyMissions.find(m => !m.isCompleted);
   const completedMissionsCount = storyMissions.filter(m => m.isCompleted).length;
+
+  const nextFixture = (leagueFixtures || []).find(f => !f.played);
+  const currentRound = nextFixture ? nextFixture.matchday : ((leagueFixtures || []).length > 0 ? leagueFixtures.length : 1);
+  const totalRounds = (leagueFixtures || []).length > 0 ? leagueFixtures[leagueFixtures.length - 1].matchday : 38;
+  const seasonFinished = (leagueFixtures || []).length > 0 && !nextFixture;
+
+  const standing = (leagueStandings || []).find(s => s.clubId === club.id);
+  const last3Form: ('W' | 'D' | 'L')[] = (standing?.form && standing.form.length > 0)
+    ? standing.form.slice(0, 3)
+    : (matchHistory || []).slice(0, 3).map(m => {
+        const isHome = m.homeClubId === club.id;
+        const myScore = isHome ? m.homeScore : m.awayScore;
+        const oppScore = isHome ? m.awayScore : m.homeScore;
+        return myScore > oppScore ? 'W' : myScore < oppScore ? 'L' : 'D';
+      });
 
   return (
     <div className="max-w-7xl mx-auto p-3 sm:p-6 space-y-6">
@@ -124,11 +145,43 @@ export const DashboardView: React.FC = () => {
                 <span>•</span>
                 <span>🏟️ {isAr ? `الملعب: ${club.stadiumName}` : `Stadium: ${club.stadiumName}`}</span>
               </p>
+
+              {/* League Round & Last 3 Matches Status */}
+              <div className="flex items-center gap-2 sm:gap-3 mt-2 flex-wrap">
+                <span className="px-2.5 py-1 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-black flex items-center gap-1.5 shadow-sm">
+                  <Calendar className="w-3.5 h-3.5 text-purple-400" />
+                  <span>{isAr ? `الجولة الحالية: ${currentRound} / ${totalRounds}` : `Matchday: ${currentRound} / ${totalRounds}`}</span>
+                </span>
+
+                <div className="flex items-center gap-1.5 bg-slate-950/80 px-2.5 py-1 rounded-xl border border-slate-800 text-xs">
+                  <span className="text-[11px] text-slate-400 font-bold">{isAr ? 'آخر 3 مباريات:' : 'Last 3:'}</span>
+                  {last3Form.length === 0 ? (
+                    <span className="text-[11px] text-slate-500 font-medium">{isAr ? 'لم تلعب مباريات بعد' : 'No matches yet'}</span>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      {last3Form.map((res, i) => (
+                        <span
+                          key={i}
+                          className={`w-5 h-5 rounded-md text-[10px] font-black flex items-center justify-center ${
+                            res === 'W'
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                              : res === 'D'
+                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                              : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                          }`}
+                        >
+                          {isAr ? (res === 'W' ? 'ف' : res === 'D' ? 'ت' : 'خ') : res}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
           {/* Quick Action Buttons */}
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5 flex-wrap">
             {!hasSelectedInitialClub && (
               <button
                 onClick={() => setClubSelectionModalOpen(true)}
@@ -139,19 +192,42 @@ export const DashboardView: React.FC = () => {
               </button>
             )}
 
-            <button
-              id="btn_dashboard_kickoff"
-              disabled={isLoadingMatch}
-              onClick={() => startNewMatch()}
-              className="flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-slate-950 font-black text-sm sm:text-base shadow-xl shadow-emerald-500/30 group transition-all cursor-pointer"
-            >
-              <Flame className={`w-5 h-5 text-slate-950 ${isLoadingMatch ? 'animate-spin' : 'group-hover:scale-110'} transition-transform`} />
-              <span>
-                {isLoadingMatch 
-                  ? (isAr ? 'جاري تحضير المعاينة...' : 'Loading Clash...') 
-                  : (isAr ? 'خوض المباراة القادمة' : 'Play Next Match')}
-              </span>
-            </button>
+            {seasonFinished ? (
+              <button
+                onClick={() => setSeasonFinaleModalOpen(true)}
+                className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-sm sm:text-base shadow-xl shadow-amber-500/30 cursor-pointer transition-all"
+              >
+                <Trophy className="w-5 h-5 text-slate-950" />
+                <span>{isAr ? '🏆 إنهاء الموسم واستلام الجوائز' : '🏆 Season Finale & Awards'}</span>
+              </button>
+            ) : (
+              <>
+                <button
+                  id="btn_dashboard_skip"
+                  disabled={isLoadingMatch}
+                  onClick={() => skipAndSimulateNextMatch()}
+                  className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-black text-xs sm:text-sm shadow-lg transition-all cursor-pointer disabled:opacity-50"
+                  title={isAr ? 'تخطي المباراة ومحاكاة الجولة فوراً مع خصم 50% من إيرادات التذاكر' : 'Instant simulate round with 50% revenue deduction'}
+                >
+                  <FastForward className="w-4 h-4 text-amber-400" />
+                  <span>{isAr ? 'تخطي المباراة (-50% إيرادات)' : 'Skip Match (-50% Rev)'}</span>
+                </button>
+
+                <button
+                  id="btn_dashboard_kickoff"
+                  disabled={isLoadingMatch}
+                  onClick={() => startNewMatch()}
+                  className="flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-slate-950 font-black text-sm sm:text-base shadow-xl shadow-emerald-500/30 group transition-all cursor-pointer"
+                >
+                  <Flame className={`w-5 h-5 text-slate-950 ${isLoadingMatch ? 'animate-spin' : 'group-hover:scale-110'} transition-transform`} />
+                  <span>
+                    {isLoadingMatch 
+                      ? (isAr ? 'جاري تحضير المعاينة...' : 'Loading Clash...') 
+                      : (isAr ? 'خوض المباراة القادمة' : 'Play Next Match')}
+                  </span>
+                </button>
+              </>
+            )}
           </div>
         </div>
 

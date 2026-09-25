@@ -137,12 +137,39 @@ export const LiveMatchView: React.FC = () => {
               </span>
             </div>
 
-            {/* Minute Badge */}
+            {/* Minute Badge & Status */}
             <div className="mt-2 flex items-center gap-2">
               {isFinished ? (
-                <span className="px-3 py-0.5 rounded-full text-xs font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  {isAr ? 'صافرة النهاية — انتهت المباراة' : 'Full Time — Match Finished'}
-                </span>
+                (() => {
+                  const isUserHome = record.homeClubId === club.id;
+                  const userScore = isUserHome ? record.homeScore : record.awayScore;
+                  const oppScore = isUserHome ? record.awayScore : record.homeScore;
+                  const won = userScore > oppScore;
+                  const drawn = userScore === oppScore;
+
+                  if (won) {
+                    return (
+                      <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 shadow-sm">
+                        <span>🏁</span>
+                        <span>{isAr ? 'صافرة النهاية — فوز' : 'Full Time — Win'}</span>
+                      </span>
+                    );
+                  }
+                  if (drawn) {
+                    return (
+                      <span className="px-3 py-1 rounded-full text-xs font-black bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1.5">
+                        <span>🏁</span>
+                        <span>{isAr ? 'صافرة النهاية — تعادل' : 'Full Time — Draw'}</span>
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="px-3 py-1 rounded-full text-xs font-black bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1.5">
+                      <span>🏁</span>
+                      <span>{isAr ? 'صافرة النهاية — خسارة' : 'Full Time — Defeat'}</span>
+                    </span>
+                  );
+                })()
               ) : (
                 <span className="px-3 py-0.5 rounded-full text-xs font-black bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />

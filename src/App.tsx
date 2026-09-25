@@ -31,6 +31,7 @@ import { MatchResultsCharacterModal } from './components/MatchResultsCharacterMo
 import { TacticalDuelModal } from './components/TacticalDuelModal';
 import { PreMatchView } from './components/PreMatchView';
 import { RoundSummaryView } from './components/RoundSummaryView';
+import { SeasonFinaleModal } from './components/SeasonFinaleModal';
 import { hydrateLiveLeagues } from './services/liveLeaguesService';
 
 function MainAppLayout() {
@@ -128,6 +129,9 @@ function MainAppLayout() {
 
       {/* Pre-Match Tactical Preview (معاينة ما قبل صافرة البداية) */}
       {preMatchModalOpen && <PreMatchView />}
+
+      {/* Season Finale Modal (ختام الموسم وحصاد البطولة) */}
+      <SeasonFinaleModal />
 
       {/* Footer */}
       <footer className="bg-slate-950/90 border-t border-slate-900 py-4 px-4 text-center text-xs text-slate-500">

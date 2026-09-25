@@ -808,6 +808,17 @@ export const VIP_LEVELS: VIPPrivilege[] = [
   }
 ];
 
+export const getVipScoutAccuracy = (vipLevel: number): number => {
+  const level = Math.max(1, Math.min(20, vipLevel || 1));
+  return Math.min(98, Math.round(70 + (level - 1) * 1.5));
+};
+
+VIP_LEVELS.forEach(tier => {
+  tier.scoutAccuracyPercent = getVipScoutAccuracy(tier.level);
+  tier.bonusesAr.push(`🔍 دقة بيانات كشافة المباريات: ${tier.scoutAccuracyPercent}%`);
+  tier.bonusesEn.push(`🔍 Match Scouting Accuracy: ${tier.scoutAccuracyPercent}%`);
+});
+
 export interface PaymentProvider {
   isAvailable(): boolean;
   initiateTransaction(itemId: string): Promise<{ success: boolean; error?: string }>;

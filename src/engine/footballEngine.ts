@@ -9,6 +9,7 @@
 
 import { Club, MatchEvent, MatchRecord, MatchStats, FootballTactics } from '../types/game';
 import { SeededRandom } from './prng';
+import { calcAttackPower, calcDefensePower } from './matchPrediction';
 
 export interface SimulationStepResult {
   currentMinute: number;
@@ -72,12 +73,14 @@ export class FootballMatchEngine {
     };
   }
 
-  /** Calculate team power based on lineup and tactical style */
+  /** Calculate team power based on lineup, position weighting and tactical style */
   private calculateTeamPower(club: Club, tactics: FootballTactics, isHome: boolean) {
     const lineupPlayers = club.footballSquad.filter(p => club.footballLineup.includes(p.id));
-    const avgOverall = lineupPlayers.length > 0 
-      ? lineupPlayers.reduce((acc, p) => acc + p.overall, 0) / lineupPlayers.length 
-      : 65;
+    const effectiveLineup = lineupPlayers.length >= 7 ? lineupPlayers : club.footballSquad.slice(0, 11);
+
+    // Position-aware base attack and defense ratings (identical to pre-match predictions)
+    const baseAtk = calcAttackPower(effectiveLineup);
+    const baseDef = calcDefensePower(effectiveLineup);
 
     let attackBonus = 0;
     let defenseBonus = 0;
@@ -91,14 +94,14 @@ export class FootballMatchEngine {
       attackBonus += 3;
     }
 
-    const homeAdvantage = isHome ? 3 : 0;
-    const vipAtk = isHome ? (avgOverall * (this.homeVipAttackBoost / 100)) : 0;
-    const vipDef = isHome ? (avgOverall * (this.homeVipDefenseBoost / 100)) : 0;
+    const homeAdvantage = isHome ? 3.5 : 0;
+    const vipAtk = isHome ? (baseAtk * (this.homeVipAttackBoost / 100)) : 0;
+    const vipDef = isHome ? (baseDef * (this.homeVipDefenseBoost / 100)) : 0;
 
     return {
-      attack: avgOverall + attackBonus + homeAdvantage + vipAtk,
-      defense: avgOverall + defenseBonus + homeAdvantage + vipDef,
-      lineup: lineupPlayers
+      attack: Math.round(baseAtk + attackBonus + homeAdvantage + vipAtk),
+      defense: Math.round(baseDef + defenseBonus + homeAdvantage + vipDef),
+      lineup: effectiveLineup
     };
   }
 
@@ -189,8 +192,9 @@ export class FootballMatchEngine {
       const attackingPlayers = attackingPower.lineup.filter(p => p.position !== 'GK');
       const shooter = this.prng.pick(attackingPlayers.length > 0 ? attackingPlayers : attackingClub.footballSquad);
 
-      const shotSuccessThreshold = (attackingPower.attack / (attackingPower.attack + defendingPower.defense)) * 0.42;
-      const onTarget = this.prng.nextFloat() < 0.48;
+      const ratio = Math.max(0.4, Math.min(2.5, attackingPower.attack / Math.max(30, defendingPower.defense)));
+      const shotSuccessThreshold = Math.min(0.55, Math.max(0.12, 0.28 * Math.pow(ratio, 2.0)));
+      const onTarget = this.prng.nextFloat() < Math.min(0.65, Math.max(0.35, 0.44 + (attackingPower.attack - defendingPower.defense) * 0.005));
 
       if (isHomeAttacking) {
         this.stats.homeShots++;

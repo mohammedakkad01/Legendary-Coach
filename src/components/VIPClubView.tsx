@@ -24,7 +24,8 @@ import {
   Zap, 
   Gem, 
   ChevronRight, 
-  AlertCircle 
+  AlertCircle,
+  Search 
 } from 'lucide-react';
 
 export const VIPClubView: React.FC = () => {
@@ -146,7 +147,7 @@ export const VIPClubView: React.FC = () => {
             </p>
 
             {/* Current Active Bonuses Summary */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2">
               <div className="bg-slate-950/70 border border-amber-500/30 rounded-xl p-2.5">
                 <div className="flex items-center gap-1.5 text-amber-400 text-xs font-bold">
                   <Swords className="w-3.5 h-3.5" />
@@ -169,6 +170,14 @@ export const VIPClubView: React.FC = () => {
                   <span>{isAr ? 'تقليل عقوبة الخسارة' : 'Loss Mitigation'}</span>
                 </div>
                 <div className="text-lg font-black text-white mt-0.5">-{currentTier.lossMitigationPercent || 2}%</div>
+              </div>
+
+              <div className="bg-slate-950/70 border border-sky-500/30 rounded-xl p-2.5">
+                <div className="flex items-center gap-1.5 text-sky-400 text-xs font-bold">
+                  <Search className="w-3.5 h-3.5" />
+                  <span>{isAr ? 'دقة الكشافة' : 'Scout Accuracy'}</span>
+                </div>
+                <div className="text-lg font-black text-white mt-0.5">{currentTier.scoutAccuracyPercent || 70}%</div>
               </div>
 
               <div className="bg-slate-950/70 border border-purple-500/30 rounded-xl p-2.5">
@@ -395,13 +404,16 @@ export const VIPClubView: React.FC = () => {
                 {/* Boost Badges */}
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   <span className="px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-bold">
-                    ⚔️ هجوم +{tier.attackBoostPercent}%
+                    ⚔️ {isAr ? `هجوم +${tier.attackBoostPercent}%` : `Atk +${tier.attackBoostPercent}%`}
                   </span>
                   <span className="px-2 py-0.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[11px] font-bold">
-                    🛡️ دفاع +{tier.defenseBoostPercent}%
+                    🛡️ {isAr ? `دفاع +${tier.defenseBoostPercent}%` : `Def +${tier.defenseBoostPercent}%`}
                   </span>
                   <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold">
-                    🛡️ خسارة -{tier.lossMitigationPercent}%
+                    🛡️ {isAr ? `خسارة -${tier.lossMitigationPercent}%` : `Mitig -${tier.lossMitigationPercent}%`}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[11px] font-bold">
+                    🔍 {isAr ? `كشافة ${tier.scoutAccuracyPercent || 70}%` : `Scout ${tier.scoutAccuracyPercent || 70}%`}
                   </span>
                 </div>
 

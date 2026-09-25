@@ -175,6 +175,7 @@ export interface Club {
   duelWins?: number;
   duelLosses?: number;
   duelDraws?: number;
+  trophies?: number;
 }
 
 export interface MatchEvent {
@@ -282,6 +283,18 @@ export interface PreMatchData {
   expectedOpponentGoals: number;
   mostLikelyScore: string;      // e.g. "2-1" (from the user's point of view)
   opponentStarters: number;     // how many players were used to compute the opponent's power
+  isScouted?: boolean;          // whether manager sent a scout for this match
+  scoutAccuracy?: number;       // scouting accuracy percentage (70% base up to 98% with VIP)
+}
+
+// Tactical Scout Report for a fixture
+export interface MatchScoutReport {
+  matchday: number;
+  opponentClubId: string;
+  unlocked: boolean;
+  unlockedBy: 'coins' | 'diamonds';
+  accuracyPercent: number;
+  unlockedAt: number;
 }
 
 export interface DialogueConsequence {
@@ -344,6 +357,7 @@ export interface VIPPrivilege {
   attackBoostPercent: number;    // +1% in VIP 1 up to +10% in VIP 20
   defenseBoostPercent: number;   // +1% in VIP 1 up to +10% in VIP 20
   lossMitigationPercent: number; // -2% penalty in VIP 1 up to -30% in VIP 20
+  scoutAccuracyPercent?: number; // Tactical scout accuracy (70% - 98%)
   // Chest contents metadata
   upgradeChestReward: {
     coins: number;

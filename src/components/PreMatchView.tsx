@@ -24,9 +24,14 @@ import {
   Sparkles,
   Sliders,
   CheckCircle2,
-  Calendar
+  Calendar,
+  Search,
+  Lock,
+  FastForward,
+  Coins,
+  Gem
 } from 'lucide-react';
-import { countdownLabel, formatFixtureDate } from '../utils/fixtureDate';
+import { formatFixtureDate } from '../utils/fixtureDate';
 
 export const PreMatchView: React.FC = () => {
   const { 
@@ -34,9 +39,13 @@ export const PreMatchView: React.FC = () => {
     preMatchPreview, 
     confirmStartMatch, 
     closePreMatchPreview, 
+    skipAndSimulateNextMatch,
+    unlockMatchScout,
     setActiveTab, 
     language 
   } = useGameStore();
+
+  const [scoutMessage, setScoutMessage] = React.useState<string | null>(null);
 
   const isAr = language === 'ar';
 
@@ -60,7 +69,14 @@ export const PreMatchView: React.FC = () => {
     expectedOpponentGoals,
     mostLikelyScore,
     opponentStarters,
+    isScouted,
+    scoutAccuracy = 70,
   } = preMatchPreview;
+
+  const handleUnlockScout = (method: 'coins' | 'diamonds') => {
+    const res = unlockMatchScout(method);
+    setScoutMessage(res.message);
+  };
 
   const gapColor = technicalGap > 1 ? 'text-emerald-400' : technicalGap < -1 ? 'text-rose-400' : 'text-amber-400';
   const gapText = technicalGap > 1
@@ -161,68 +177,142 @@ export const PreMatchView: React.FC = () => {
           </div>
         </div>
 
-        {/* Kick-off date */}
+        {/* Kick-off date (without countdown badge) */}
         <div className="mt-3 flex items-center justify-center gap-2 text-xs font-bold text-slate-300">
           <Calendar className="w-3.5 h-3.5 text-sky-400" />
           <span>{formatFixtureDate(fixture.date, isAr)}</span>
-          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black">
-            {countdownLabel(fixture.date, isAr)}
-          </span>
         </div>
 
-        {/* Expected Win/Draw/Loss Odds */}
-        <div className="mt-5 bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
-          <div className="flex items-center justify-between text-xs font-black mb-2 text-slate-300">
-            <span className="text-emerald-400 flex items-center gap-1">
-              <span>{isAr ? 'فوزك' : 'Win'}</span>
-              <span className="font-mono text-sm">{winProbability}%</span>
-            </span>
-            <span className="text-amber-400 flex items-center gap-1">
-              <span>{isAr ? 'تعادل' : 'Draw'}</span>
-              <span className="font-mono text-sm">{drawProbability}%</span>
-            </span>
-            <span className="text-rose-400 flex items-center gap-1">
-              <span>{isAr ? 'خسارة' : 'Loss'}</span>
-              <span className="font-mono text-sm">{lossProbability}%</span>
-            </span>
+        {/* Scouting Status Notification */}
+        {scoutMessage && (
+          <div className="mt-4 p-3 rounded-2xl bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-bold text-center animate-fadeIn">
+            {scoutMessage}
           </div>
+        )}
 
-          {/* Triple-segmented probability bar */}
-          <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden flex border border-slate-800 shadow-inner">
-            <div
-              className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-700"
-              style={{ width: `${winProbability}%` }}
-              title={`Win: ${winProbability}%`}
-            />
-            <div
-              className="h-full bg-gradient-to-r from-amber-500 to-yellow-500 transition-all duration-700"
-              style={{ width: `${drawProbability}%` }}
-              title={`Draw: ${drawProbability}%`}
-            />
-            <div
-              className="h-full bg-gradient-to-r from-rose-500 to-red-600 transition-all duration-700"
-              style={{ width: `${lossProbability}%` }}
-              title={`Loss: ${lossProbability}%`}
-            />
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-3 text-center">
-            <div className="bg-slate-950/70 rounded-xl border border-slate-800 p-2.5">
-              <span className="text-[10px] text-slate-500 font-bold block">{isAr ? 'النتيجة الأرجح' : 'Most likely score'}</span>
-              <span className="font-mono text-lg font-black text-white">{mostLikelyScore}</span>
-              <span className="text-[10px] text-slate-500 block">{isAr ? `متوسط الأهداف ${expectedUserGoals} - ${expectedOpponentGoals}` : `xG ${expectedUserGoals} - ${expectedOpponentGoals}`}</span>
+        {/* Scouting Unlock Panel OR Verified Analysis */}
+        {!isScouted ? (
+          <div className="mt-5 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border-2 border-amber-500/40 rounded-3xl p-5 sm:p-6 shadow-2xl text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
+              <Search className="w-7 h-7" />
             </div>
-            <div className="bg-slate-950/70 rounded-xl border border-slate-800 p-2.5">
-              <span className="text-[10px] text-slate-500 font-bold block">{isAr ? 'الفارق الفني' : 'Technical gap'}</span>
-              <span className={`font-mono text-lg font-black ${gapColor}`}>{technicalGap > 0 ? `+${technicalGap}` : technicalGap}</span>
-              <span className={`text-[10px] block font-bold ${gapColor}`}>{gapText}</span>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-center gap-2">
+                <Lock className="w-4 h-4 text-amber-400" />
+                <h3 className="font-heading font-black text-base sm:text-lg text-white">
+                  {isAr ? 'تقرير الكشافة الفنية للمباراة (مغلق)' : 'Technical Scouting Report (Locked)'}
+                </h3>
+              </div>
+              <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+                {isAr
+                  ? 'أرسل كشافك الفني لدراسة تكتيك ونقاط قوة وضعف الخصم وحساب نسب الفوز والنتيجة المتوقعة بدقة.'
+                  : 'Dispatch a scout to analyze opponent strengths, weaknesses and calculate precise win probabilities.'}
+              </p>
             </div>
+
+            {/* Scout Accuracy based on VIP */}
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900 border border-slate-700 text-xs font-bold">
+              <Crown className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-slate-300">
+                {isAr ? 'نسبة دقة بيانات كشافك الحالي: ' : 'Your Current Scout Accuracy: '}
+                <strong className="text-amber-300 font-mono">{scoutAccuracy}%</strong>
+              </span>
+              <span className="text-[10px] text-slate-500">{isAr ? '(تزداد مع VIP)' : '(increases with VIP)'}</span>
+            </div>
+
+            {/* Unlock Choices */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md mx-auto pt-1">
+              <button
+                onClick={() => handleUnlockScout('coins')}
+                className="flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 font-black text-xs shadow-md transition-all cursor-pointer"
+              >
+                <Coins className="w-4 h-4 text-amber-400" />
+                <span>{isAr ? 'إرسال كشاف (10,000 🪙)' : 'Dispatch Scout (10,000 🪙)'}</span>
+              </button>
+
+              <button
+                onClick={() => handleUnlockScout('diamonds')}
+                className="flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-black text-xs shadow-lg shadow-sky-600/30 transition-all cursor-pointer"
+              >
+                <Gem className="w-4 h-4 text-sky-200" />
+                <span>{isAr ? 'تقرير استخباراتي (15 💎)' : 'Instant Intel (15 💎)'}</span>
+              </button>
+            </div>
+
+            <p className="text-[11px] text-slate-500">
+              {isAr ? '💡 يمكنك بدء المباراة مباشرة دون كشافة، أو طلب التقرير لكشف نقاط القوة والضعف والنسب.' : '💡 You can play or skip directly, or scout to reveal full tactical odds.'}
+            </p>
           </div>
-          <span className="text-[10px] text-slate-400 text-center block mt-1.5 font-bold">
-            {isAr 
-              ? 'توقعات الذكاء التكتيكي مبنية على التشكيلة الأساسية ومكافآت الـ VIP والفارق الفني بين الفريقين'
-              : 'Statistical prediction grounded in starting XI ratings, tactics, and active VIP bonuses'}
-          </span>
-        </div>
+        ) : (
+          <>
+            {/* Verified Scout Badge */}
+            <div className="mt-4 flex items-center justify-between px-4 py-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs">
+              <span className="text-emerald-400 font-black flex items-center gap-2">
+                <Search className="w-4 h-4 text-emerald-400" />
+                <span>{isAr ? 'تقرير كشاف معتمد للمباراة' : 'Verified Match Scouting Report'}</span>
+              </span>
+              <span className="text-slate-300 font-bold">
+                {isAr ? 'دقة البيانات: ' : 'Data Accuracy: '}
+                <strong className="text-emerald-300 font-mono">{scoutAccuracy}%</strong>
+              </span>
+            </div>
+
+            {/* Expected Win/Draw/Loss Odds */}
+            <div className="mt-3 bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
+              <div className="flex items-center justify-between text-xs font-black mb-2 text-slate-300">
+                <span className="text-emerald-400 flex items-center gap-1">
+                  <span>{isAr ? 'فوزك' : 'Win'}</span>
+                  <span className="font-mono text-sm">{winProbability}%</span>
+                </span>
+                <span className="text-amber-400 flex items-center gap-1">
+                  <span>{isAr ? 'تعادل' : 'Draw'}</span>
+                  <span className="font-mono text-sm">{drawProbability}%</span>
+                </span>
+                <span className="text-rose-400 flex items-center gap-1">
+                  <span>{isAr ? 'خسارة' : 'Loss'}</span>
+                  <span className="font-mono text-sm">{lossProbability}%</span>
+                </span>
+              </div>
+
+              {/* Triple-segmented probability bar */}
+              <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden flex border border-slate-800 shadow-inner">
+                <div
+                  className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-700"
+                  style={{ width: `${winProbability}%` }}
+                  title={`Win: ${winProbability}%`}
+                />
+                <div
+                  className="h-full bg-gradient-to-r from-amber-500 to-yellow-500 transition-all duration-700"
+                  style={{ width: `${drawProbability}%` }}
+                  title={`Draw: ${drawProbability}%`}
+                />
+                <div
+                  className="h-full bg-gradient-to-r from-rose-500 to-red-600 transition-all duration-700"
+                  style={{ width: `${lossProbability}%` }}
+                  title={`Loss: ${lossProbability}%`}
+                />
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-center">
+                <div className="bg-slate-950/70 rounded-xl border border-slate-800 p-2.5">
+                  <span className="text-[10px] text-slate-500 font-bold block">{isAr ? 'النتيجة الأرجح' : 'Most likely score'}</span>
+                  <span className="font-mono text-lg font-black text-white">{mostLikelyScore}</span>
+                  <span className="text-[10px] text-slate-500 block">{isAr ? `متوسط الأهداف ${expectedUserGoals} - ${expectedOpponentGoals}` : `xG ${expectedUserGoals} - ${expectedOpponentGoals}`}</span>
+                </div>
+                <div className="bg-slate-950/70 rounded-xl border border-slate-800 p-2.5">
+                  <span className="text-[10px] text-slate-500 font-bold block">{isAr ? 'الفارق الفني' : 'Technical gap'}</span>
+                  <span className={`font-mono text-lg font-black ${gapColor}`}>{technicalGap > 0 ? `+${technicalGap}` : technicalGap}</span>
+                  <span className={`text-[10px] block font-bold ${gapColor}`}>{gapText}</span>
+                </div>
+              </div>
+              <span className="text-[10px] text-slate-400 text-center block mt-1.5 font-bold">
+                {isAr 
+                  ? 'توقعات الذكاء التكتيكي مبنية على التشكيلة الأساسية ومكافآت الـ VIP والفارق الفني بين الفريقين'
+                  : 'Statistical prediction grounded in starting XI ratings, tactics, and active VIP bonuses'}
+              </span>
+            </div>
+          </>
+        )}
 
         {/* Tactical Powers Comparison Grid */}
         <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -269,7 +359,7 @@ export const PreMatchView: React.FC = () => {
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-black text-rose-400 flex items-center gap-1.5">
                 <ShieldAlert className="w-3.5 h-3.5" />
-                {isAr ? 'قوة الخصم المتوقعة' : 'Opponent Power'}
+                {isAr ? 'قوة الخصم التكتيكية' : 'Opponent Power'}
               </span>
               <span className="text-[10px] font-bold text-slate-500">
                 {opponentClub.footballSquad.length} {isAr ? 'لاعباً' : 'players'} · {isAr ? `الأساسيون ${opponentStarters}` : `XI ${opponentStarters}`}
@@ -280,20 +370,20 @@ export const PreMatchView: React.FC = () => {
               <div>
                 <div className="flex justify-between text-xs font-bold mb-1">
                   <span className="text-slate-400">{isAr ? '⚔️ الهجوم' : '⚔️ Attack'}</span>
-                  <span className="text-rose-300 font-mono">{opponentAttackPower}</span>
+                  <span className="text-rose-300 font-mono">{isScouted ? opponentAttackPower : '?? (يتطلب كشافة)'}</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                  <div className="h-full bg-rose-500" style={{ width: `${Math.min(100, (opponentAttackPower / 99) * 100)}%` }} />
+                  <div className="h-full bg-rose-500" style={{ width: `${isScouted ? Math.min(100, (opponentAttackPower / 99) * 100) : 50}%` }} />
                 </div>
               </div>
 
               <div>
                 <div className="flex justify-between text-xs font-bold mb-1">
                   <span className="text-slate-400">{isAr ? '🛡️ الدفاع' : '🛡️ Defense'}</span>
-                  <span className="text-rose-300 font-mono">{opponentDefensePower}</span>
+                  <span className="text-rose-300 font-mono">{isScouted ? opponentDefensePower : '?? (يتطلب كشافة)'}</span>
                 </div>
                 <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                  <div className="h-full bg-orange-500" style={{ width: `${Math.min(100, (opponentDefensePower / 99) * 100)}%` }} />
+                  <div className="h-full bg-orange-500" style={{ width: `${isScouted ? Math.min(100, (opponentDefensePower / 99) * 100) : 50}%` }} />
                 </div>
               </div>
             </div>
@@ -313,12 +403,21 @@ export const PreMatchView: React.FC = () => {
             <span>{isAr ? 'غرفة التكتيك وتعديل التشكيلة' : 'Adjust Tactics & Lineup'}</span>
           </button>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <button
               onClick={closePreMatchPreview}
               className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white text-xs sm:text-sm font-bold border border-slate-800 transition-colors cursor-pointer"
             >
               {isAr ? 'إلغاء' : 'Cancel'}
+            </button>
+
+            <button
+              onClick={() => skipAndSimulateNextMatch()}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs sm:text-sm font-black transition-all cursor-pointer"
+              title={isAr ? 'تخطي المباراة مع خصم 50% من الإيرادات' : 'Skip match with 50% revenue deduction'}
+            >
+              <FastForward className="w-4 h-4 text-amber-400" />
+              <span>{isAr ? 'تخطي المباراة (-50% إيرادات)' : 'Skip Match (-50% Rev)'}</span>
             </button>
 
             <button

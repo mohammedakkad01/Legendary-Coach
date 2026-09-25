@@ -96,7 +96,7 @@ export function generatePostMatchCharacter(
     tacticalAdviceAr,
     tacticalAdviceEn,
     mvpPlayerName: isAr ? mvp.name : mvp.nameEn,
-    mvpRating: Math.min(9.8, Math.max(7.2, (mvp.overall / 10) + (isWin ? 0.8 : -0.3))),
+    mvpRating: Math.round(Math.min(9.1, Math.max(7.0, (mvp.overall * 0.08) + (isWin ? 0.6 : 0.1))) * 10) / 10,
     mvpStatTextAr: isWin ? 'صاحب أعلى تدخلات دقيقة وصناعة فرص حاسمة' : 'أفضل مقاتل في الخطوط وأكثر من حاول صناعة الفارق',
     mvpStatTextEn: isWin ? 'Highest key passes and decisive defensive tackles' : 'Most resilient on pitch with tireless effort'
   };

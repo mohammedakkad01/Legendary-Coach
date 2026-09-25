@@ -8,10 +8,10 @@
  * (odds, expected score, technical gap) — with the kick-off button.
  */
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useGameStore } from '../state/useGameStore';
-import { Calendar, Flame, Sliders, Swords, Trophy, Home, Plane, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { countdownLabel, formatFixtureDate } from '../utils/fixtureDate';
+import { Calendar, Flame, Sliders, Swords, Trophy, Home, Plane, TrendingUp, TrendingDown, Minus, FastForward, Search, Lock, Coins, Gem, Crown } from 'lucide-react';
+import { formatFixtureDate } from '../utils/fixtureDate';
 
 export const NextMatchCard: React.FC = () => {
   const {
@@ -21,11 +21,15 @@ export const NextMatchCard: React.FC = () => {
     nextMatchInsight,
     loadNextMatchInsight,
     startNewMatch,
+    skipAndSimulateNextMatch,
+    unlockMatchScout,
+    setSeasonFinaleModalOpen,
     isLoadingMatch,
     setActiveTab,
     vipPoints,
     language,
   } = useGameStore();
+  const [scoutMessage, setScoutMessage] = useState<string | null>(null);
   const isAr = language === 'ar';
 
   const nextFixture = leagueFixtures.find(f => !f.played);
@@ -45,23 +49,28 @@ export const NextMatchCard: React.FC = () => {
     return idx >= 0 ? { pos: idx + 1, total: sorted.length } : null;
   }, [leagueStandings, club.id]);
 
+  const handleUnlockScout = (method: 'coins' | 'diamonds') => {
+    const res = unlockMatchScout(method);
+    setScoutMessage(res.message);
+  };
+
   if (seasonFinished) {
     return (
       <div className="max-w-3xl mx-auto p-4 sm:p-6">
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center space-y-4 shadow-2xl">
           <div className="text-4xl">🏆</div>
           <h2 className="text-xl font-black font-heading text-white">
-            {isAr ? 'انتهى موسمك!' : 'Your season is complete!'}
+            {isAr ? 'انتهى موسمك الكروي!' : 'Your season is complete!'}
           </h2>
           <p className="text-sm text-slate-400">
-            {isAr ? 'راجع جدول الترتيب النهائي، ثم ابدأ موسماً جديداً بتقويم جديد.' : 'Check the final table, then start a new season with a fresh calendar.'}
+            {isAr ? 'راجع جدول الترتيب النهائي، ثم حدد خطوتك القادمة سواء بالبقاء لموسم جديد أو الانتقال لنادٍ أو دوري آخر.' : 'Check the final table, then choose whether to stay for Season 2 or move to a new club or league.'}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <button onClick={() => setActiveTab('league')} className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 text-sm font-bold cursor-pointer">
               {isAr ? 'جدول الترتيب' : 'Standings'}
             </button>
-            <button disabled={isLoadingMatch} onClick={() => startNewMatch()} className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 text-sm font-black cursor-pointer disabled:opacity-50">
-              {isAr ? 'ابدأ موسماً جديداً' : 'Start New Season'}
+            <button onClick={() => setSeasonFinaleModalOpen(true)} className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 text-sm font-black cursor-pointer shadow-lg shadow-amber-500/30">
+              {isAr ? '🏆 إنهاء الموسم وتحديد مستقبلك' : '🏆 Season Finale & Career Step'}
             </button>
           </div>
         </div>
@@ -114,11 +123,15 @@ export const NextMatchCard: React.FC = () => {
               <Calendar className="w-3.5 h-3.5 text-sky-400" />
               {formatFixtureDate(nextFixture.date, isAr)}
             </span>
-            <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-black animate-pulse">
-              {countdownLabel(nextFixture.date, isAr)}
-            </span>
           </div>
         </div>
+
+        {/* Scout notification */}
+        {scoutMessage && (
+          <div className="relative mb-4 p-2.5 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-bold text-center">
+            {scoutMessage}
+          </div>
+        )}
 
         {/* Versus */}
         <div className="relative grid grid-cols-3 items-center gap-3 bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
@@ -172,7 +185,7 @@ export const NextMatchCard: React.FC = () => {
           )}
         </div>
 
-        {/* Prediction */}
+        {/* Prediction or Scouting Report */}
         <div className="relative mt-4 bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
           {!insight ? (
             <div className="space-y-2 animate-pulse">
@@ -180,8 +193,67 @@ export const NextMatchCard: React.FC = () => {
               <div className="h-3 bg-slate-800 rounded-full w-full" />
               <span className="text-[11px] text-slate-500 block text-center">{isAr ? 'جاري تحليل التشكيلتين…' : 'Analysing both line-ups…'}</span>
             </div>
+          ) : !insight.isScouted ? (
+            <div className="text-center space-y-3 py-2">
+              <div className="flex items-center justify-center gap-1.5 text-amber-400">
+                <Search className="w-5 h-5 text-amber-400" />
+                <h4 className="font-heading font-black text-sm text-white">
+                  {isAr ? 'تقرير الكشافة الفنية للمباراة (مغلق)' : 'Technical Scouting Report (Locked)'}
+                </h4>
+              </div>
+              <p className="text-[11px] text-slate-300 max-w-sm mx-auto leading-relaxed">
+                {isAr
+                  ? 'أرسل كشافك لدراسة تكتيك الخصم ونقاط قوته وضعفه وحساب نسب الفوز والنتيجة بدقة.'
+                  : 'Dispatch a scout to reveal opponent strength breakdown and statistical odds.'}
+              </p>
+
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-950 border border-slate-800 text-[11px] font-bold">
+                <Crown className="w-3 h-3 text-amber-400" />
+                <span className="text-slate-300">{isAr ? 'دقة كشافك الحالي:' : 'Scout Accuracy:'}</span>
+                <span className="text-amber-300 font-mono font-black">{insight.scoutAccuracy || 70}%</span>
+              </div>
+
+              <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
+                <button
+                  onClick={() => handleUnlockScout('coins')}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
+                >
+                  <Coins className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{isAr ? 'كشف بالكشافة (10,000 🪙)' : 'Scout (10,000 🪙)'}</span>
+                </button>
+                <button
+                  onClick={() => handleUnlockScout('diamonds')}
+                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
+                >
+                  <Gem className="w-3.5 h-3.5 text-sky-200" />
+                  <span>{isAr ? 'تقرير استخباراتي (15 💎)' : 'Instant Intel (15 💎)'}</span>
+                </button>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-3 text-[11px] font-bold text-left sm:text-right">
+                <div className="bg-slate-950/70 rounded-xl border border-sky-500/20 p-2.5 space-y-1">
+                  <span className="text-sky-400 block">{isAr ? 'قوة فريقك' : 'Your power'}</span>
+                  <span className="text-slate-300 block">⚔️ {insight.userAttackPower} &nbsp; 🛡️ {insight.userDefensePower}</span>
+                </div>
+                <div className="bg-slate-950/70 rounded-xl border border-rose-500/20 p-2.5 space-y-1">
+                  <span className="text-rose-400 block">{isAr ? 'قوة الخصم' : 'Opponent power'}</span>
+                  <span className="text-slate-500 block">{isAr ? '⚔️ ?? &nbsp; 🛡️ ?? (مغلق)' : '⚔️ ?? &nbsp; 🛡️ ?? (Locked)'}</span>
+                </div>
+              </div>
+            </div>
           ) : (
             <>
+              <div className="flex items-center justify-between px-3 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-[11px] mb-3">
+                <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                  <Search className="w-3.5 h-3.5" />
+                  <span>{isAr ? 'تقرير كشاف معتمد' : 'Verified Scout Report'}</span>
+                </span>
+                <span className="text-slate-300 font-bold">
+                  {isAr ? 'دقة البيانات: ' : 'Accuracy: '}
+                  <strong className="text-emerald-300 font-mono">{insight.scoutAccuracy || 70}%</strong>
+                </span>
+              </div>
+
               <div className="flex items-center justify-between text-xs font-black mb-2">
                 <span className="text-emerald-400">{isAr ? 'فوزك' : 'Win'} <span className="font-mono text-sm">{insight.winProbability}%</span></span>
                 <span className="text-amber-400">{isAr ? 'تعادل' : 'Draw'} <span className="font-mono text-sm">{insight.drawProbability}%</span></span>
@@ -229,15 +301,28 @@ export const NextMatchCard: React.FC = () => {
             <Sliders className="w-4 h-4 text-sky-400" />
             <span>{isAr ? 'التشكيلة والتكتيك' : 'Lineup & Tactics'}</span>
           </button>
-          <button
-            id="btn_start_match_main"
-            disabled={isLoadingMatch}
-            onClick={() => startNewMatch()}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-slate-950 text-sm font-black shadow-xl shadow-emerald-500/30 cursor-pointer transition-all"
-          >
-            <Flame className="w-4 h-4" />
-            <span>{isLoadingMatch ? (isAr ? 'جاري التحضير…' : 'Preparing…') : (isAr ? 'معاينة وخوض المباراة' : 'Preview & Play')}</span>
-          </button>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              onClick={() => skipAndSimulateNextMatch()}
+              disabled={isLoadingMatch}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-xs sm:text-sm font-black cursor-pointer transition-all disabled:opacity-50"
+              title={isAr ? 'تخطي المباراة ومحاكاة الجولة فوراً مع خصم 50% من الإيرادات' : 'Skip match with 50% revenue deduction'}
+            >
+              <FastForward className="w-4 h-4 text-amber-400" />
+              <span>{isAr ? 'تخطي المباراة (-50% إيرادات)' : 'Skip Match (-50% Rev)'}</span>
+            </button>
+
+            <button
+              id="btn_start_match_main"
+              disabled={isLoadingMatch}
+              onClick={() => startNewMatch()}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-slate-950 text-sm font-black shadow-xl shadow-emerald-500/30 cursor-pointer transition-all"
+            >
+              <Flame className="w-4 h-4" />
+              <span>{isLoadingMatch ? (isAr ? 'جاري التحضير…' : 'Preparing…') : (isAr ? 'معاينة وخوض المباراة' : 'Preview & Play')}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

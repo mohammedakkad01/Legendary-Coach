@@ -165,8 +165,13 @@ const newDelta = (p: Player, clubId: string): PlayerMatchDelta => ({
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /**
- * Ratings: base 6.0–7.2, ±0.3 for the result, +1.5 per goal, +1.0 per assist,
- * +0.5 clean sheet for GK/DEF, −0.5 yellow, −2.0 red. Clamped to 4.0–10.0.
+ * Realistic Player Ratings (Opta/SofaScore calibrated):
+ * - Base rating: 6.2–6.6
+ * - Team result: +0.2 win, -0.2 loss
+ * - Diminishing increments for goals (+0.85 1st, +0.70 2nd, +0.60 3rd) and assists (+0.45, +0.35)
+ * - Clean sheet bonus (+0.4) for defenders/goalkeeper, penalty on heavy defeat
+ * - Realistic caps: 10.0 is strictly reserved for legendary historic games (4+ goals).
+ *   Hat-tricks cap at 9.4, braces at 8.8, single contributions at 8.2.
  */
 const rateTeam = (
   team: SimTeam,
@@ -175,16 +180,52 @@ const rateTeam = (
   goalsAgainst: number,
   rng: SeededRandom,
 ) => {
-  const resultAdj = goalsFor > goalsAgainst ? 0.3 : goalsFor < goalsAgainst ? -0.3 : 0;
+  const resultAdj = goalsFor > goalsAgainst ? 0.2 : goalsFor < goalsAgainst ? -0.2 : 0;
   for (const p of team.xi) {
     const d = deltas.get(p.id);
     if (!d) continue;
-    let r = 6.0 + rng.nextFloat() * 1.2 + resultAdj + (p.overall - 75) / 80;
-    r += d.goals * 1.5 + d.assists * 1.0;
+
+    // Base performance: 6.2 - 6.6 with subtle player overall effect
+    let r = 6.2 + rng.nextFloat() * 0.4 + resultAdj + (p.overall - 75) / 150;
+
+    // Scaled goal bonuses
+    if (d.goals >= 1) r += 0.85;
+    if (d.goals >= 2) r += 0.70;
+    if (d.goals >= 3) r += 0.60;
+    if (d.goals >= 4) r += (d.goals - 3) * 0.50;
+
+    // Scaled assist bonuses
+    if (d.assists >= 1) r += 0.45;
+    if (d.assists >= 2) r += 0.35;
+    if (d.assists >= 3) r += (d.assists - 2) * 0.30;
+
     const g = positionGroup(p.position);
-    if (goalsAgainst === 0 && (g === 'GK' || g === 'DEF')) r += 0.5;
-    r -= d.yellowCards * 0.5 + d.redCards * 2.0;
-    d.rating = Math.round(clamp(r, 4.0, 10.0) * 10) / 10;
+    if (g === 'GK' || g === 'DEF') {
+      if (goalsAgainst === 0) {
+        r += 0.4; // clean sheet
+      } else if (goalsAgainst >= 4) {
+        r -= 0.6; // heavy leaking
+      } else if (goalsAgainst >= 3) {
+        r -= 0.35;
+      }
+    }
+
+    // Card penalties
+    r -= d.yellowCards * 0.4 + d.redCards * 1.7;
+
+    // Strict realistic ceiling: 10.0 requires an extraordinary historic match (4+ goals)
+    let ceiling = 7.7;
+    if (d.goals >= 4) {
+      ceiling = 10.0;
+    } else if (d.goals >= 3 || (d.goals >= 2 && d.assists >= 2)) {
+      ceiling = 9.4;
+    } else if (d.goals >= 2 || (d.goals >= 1 && d.assists >= 2)) {
+      ceiling = 8.8;
+    } else if (d.goals >= 1 || d.assists >= 1) {
+      ceiling = 8.3;
+    }
+
+    d.rating = Math.round(clamp(r, 4.5, ceiling) * 10) / 10;
   }
 };
 

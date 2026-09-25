@@ -257,6 +257,7 @@ export interface Fixture {
   played: boolean;
   homeScore?: number;
   awayScore?: number;
+  date?: string; // ISO yyyy-mm-dd — real calendar date of this matchday (weekly, see generateFixturesForLeague)
 }
 
 // Pre-match inspection data calculated before actual kickoff
@@ -273,6 +274,14 @@ export interface PreMatchData {
   winProbability: number;   // 0 - 100
   drawProbability: number;  // 0 - 100
   lossProbability: number;  // 0 - 100
+  // Logical (non-static) technical comparison, derived from both starting XIs + VIP bonuses
+  userOverall: number;          // (attack+defense)/2 of the user starting XI, after VIP boost
+  opponentOverall: number;      // (attack+defense)/2 of the opponent starting XI
+  technicalGap: number;         // userOverall - opponentOverall (positive = you are stronger)
+  expectedUserGoals: number;    // Poisson expectation, e.g. 1.6
+  expectedOpponentGoals: number;
+  mostLikelyScore: string;      // e.g. "2-1" (from the user's point of view)
+  opponentStarters: number;     // how many players were used to compute the opponent's power
 }
 
 export interface DialogueConsequence {

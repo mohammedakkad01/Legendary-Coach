@@ -31,6 +31,7 @@ import { MatchResultsCharacterModal } from './components/MatchResultsCharacterMo
 import { TacticalDuelModal } from './components/TacticalDuelModal';
 import { PreMatchView } from './components/PreMatchView';
 import { RoundSummaryView } from './components/RoundSummaryView';
+import { hydrateLiveLeagues } from './services/liveLeaguesService';
 
 function MainAppLayout() {
   const { activeTab, language, preMatchModalOpen } = useGameStore();
@@ -41,6 +42,12 @@ function MainAppLayout() {
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
     document.documentElement.lang = language;
   }, [language]);
+
+  // Load the full live club lists once at startup so standings, fixtures and opponents
+  // (also for a saved game that never reopens the club picker) use every real club.
+  useEffect(() => {
+    hydrateLiveLeagues();
+  }, []);
 
   // Prompt login on initial load if not logged in and not already chosen
   useEffect(() => {

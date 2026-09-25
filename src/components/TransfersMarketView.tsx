@@ -263,7 +263,7 @@ export const TransfersMarketView: React.FC = () => {
       
       {/* Top Header Card */}
       <div className="bg-gradient-to-r from-amber-950/80 via-slate-900 to-indigo-950/80 border border-amber-500/30 rounded-3xl p-5 sm:p-7 shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 85% 0%, rgba(245,158,11,0.12), transparent 45%)' }} />
         
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="space-y-1.5 max-w-2xl">

@@ -84,7 +84,7 @@ export const DashboardView: React.FC = () => {
       
       {/* Top Banner: Club & Coach Identity */}
       <div className="relative bg-gradient-to-br from-slate-900 via-slate-900 to-sky-950 border border-slate-800 rounded-3xl p-5 sm:p-8 shadow-2xl overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 85% 0%, rgba(14,165,233,0.12), transparent 45%)' }} />
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-center gap-4">

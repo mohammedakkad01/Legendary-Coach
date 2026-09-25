@@ -96,8 +96,7 @@ export const NextMatchCard: React.FC = () => {
   return (
     <div className="max-w-3xl mx-auto p-3 sm:p-6 space-y-4 animate-fadeIn">
       <div className="relative bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-2xl overflow-hidden">
-        <div className="absolute top-0 left-1/4 w-72 h-40 bg-sky-500/10 blur-3xl pointer-events-none" />
-        <div className="absolute top-0 right-1/4 w-72 h-40 bg-rose-500/10 blur-3xl pointer-events-none" />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 20% 0%, rgba(14,165,233,0.12), transparent 45%), radial-gradient(circle at 80% 0%, rgba(244,63,94,0.10), transparent 45%)' }} />
 
         {/* Competition + date */}
         <div className="relative flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-4 mb-5">

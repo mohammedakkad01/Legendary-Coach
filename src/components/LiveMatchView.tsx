@@ -100,7 +100,7 @@ export const LiveMatchView: React.FC = () => {
       {/* Scoreboard Banner */}
       <div className="relative bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl overflow-hidden">
         {/* Glow behind scoreboard */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-24 bg-sky-500/10 blur-3xl pointer-events-none" />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(14,165,233,0.14), transparent 55%)' }} />
 
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           

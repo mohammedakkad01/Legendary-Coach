@@ -11,6 +11,7 @@ import { useGameStore } from '../state/useGameStore';
 import { FootballFormation, MatchMentality, PressingStyle, PassingStyle, TeamTempo } from '../types/game';
 import { Shield, Sparkles, ChevronRight, UserCheck, Flame, Crown, Lock } from 'lucide-react';
 import { VIP_LEVELS } from '../data/vipData';
+import { getEffectivePlayerRating } from '../utils/playerCalculations';
 
 const FORMATION_COORDINATES: Record<FootballFormation, { x: number; y: number; pos: string }[]> = {
   '4-3-3': [
@@ -123,7 +124,7 @@ const ALL_FORMATIONS: FormationItem[] = [
 ];
 
 export const TacticalBoardView: React.FC = () => {
-  const { club, updateFootballTactics, swapFootballLineup, setFootballRoles, language, startNewMatch, vipPoints, setActiveTab, savedTacticalPlans, saveTacticalPlan, loadTacticalPlan, deleteTacticalPlan, moveToBench } = useGameStore();
+  const { club, updateFootballTactics, swapFootballLineup, setFootballRoles, language, startNewMatch, vipPoints, setActiveTab, savedTacticalPlans, saveTacticalPlan, loadTacticalPlan, deleteTacticalPlan, moveToBench, getTeamSynergy } = useGameStore();
   const isAr = language === 'ar';
   const tactics = club.footballTactics;
 
@@ -175,11 +176,26 @@ export const TacticalBoardView: React.FC = () => {
 
   const coords = FORMATION_COORDINATES[tactics.formation] || FORMATION_COORDINATES['4-3-3'];
 
-  // Average Rating
+  // Average Rating — يعتمد على التقييم الفعّال حسب مركز كل لاعب في التشكيلة الحالية
   const validPlayers = lineupPlayers.map(lp => lp.player).filter(Boolean);
-  const avgOverall = validPlayers.length > 0 
-    ? Math.round(validPlayers.reduce((acc, p) => acc + (p?.overall || 0), 0) / validPlayers.length) 
+  const avgOverall = validPlayers.length > 0
+    ? Math.round(
+        lineupPlayers.reduce((acc, lp) => {
+          if (!lp.player) return acc;
+          const assignedPos = coords[lp.slotIndex]?.pos ?? lp.player.position;
+          return acc + getEffectivePlayerRating(lp.player, assignedPos);
+        }, 0) / validPlayers.length
+      )
     : 65;
+
+  const teamSynergy = getTeamSynergy();
+  const synergyColor = teamSynergy.score >= 85
+    ? 'text-emerald-400'
+    : teamSynergy.score >= 65
+      ? 'text-lime-400'
+      : teamSynergy.score >= 45
+        ? 'text-amber-400'
+        : 'text-red-400';
 
   const handleSelectFormation = (item: FormationItem) => {
     if (vipLevel < item.minVipLevel) {
@@ -245,9 +261,13 @@ export const TacticalBoardView: React.FC = () => {
             <span className="text-[10px] text-slate-400 block">{isAr ? 'قوة التشكيلة' : 'Lineup OVR'}</span>
             <span className="text-lg font-black text-amber-400">{avgOverall}</span>
           </div>
-          <div className="bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-center">
+          <div
+            className="bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-center"
+            title={teamSynergy.warnings.join(' · ')}
+          >
             <span className="text-[10px] text-slate-400 block">{isAr ? 'التناغم' : 'Chemistry'}</span>
-            <span className="text-lg font-black text-emerald-400">92%</span>
+            <span className={`text-lg font-black ${synergyColor}`}>{teamSynergy.score}%</span>
+            <span className={`text-[9px] font-bold block ${synergyColor}`}>{isAr ? teamSynergy.rating : teamSynergy.ratingEn}</span>
           </div>
           <button
             id="btn_play_match_from_tactics"
@@ -366,7 +386,7 @@ export const TacticalBoardView: React.FC = () => {
                       : 'bg-gradient-to-br from-sky-500 to-indigo-700 text-white border-2 border-white/80'
                   }`}>
                     {player ? (
-                      <span className="font-heading font-black">{player.overall}</span>
+                      <span className="font-heading font-black">{getEffectivePlayerRating(player, coord.pos)}</span>
                     ) : (
                       <span className="text-xs text-slate-400">{coord.pos}</span>
                     )}

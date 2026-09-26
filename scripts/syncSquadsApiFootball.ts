@@ -4,124 +4,152 @@
  *
  * scripts/syncSquadsApiFootball.ts
  *
- * يجلب التشكيلة الحالية الحقيقية (/players/squads — لا تحتاج موسماً فتعمل في الخطة المجانية) لكل نادٍ
- * موجود في clubs_cache ويحفظها في squads_cache/squad_<clubId> (نفس المعرّف الذي تستخدمه اللعبة).
+ * Synchronizes squad rosters (/players/squads) for clubs into Firestore (squads_cache)
+ * using the unified SyncService and CacheRepository.
  *
- * الميزانية: طلب واحد لكل نادٍ. ~170 نادياً = يومان بحصة 100 يومياً. السكربت "قابل للاستئناف":
- * يعالج الأندية التي لا تملك تشكيلة (أو أقدم من REFRESH_DAYS) حتى ينتهي MAX_REQUESTS ثم يتوقف،
- * ويكمل من حيث توقف عند التشغيل التالي (الـ workflow يعمل يومياً؛ وحين لا يبقى شيء يكلّف 0 طلب).
- *
- * تشغيل محلي: FIREBASE_SERVICE_ACCOUNT="$(cat sa.json)" API_FOOTBALL_KEY=xxx npx tsx scripts/syncSquadsApiFootball.ts
+ * Features:
+ * - Single source of truth in Firestore: squads_cache/squad_<clubId>
+ * - Standardized schema: source, season, version, ratingModel, updatedAt, expiresAt
+ * - Resumable & Incremental: Only syncs missing or expired squads
+ * - Budget safe: Stops when MAX_REQUESTS reached or daily quota safety margin hit
  */
-import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
-import { REAL_LEAGUES, mergeLiveClubsIntoLeagues } from '../src/data/realLeaguesData.ts';
-import { buildSquadPlayers } from './lib/squadBuilder.ts';
 
-const KEY = (process.env.API_FOOTBALL_KEY || '').trim();
-const SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT;
+import {
+  FootballDataRepository,
+  CacheRepository,
+  SyncService,
+} from '../server/index.ts';
+import { REAL_LEAGUES, mergeLiveClubsIntoLeagues } from '../src/data/realLeaguesData.ts';
+
 const MAX_REQUESTS = Number(process.env.MAX_REQUESTS || 85);
 const REFRESH_DAYS = Number(process.env.REFRESH_DAYS || 30);
-const BASE = 'https://v3.football.api-sports.io';
-const DELAY_MS = 8000; // المجاني: 10 طلبات/دقيقة — نستخدم ~7 فقط كهامش أمان (بعد حادثة الإيقاف)
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-
-// أولوية المعالجة: الدوريات الكبرى أولاً
-const LEAGUE_ORDER = ['premier_league', 'la_liga', 'serie_a', 'bundesliga', 'ligue_1', 'championship', 'segunda_division', 'yelo_league', 'botola_pro'];
+const LEAGUE_ORDER = [
+  'premier_league',
+  'la_liga',
+  'serie_a',
+  'bundesliga',
+  'ligue_1',
+  'championship',
+  'segunda_division',
+  'yelo_league',
+  'botola_pro',
+];
 
 async function main() {
-  if (!KEY) throw new Error('Missing API_FOOTBALL_KEY');
-  if (!SERVICE_ACCOUNT_JSON) throw new Error('Missing FIREBASE_SERVICE_ACCOUNT');
-  const sa = JSON.parse(SERVICE_ACCOUNT_JSON);
-  const dbId: string = (firebaseConfig as any).firestoreDatabaseId || '(default)';
-  const db = getFirestore(initializeApp({ credential: cert(sa) }), dbId);
-  console.log(`Firestore -> project: ${sa.project_id} | database: ${dbId}`);
+  console.log('=== Squads Sync Worker (API-Football -> Firestore) ===');
+  console.log(`Max Requests: ${MAX_REQUESTS} | Refresh Days: ${REFRESH_DAYS}`);
 
-  // 1) أندية API من Firestore -> دمجها مع القائمة اليدوية لنحصل على نفس معرّفات اللعبة
-  const clubsSnap = await db.collection('clubs_cache').get();
-  const cache: Record<string, any> = {};
+  const footballRepo = new FootballDataRepository();
+  if (!footballRepo.isConfigured()) {
+    throw new Error('Missing API_FOOTBALL_KEY environment variable.');
+  }
+
+  const cacheRepo = new CacheRepository();
+  const syncService = new SyncService(footballRepo, cacheRepo);
+
+  // Check Quota Status
+  const quota = await syncService.getStatus();
+  console.log(`API Quota Status: ${quota.current}/${quota.limit_day} requests used (${quota.remainingSafe} safe remaining).`);
+
+  if (quota.current >= 90) {
+    console.error('⛔ Daily quota safeguard threshold reached (>= 90 requests). Sync aborted.');
+    process.exit(1);
+  }
+
+  // 1. Load clubs from Firestore clubs_cache
+  const clubsList = await cacheRepo.getAllClubs();
+  const clubsCacheMap: Record<string, any> = {};
   const rankByApiId = new Map<string, { rank?: number; total?: number }>();
-  clubsSnap.forEach(d => {
-    const c = d.data();
-    if (c.source !== 'api-football') return;
-    cache[d.id] = c;
-    rankByApiId.set(String(c.idTeam), { rank: c.standingRank ?? undefined, total: c.standingsTotal ?? undefined });
-  });
-  if (Object.keys(cache).length === 0) throw new Error('clubs_cache فارغ (source=api-football). شغّل "Sync Clubs (API-Football)" أولاً.');
 
-  const leagues = mergeLiveClubsIntoLeagues(REAL_LEAGUES, cache);
-  const all = leagues
-    .filter(l => LEAGUE_ORDER.includes(l.id))
+  for (const c of clubsList) {
+    if (c.source !== 'api-football') continue;
+    clubsCacheMap[c.id] = c;
+    rankByApiId.set(String(c.idTeam), {
+      rank: c.standingRank ?? undefined,
+      total: c.standingsTotal ?? undefined,
+    });
+  }
+
+  if (Object.keys(clubsCacheMap).length === 0) {
+    throw new Error('clubs_cache is empty in Firestore. Run "Sync Clubs (API-Football)" first.');
+  }
+
+  // 2. Merge with real leagues definition
+  const leagues = mergeLiveClubsIntoLeagues(REAL_LEAGUES, clubsCacheMap);
+  const allClubs = leagues
+    .filter((l) => LEAGUE_ORDER.includes(l.id))
     .sort((a, b) => LEAGUE_ORDER.indexOf(a.id) - LEAGUE_ORDER.indexOf(b.id))
-    .flatMap(l => l.clubs.filter(c => c.apiTeamId).map(c => ({ club: c, leagueId: l.id })));
+    .flatMap((l) => l.clubs.filter((c) => c.apiTeamId).map((c) => ({ club: c, leagueId: l.id })));
 
-  // 2) ما هو المعلَّق؟
-  const squadsSnap = await db.collection('squads_cache').get();
-  const existing = new Map<string, any>();
-  squadsSnap.forEach(d => existing.set(d.id, d.data()));
-  const staleBefore = Date.now() - REFRESH_DAYS * 86400_000;
-  const pending = all.filter(({ club }) => {
-    const e = existing.get(`squad_${club.id}`);
-    return !e || e.source !== 'api-football' || e.apiTeamId !== club.apiTeamId || !e.updatedAt || Date.parse(e.updatedAt) < staleBefore;
+  // 3. Find pending clubs (missing or expired squads)
+  const existingSquads = await cacheRepo.getAllSquads();
+  const existingMap = new Map<string, any>();
+  for (const s of existingSquads) {
+    existingMap.set(s.id, s);
+  }
+
+  const pending = allClubs.filter(({ club }) => {
+    const existing = existingMap.get(`squad_${club.id}`);
+    if (!existing) return true;
+    return cacheRepo.isExpired(existing, REFRESH_DAYS);
   });
-  console.log(`clubs total: ${all.length} | need squad: ${pending.length} | budget: ${MAX_REQUESTS} requests`);
 
-  let used = 0, ok = 0, remaining: number | null = null;
-  let fatal = '';
+  console.log(`Total clubs: ${allClubs.length} | Pending squads: ${pending.length} | Budget: ${MAX_REQUESTS} requests`);
+
+  let used = 0;
+  let successCount = 0;
   const failed: string[] = [];
-  const perLeague: Record<string, number> = {};
 
   for (const { club, leagueId } of pending) {
-    if (used >= MAX_REQUESTS || (remaining !== null && remaining <= 6)) break;
-    await sleep(DELAY_MS);
-    used++;
-    try {
-      const res = await fetch(`${BASE}/players/squads?team=${club.apiTeamId}`, { headers: { 'x-apisports-key': KEY } });
-      const r = res.headers.get('x-ratelimit-requests-remaining');
-      if (r !== null) remaining = Number(r);
-      if (res.status === 429) { console.warn('HTTP 429 — quota reached, stopping.'); break; }
-      const body: any = await res.json().catch(() => ({}));
-      const errs = body.errors && (Array.isArray(body.errors) ? body.errors : Object.values(body.errors));
-      if (errs && errs.length) {
-        const msg = JSON.stringify(body.errors);
-        // حساب موقوف / مفتاح خاطئ / صلاحية: أوقف كل الطلبات فوراً (لا تكمل الضغط على الخدمة)
-        if (/suspend|access|token|key|subscription/i.test(msg) || res.status === 401 || res.status === 403) {
-          console.error(`\n⛔ توقف فوري — الخدمة رفضت الحساب/المفتاح: ${msg}`);
-          fatal = msg;
-          break;
-        }
-        console.warn(`  [err] ${club.nameEn}: ${msg}`); failed.push(club.nameEn); continue;
-      }
-      const raw = body.response?.[0]?.players || [];
-      if (raw.length === 0) { console.warn(`  [empty] ${club.nameEn} (team ${club.apiTeamId})`); failed.push(`${club.nameEn} (empty)`); continue; }
+    if (used >= MAX_REQUESTS) {
+      console.log(`Reached max request budget for this run (${MAX_REQUESTS}). Stopping.`);
+      break;
+    }
 
-      const rk = rankByApiId.get(String(club.apiTeamId));
-      const players = buildSquadPlayers(raw, leagueId, rk?.rank, rk?.total);
-      await db.collection('squads_cache').doc(`squad_${club.id}`).set({
-        clubId: club.id, clubNameEn: club.nameEn, leagueId, source: 'api-football',
-        apiTeamId: String(club.apiTeamId), matchedTeamName: body.response?.[0]?.team?.name || club.nameEn,
-        players, playerCount: players.length, ratingModel: 'estimate-v1', updatedAt: new Date().toISOString(),
+    const rankInfo = rankByApiId.get(String(club.apiTeamId));
+    console.log(`Syncing squad for ${club.nameEn} (team ID: ${club.apiTeamId})...`);
+
+    try {
+      const res = await syncService.syncSquad(club.id, club.apiTeamId!, {
+        leagueId,
+        clubNameEn: club.nameEn,
+        standingRank: rankInfo?.rank,
+        standingsTotal: rankInfo?.total,
+        ttlDays: REFRESH_DAYS,
+        force: true,
       });
-      ok++;
-      perLeague[leagueId] = (perLeague[leagueId] || 0) + 1;
-      console.log(`  [ok] ${leagueId}/${club.nameEn}: ${players.length} players (e.g. ${players.slice(0, 3).map(p => `${p.name}/${p.position}/${p.overall}`).join(', ')})`);
-    } catch (e: any) {
-      console.warn(`  [fail] ${club.nameEn}: ${e.message}`);
+
+      used += res.requestsUsed;
+
+      if (res.aborted) {
+        console.warn('Sync aborted by Quota Guard.');
+        break;
+      }
+
+      if (res.success) {
+        successCount++;
+        console.log(`  [OK] ${club.nameEn}: ${res.playersCount} players cached in Firestore.`);
+      } else {
+        console.warn(`  [FAIL] ${club.nameEn}: ${res.error}`);
+        failed.push(club.nameEn);
+      }
+    } catch (err: any) {
+      console.warn(`  [FAIL] ${club.nameEn}: ${err.message}`);
       failed.push(club.nameEn);
     }
   }
 
-  const left = pending.length - ok - failed.length;
-  if (fatal) console.error(`تم إيقاف التشغيل بسبب: ${fatal}`);
-  console.log('\n=========== SUMMARY ===========');
-  console.log(`saved this run: ${ok} | failed: ${failed.length} | still pending: ${Math.max(0, left)} | requests used: ${used} | remaining today: ${remaining ?? '?'}`);
-  console.log('per league:', JSON.stringify(perLeague));
-  if (failed.length) console.log('failed:', failed.join(', '));
-  if (left > 0) console.log('⏭️  تبقّت أندية — سيكمل التشغيل التالي (بعد تصفير الحصة اليومية 00:00 UTC) تلقائياً.');
+  const left = pending.length - successCount - failed.length;
+  console.log('\n================== SQUAD SYNC SUMMARY ==================');
+  console.log(`Successfully synced: ${successCount} | Failed: ${failed.length} | Remaining pending: ${Math.max(0, left)}`);
+  console.log(`Requests used this run: ${used}`);
 
-  const id = `squad_log_${Date.now()}`;
-  await db.collection('sync_logs').doc(id).set({ id, timestamp: new Date().toISOString(), source: 'api-football-squads', requestsUsed: used, saved: ok, failed, pending: Math.max(0, left), status: fatal ? 'aborted' : failed.length ? 'partial' : 'success', fatal });
-  if (fatal) process.exit(1);
+  if (left > 0) {
+    console.log('⏭️ Remaining clubs will be automatically processed on the next scheduled run.');
+  }
 }
-main().catch(e => { console.error('Squad sync failed:', e); process.exit(1); });
+
+main().catch((err) => {
+  console.error('Fatal squad sync error:', err);
+  process.exit(1);
+});

@@ -171,6 +171,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /squads_cache/{squadId} {
+      allow get, list: if true;
+      allow write: if false;
+    }
+
     match /sync_logs/{logId} {
       allow get, list: if true;
       allow write: if false;

@@ -112,6 +112,26 @@
       },
       "required": ["id", "playerId", "name", "position", "calculatedOverall", "updatedAt"]
     },
+    "SquadCache": {
+      "title": "SquadCache",
+      "description": "Shared reference cache for club squads and player rosters",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "clubId": { "type": "string", "maxLength": 128 },
+        "clubNameEn": { "type": "string", "maxLength": 100 },
+        "leagueId": { "type": "string", "maxLength": 100 },
+        "apiTeamId": { "type": "string", "maxLength": 64 },
+        "matchedTeamName": { "type": "string", "maxLength": 100 },
+        "playerCount": { "type": "number" },
+        "ratingModel": { "type": "string", "maxLength": 50 },
+        "source": { "type": "string", "maxLength": 50 },
+        "season": { "type": ["string", "number"] },
+        "version": { "type": "string", "maxLength": 20 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "clubId", "leagueId", "updatedAt"]
+    },
     "SyncAuditLog": {
       "title": "SyncAuditLog",
       "description": "Log entry tracking API-Football sync calls and quota consumption",
@@ -235,6 +255,10 @@
     "/players_cache/{playerId}": {
       "schema": "PlayerCache",
       "description": "Layer 1: Shared read-only official player cache"
+    },
+    "/squads_cache/{squadId}": {
+      "schema": "SquadCache",
+      "description": "Layer 1: Shared read-only official squad cache"
     },
     "/sync_logs/{logId}": {
       "schema": "SyncAuditLog",

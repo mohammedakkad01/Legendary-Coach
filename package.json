@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx scripts/testRedeemCodes.ts"
+    "test": "tsx scripts/testRedeemCodes.ts && tsx scripts/testCacheArchitecture.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

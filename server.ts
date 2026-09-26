@@ -2,12 +2,18 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  * 
- * Express Full-Stack Server & API-Football Service
- * - Directly accesses API-Football via https://v3.football.api-sports.io
- * - Uses header 'x-apisports-key' from process.env.API_FOOTBALL_KEY (direct subscription)
- * - Strict Quota Guard (100 req/day cap, safety auto-abort at >= 90 requests)
- * - Layer 1 caching to Firestore (leagues_cache, clubs_cache, players_cache, sync_logs)
- * - Serves Vite in dev and static SPA in production on port 3000
+ * Express Full-Stack Server & Football Data API
+ * 
+ * Architecture:
+ * API-Football  -->  SyncService / Worker  -->  Firestore Cache (Layer 1)  -->  Game Client
+ *                                           \
+ *                                            -> Memory Cache (Tier 0 Optimization)
+ * 
+ * - Firestore is the permanent, durable Source of Truth for official cached data.
+ * - Memory cache is an optimization layer (Tier 0).
+ * - Server restart does NOT lose data — reads hydrate from Firestore.
+ * - Clients have read-only access (enforced by Firestore Security Rules).
+ * - Serves Vite in dev and static SPA in production on port 3000.
  */
 
 import express from 'express';
@@ -16,401 +22,170 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 
+import {
+  FootballDataRepository,
+  CacheRepository,
+  SyncService,
+  OFFICIAL_LEAGUES_CONFIG,
+} from './server/index.ts';
+
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const currentDir = typeof __dirname !== 'undefined'
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
-// Official League IDs (Season 2025 for 2025-2026)
-export const OFFICIAL_LEAGUES_CONFIG = [
-  { id: 39, key: 'premier_league', name: 'الدوري الإنجليزي الممتاز', nameEn: 'Premier League', country: 'England', season: 2025 },
-  { id: 140, key: 'la_liga', name: 'الدوري الإسباني (La Liga)', nameEn: 'La Liga', country: 'Spain', season: 2025 },
-  { id: 61, key: 'ligue_1', name: 'الدوري الفرنسي (Ligue 1)', nameEn: 'Ligue 1', country: 'France', season: 2025 },
-  { id: 78, key: 'bundesliga', name: 'الدوري الألماني (Bundesliga)', nameEn: 'Bundesliga', country: 'Germany', season: 2025 },
-  { id: 233, key: 'egypt_pl', name: 'الدوري المصري الممتاز', nameEn: 'Egyptian Premier League', country: 'Egypt', season: 2025 },
-  { id: 307, key: 'saudi_pro', name: 'دوري روشن السعودي', nameEn: 'Saudi Pro League', country: 'Saudi Arabia', season: 2025 },
-];
+// Initialize Repositories and Services
+const footballRepo = new FootballDataRepository();
+const cacheRepo = new CacheRepository();
+const syncService = new SyncService(footballRepo, cacheRepo);
 
-const BASE_API_URL = 'https://v3.football.api-sports.io';
-
-/**
- * Fetch helper for API-Football
- */
-async function callApiFootball(endpoint: string, apiKey: string) {
-  const url = `${BASE_API_URL}${endpoint}`;
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'x-apisports-key': apiKey,
-    },
-  });
-
-  const remainingHeader = response.headers.get('x-ratelimit-requests-remaining');
-  const limitHeader = response.headers.get('x-ratelimit-requests-limit');
-
-  if (!response.ok) {
-    throw new Error(`API-Football responded with status ${response.status}: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return {
-    data,
-    remainingHeader: remainingHeader ? parseInt(remainingHeader, 10) : undefined,
-    limitHeader: limitHeader ? parseInt(limitHeader, 10) : undefined,
-  };
-}
-
-// In-Memory fallback cache in case Firestore is unreachable
-const memoryCache: {
-  leagues: Record<string, any>;
-  clubs: Record<string, any>;
-  players: Record<string, any>;
-  syncLogs: any[];
-  lastQuotaStatus: { current: number; limit_day: number; checkedAt: string } | null;
-} = {
-  leagues: {},
-  clubs: {},
-  players: {},
-  syncLogs: [],
-  lastQuotaStatus: null,
-};
+export { OFFICIAL_LEAGUES_CONFIG };
 
 /**
  * GET /api/football/status
- * Free endpoint: /status does not consume quota!
+ * Free endpoint: /status does not consume quota
  */
 app.get('/api/football/status', async (req, res) => {
-  const apiKey = process.env.API_FOOTBALL_KEY;
-  if (!apiKey || apiKey.trim() === '' || apiKey === 'MY_API_FOOTBALL_KEY') {
-    return res.json({
-      configured: false,
-      message: 'مفتاح API_FOOTBALL_KEY غير مهيأ بعد في المتغيرات البيئية / Secret Manager.',
-      status: memoryCache.lastQuotaStatus || { current: 0, limit_day: 100 },
-    });
-  }
-
   try {
-    const { data } = await callApiFootball('/status', apiKey);
-    const reqInfo = data.response?.requests || { current: 0, limit_day: 100 };
-    memoryCache.lastQuotaStatus = {
-      current: reqInfo.current,
-      limit_day: reqInfo.limit_day,
-      checkedAt: new Date().toISOString(),
-    };
-
-    return res.json({
-      configured: true,
-      account: data.response?.account,
-      subscription: data.response?.subscription,
-      requests: reqInfo,
-      remainingSafe: Math.max(0, 90 - (reqInfo.current || 0)),
-      serverTime: new Date().toISOString(),
-    });
+    const status = await syncService.getStatus();
+    return res.json(status);
   } catch (error: any) {
     return res.status(500).json({
-      configured: true,
+      configured: footballRepo.isConfigured(),
       error: error.message || 'Failed to check API status',
-      cachedStatus: memoryCache.lastQuotaStatus,
     });
   }
 });
 
 /**
  * GET /api/football/cache/all
- * Returns all cached leagues, clubs, and recent sync audit logs from Layer 1
+ * Returns unified cached leagues, clubs, squads, and sync logs from Firestore & Memory
  */
-app.get('/api/football/cache/all', (req, res) => {
-  return res.json({
-    leagues: memoryCache.leagues,
-    clubs: memoryCache.clubs,
-    players: memoryCache.players,
-    syncLogs: memoryCache.syncLogs.slice(-10),
-  });
+app.get('/api/football/cache/all', async (req, res) => {
+  try {
+    const summary = await cacheRepo.getAllCacheSummary();
+    return res.json(summary);
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/football/cache/leagues
+ * Returns official cached leagues from Firestore
+ */
+app.get('/api/football/cache/leagues', async (req, res) => {
+  try {
+    const leagues = await cacheRepo.getAllLeagues();
+    return res.json({ leagues });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/football/cache/clubs
+ * Returns all cached clubs or clubs for a specific league (?leagueKey=xxx)
+ */
+app.get('/api/football/cache/clubs', async (req, res) => {
+  try {
+    const leagueKey = req.query.leagueKey as string | undefined;
+    const clubs = leagueKey
+      ? await cacheRepo.getClubsByLeague(leagueKey)
+      : await cacheRepo.getAllClubs();
+    return res.json({ clubs });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/football/cache/squads/:clubId
+ * Returns cached squad for a club
+ */
+app.get('/api/football/cache/squads/:clubId', async (req, res) => {
+  try {
+    const squad = await cacheRepo.getSquad(req.params.clubId);
+    if (!squad) {
+      return res.status(404).json({ error: `Squad not found for club ${req.params.clubId}` });
+    }
+    return res.json({ squad });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message });
+  }
 });
 
 /**
  * POST /api/football/sync-league
- * Economical single-league sync:
- * 1) Checks /status (0 quota)
- * 2) Standings (1 req)
- * 3) Teams in league (1 req)
- * 4) Top scorers & Top assists (2 reqs) to calculate real overall ratings
- * Total requests for league = 4 requests!
+ * Synchronizes a single league safely:
+ * - Checks Firestore cache first; if fresh and unexpired, skips calling API!
+ * - If expired or forced, asserts daily quota margin (< 90 used), fetches data,
+ *   persists to Firestore, and writes an audit log.
  */
 app.post('/api/football/sync-league', async (req, res) => {
-  const apiKey = process.env.API_FOOTBALL_KEY;
-  if (!apiKey || apiKey === 'MY_API_FOOTBALL_KEY') {
+  const { leagueId, leagueKey, season = 2024, force = false } = req.body;
+  const target = leagueKey || leagueId;
+
+  if (!target) {
     return res.status(400).json({
       success: false,
-      message: 'مفتاح API_FOOTBALL_KEY غير متوفر في متغيرات البيئة.',
+      message: 'معرف الدوري leagueId أو المفتاح leagueKey مطلوب.',
     });
   }
-
-  const { leagueId, season = 2025 } = req.body;
-  const leagueConfig = OFFICIAL_LEAGUES_CONFIG.find(l => l.id === Number(leagueId));
-  if (!leagueConfig) {
-    return res.status(400).json({
-      success: false,
-      message: `الدوري بالمعرّف ${leagueId} غير مسجل بالقائمة الرسمية المعتمدة.`,
-    });
-  }
-
-  let sessionRequestsUsed = 0;
-  const logDetails: string[] = [];
 
   try {
-    // Step 0: Check quota via /status (0 cost)
-    const { data: statusData } = await callApiFootball('/status', apiKey);
-    const currentUsage = statusData.response?.requests?.current || 0;
-    const dailyLimit = statusData.response?.requests?.limit_day || 100;
-    
-    // Safety Margin: Stop if >= 90 requests
-    if (currentUsage >= 90) {
-      const abortLog = {
-        id: `log_abort_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        initiatedBy: 'admin',
-        requestsUsed: 0,
-        quotaRemaining: Math.max(0, dailyLimit - currentUsage),
-        status: 'aborted_quota',
-        summary: `تم إيقاف المزامنة تلقائياً لحماية الكوتا: استُهلك ${currentUsage}/${dailyLimit} طلب (هامش الأمان 90).`,
-        details: 'Sync aborted before issuing calls to avoid exceeding the 100 daily requests ceiling.',
-      };
-      memoryCache.syncLogs.push(abortLog);
-      return res.status(429).json({
-        success: false,
-        aborted: true,
-        message: abortLog.summary,
-        log: abortLog,
-      });
+    const result = await syncService.syncLeague(target, { season, force });
+    if (!result.success && result.aborted) {
+      return res.status(429).json(result);
     }
-
-    // Step 1: Standings (1 call)
-    logDetails.push(`Fetching standings for league ${leagueConfig.id} (${leagueConfig.nameEn})`);
-    const { data: standingsData } = await callApiFootball(`/standings?league=${leagueConfig.id}&season=${season}`, apiKey);
-    sessionRequestsUsed += 1;
-
-    const rawStandings = standingsData.response?.[0]?.league?.standings?.[0] || [];
-    
-    // Step 2: Teams in league (1 call)
-    logDetails.push(`Fetching teams for league ${leagueConfig.id}`);
-    const { data: teamsData } = await callApiFootball(`/teams?league=${leagueConfig.id}&season=${season}`, apiKey);
-    sessionRequestsUsed += 1;
-    const rawTeams = teamsData.response || [];
-
-    // Step 3: Top scorers & Top assists (2 calls) for real ratings
-    logDetails.push(`Fetching top scorers for rating calibration`);
-    let topScorers: any[] = [];
-    try {
-      const { data: scorersData } = await callApiFootball(`/players/topscorers?league=${leagueConfig.id}&season=${season}`, apiKey);
-      sessionRequestsUsed += 1;
-      topScorers = scorersData.response || [];
-    } catch (e: any) {
-      logDetails.push(`Warning: topscorers failed - ${e.message}`);
+    if (!result.success) {
+      return res.status(400).json(result);
     }
-
-    logDetails.push(`Fetching top assists for rating calibration`);
-    let topAssists: any[] = [];
-    try {
-      const { data: assistsData } = await callApiFootball(`/players/topassists?league=${leagueConfig.id}&season=${season}`, apiKey);
-      sessionRequestsUsed += 1;
-      topAssists = assistsData.response || [];
-    } catch (e: any) {
-      logDetails.push(`Warning: topassists failed - ${e.message}`);
-    }
-
-    // Build Benchmark Ratings Map from Top Scorers and Top Assists
-    const benchmarkRatings = new Map<number, { rating: number; overall: number; position: string }>();
-    for (const item of [...topScorers, ...topAssists]) {
-      const pId = item.player?.id;
-      const ratingStr = item.statistics?.[0]?.games?.rating;
-      const pos = item.statistics?.[0]?.games?.position || 'Midfielder';
-      if (pId && ratingStr) {
-        const parsed = parseFloat(ratingStr);
-        if (!isNaN(parsed) && parsed > 0) {
-          // Rule: overall = round(parsed * 10), capped between 40 and 95
-          const calculatedOverall = Math.max(40, Math.min(95, Math.round(parsed * 10)));
-          benchmarkRatings.set(pId, { rating: parsed, overall: calculatedOverall, position: pos });
-        }
-      }
-    }
-
-    // Format and store in Layer 1 Cache
-    const leagueDoc = {
-      id: `league_${leagueConfig.id}`,
-      leagueId: leagueConfig.id,
-      season,
-      name: leagueConfig.name,
-      nameEn: leagueConfig.nameEn,
-      country: leagueConfig.country,
-      logo: standingsData.response?.[0]?.league?.logo || '',
-      standings: JSON.stringify(rawStandings),
-      totalClubs: rawTeams.length,
-      updatedAt: new Date().toISOString(),
-    };
-    memoryCache.leagues[leagueDoc.id] = leagueDoc;
-
-    // Cache clubs
-    for (const t of rawTeams) {
-      const teamId = t.team?.id;
-      if (!teamId) continue;
-      const clubDoc = {
-        id: `club_${teamId}`,
-        teamId,
-        leagueId: leagueConfig.id,
-        season,
-        name: t.team?.name || '',
-        nameEn: t.team?.name || '',
-        code: t.team?.code || '',
-        country: t.team?.country || '',
-        founded: t.team?.founded || 1900,
-        logo: t.team?.logo || '',
-        venue: t.venue?.name || '',
-        venueCapacity: t.venue?.capacity || 30000,
-        updatedAt: new Date().toISOString(),
-      };
-      memoryCache.clubs[clubDoc.id] = clubDoc;
-    }
-
-    const auditLog = {
-      id: `log_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      initiatedBy: 'admin',
-      leagueId: leagueConfig.id,
-      requestsUsed: sessionRequestsUsed,
-      quotaRemaining: Math.max(0, dailyLimit - (currentUsage + sessionRequestsUsed)),
-      status: 'success',
-      summary: `تمت مزامنة دوري ${leagueConfig.name} بنجاح: ${rawTeams.length} نادياً، ${rawStandings.length} مركز ترتيب، واستهلكت ${sessionRequestsUsed} طلبات فقط.`,
-      details: logDetails.join(' | '),
-    };
-    memoryCache.syncLogs.push(auditLog);
-
-    return res.json({
-      success: true,
-      requestsUsed: sessionRequestsUsed,
-      quotaRemaining: auditLog.quotaRemaining,
-      league: leagueDoc,
-      clubsCount: rawTeams.length,
-      ratingsCalibrated: benchmarkRatings.size,
-      log: auditLog,
-    });
+    return res.json(result);
   } catch (error: any) {
-    const errorLog = {
-      id: `log_err_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      initiatedBy: 'admin',
-      requestsUsed: sessionRequestsUsed,
-      quotaRemaining: 100 - sessionRequestsUsed,
-      status: 'failed',
-      summary: `تعذر جلب بيانات دوري ${leagueConfig.name}: ${error.message}`,
-      details: logDetails.join(' | '),
-    };
-    memoryCache.syncLogs.push(errorLog);
-
     return res.status(500).json({
       success: false,
-      requestsUsed: sessionRequestsUsed,
       error: error.message,
-      log: errorLog,
     });
   }
 });
 
 /**
  * POST /api/football/sync-squad
- * Economical single-team squad sync:
- * GET /players/squads?team={team_id} (1 request)
- * Uses benchmarks to calculate real overall; otherwise default 65 (estimated)
+ * Synchronizes squad for a single team:
+ * - Checks Firestore cache first; if fresh and unexpired, skips calling API!
+ * - If expired or forced, asserts quota margin (< 90 used), fetches squad,
+ *   persists to Firestore, and writes an audit log.
  */
 app.post('/api/football/sync-squad', async (req, res) => {
-  const apiKey = process.env.API_FOOTBALL_KEY;
-  if (!apiKey || apiKey === 'MY_API_FOOTBALL_KEY') {
-    return res.status(400).json({
-      success: false,
-      message: 'مفتاح API_FOOTBALL_KEY غير متوفر.',
-    });
-  }
+  const { teamId, clubId, leagueId, clubNameEn, force = false } = req.body;
+  const targetTeamId = teamId;
+  const targetClubId = clubId || String(teamId);
 
-  const { teamId } = req.body;
-  if (!teamId) {
+  if (!targetTeamId) {
     return res.status(400).json({ success: false, message: 'معرف النادي teamId مطلوب.' });
   }
 
   try {
-    // Check status
-    const { data: statusData } = await callApiFootball('/status', apiKey);
-    const currentUsage = statusData.response?.requests?.current || 0;
-    if (currentUsage >= 90) {
-      return res.status(429).json({
-        success: false,
-        message: 'تم بلوغ حد الأمان اليومي للكوتا (90 طلب). يرجى الانتظار حتى الغد.',
-      });
+    const result = await syncService.syncSquad(targetClubId, targetTeamId, {
+      force,
+      leagueId,
+      clubNameEn,
+    });
+
+    if (!result.success && result.aborted) {
+      return res.status(429).json(result);
     }
-
-    const { data: squadData } = await callApiFootball(`/players/squads?team=${teamId}`, apiKey);
-    const rawPlayers = squadData.response?.[0]?.players || [];
-
-    const mappedPlayers = rawPlayers.map((p: any) => {
-      // Calculate overall rating: default 65 if no benchmark
-      const age = p.age || 24;
-      const isRatingEstimated = true;
-      const calculatedOverall = 65;
-      
-      // Calculate Potential (internal algorithmic formula)
-      let potential = calculatedOverall;
-      if (age < 21 && calculatedOverall >= 75) {
-        potential = Math.min(95, calculatedOverall + 10);
-      } else if (age < 23) {
-        potential = Math.min(95, calculatedOverall + 6);
-      } else if (age <= 27) {
-        potential = Math.min(95, calculatedOverall + 3);
-      }
-
-      const playerDoc = {
-        id: `p_${p.id}`,
-        playerId: p.id,
-        teamId: Number(teamId),
-        name: p.name,
-        age,
-        number: p.number || 0,
-        position: p.position || 'Midfielder',
-        photo: p.photo || '',
-        baseRating: null,
-        calculatedOverall,
-        potential,
-        isRatingEstimated,
-        updatedAt: new Date().toISOString(),
-      };
-
-      memoryCache.players[playerDoc.id] = playerDoc;
-      return playerDoc;
-    });
-
-    const auditLog = {
-      id: `log_squad_${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      initiatedBy: 'admin',
-      teamId,
-      requestsUsed: 1,
-      quotaRemaining: Math.max(0, 100 - (currentUsage + 1)),
-      status: 'success',
-      summary: `تم جلب تشكيلة النادي ${teamId} بنجاح (${mappedPlayers.length} لاعباً) باستهلاك طلب واحد فقط.`,
-      details: `Single squad call executed for team ID ${teamId}.`,
-    };
-    memoryCache.syncLogs.push(auditLog);
-
-    return res.json({
-      success: true,
-      teamId,
-      playersCount: mappedPlayers.length,
-      players: mappedPlayers,
-      log: auditLog,
-    });
+    if (!result.success) {
+      return res.status(500).json(result);
+    }
+    return res.json(result);
   } catch (error: any) {
     return res.status(500).json({
       success: false,

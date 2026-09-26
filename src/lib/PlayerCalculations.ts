@@ -19,7 +19,7 @@ import type { Player, PlayerAttributes, PlayerPosition } from '../types/game';
 // الخطوة 1: حساب الـ Overall حسب أوزان كل مركز
 // -----------------------------------------------------------------------
 
-type FootballAttrKey = 'pace' | 'shooting' | 'passing' | 'dribbling' | 'defending' | 'physical' | 'goalkeeping';
+export type FootballAttrKey = 'pace' | 'shooting' | 'passing' | 'dribbling' | 'defending' | 'physical' | 'goalkeeping';
 
 /** أوزان كل سمة لكل مركز (يجب أن يكون مجموعها 1 لكل مركز). */
 const POSITION_WEIGHTS: Record<PlayerPosition, Partial<Record<FootballAttrKey, number>>> = {

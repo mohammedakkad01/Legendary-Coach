@@ -1,0 +1,98 @@
+name: Manage Redeem Codes
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - create
+          - update
+          - disable
+        default: create
+      code:
+        description: 'Redeem Code (alphanumeric, e.g. WELCOME2026 or MOHDEVTEST)'
+        required: true
+        type: string
+      type:
+        description: 'Code Type (player = public, dev = developer only locked to MY_UID)'
+        required: true
+        type: choice
+        options:
+          - player
+          - dev
+        default: player
+      startAt:
+        description: 'Start Date/Time ISO (optional, e.g. 2026-10-01T00:00:00Z)'
+        required: false
+        type: string
+      expiresAt:
+        description: 'Expiration Date/Time ISO (optional, e.g. 2026-10-31T23:59:59Z)'
+        required: false
+        type: string
+      maxRedemptions:
+        description: 'Max Redemptions (0 = unlimited, default 5000 for player codes)'
+        required: false
+        type: string
+        default: '5000'
+      rewardCoins:
+        description: 'Coins Reward'
+        required: false
+        type: string
+        default: '50000'
+      rewardDiamonds:
+        description: 'Diamonds Reward'
+        required: false
+        type: string
+        default: '100'
+      rewardTrainingPoints:
+        description: 'Training Points Reward'
+        required: false
+        type: string
+        default: '100'
+      labelAr:
+        description: 'Arabic Label (e.g. كود ترحيبي)'
+        required: false
+        type: string
+        default: 'كود ترحيبي'
+      labelEn:
+        description: 'English Label (e.g. Welcome Code)'
+        required: false
+        type: string
+        default: 'Welcome Code'
+
+jobs:
+  manage-codes:
+    name: Manage Firestore Redeem Codes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Project Dependencies
+        run: npm ci
+
+      - name: Run Manage Redeem Codes Script
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          MY_UID: ${{ secrets.MY_UID }}
+          ACTION: ${{ inputs.action }}
+          CODE: ${{ inputs.code }}
+          TYPE: ${{ inputs.type }}
+          START_AT: ${{ inputs.startAt }}
+          EXPIRES_AT: ${{ inputs.expiresAt }}
+          MAX_REDEMPTIONS: ${{ inputs.maxRedemptions }}
+          REWARD_COINS: ${{ inputs.rewardCoins }}
+          REWARD_DIAMONDS: ${{ inputs.rewardDiamonds }}
+          REWARD_TRAINING_POINTS: ${{ inputs.rewardTrainingPoints }}
+          LABEL_AR: ${{ inputs.labelAr }}
+          LABEL_EN: ${{ inputs.labelEn }}
+        run: npx tsx scripts/seedRedeemCodes.ts

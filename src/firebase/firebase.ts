@@ -235,16 +235,16 @@ export async function likeTacticInFirestore(tacticId: string, currentLikes: numb
 
 // ==========================================
 // Redeem Codes
-// Docs live at /redeem_codes/{CODE} (10-char code = the doc ID, never listed —
-// so it can only be reached by someone who was actually given the code).
-// A per-user "claim" receipt at /redeem_codes/{CODE}/claims/{uid} makes each
-// code single-use-per-account; redemptionsCount is bumped inside the SAME
-// transaction so a max-redemptions cap can never be oversold by a race.
+// Docs live at /redeem_codes/{CODE} (Doc ID = code string, never listed).
+// A per-user immutable redemption receipt at /redeem_codes/{CODE}/redemptions/{uid}
+// enforces single-use per account for players without needing Cloud Functions.
 // ==========================================
 export interface RedeemCodeDoc {
   code: string;
   type: 'dev' | 'player';
   active: boolean;
+  startAt?: string | null;
+  expiresAt?: string | null;
   maxRedemptions: number;       // 0 = unlimited
   redemptionsCount: number;
   restrictedToUid: string;      // '' = anyone with the code; else only this uid
@@ -254,11 +254,12 @@ export interface RedeemCodeDoc {
   labelAr?: string;
   labelEn?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export type RedeemCodeResult =
   | { status: 'success'; reward: { coins: number; diamonds: number; trainingPoints: number } }
-  | { status: 'not_found' | 'inactive' | 'exhausted' | 'not_allowed' | 'already_redeemed' | 'error' };
+  | { status: 'not_found' | 'inactive' | 'not_started' | 'expired' | 'exhausted' | 'not_allowed' | 'already_redeemed' | 'error' };
 
 /**
  * Atomically validates and redeems a gift code for `uid`.
@@ -268,7 +269,7 @@ export type RedeemCodeResult =
 export async function redeemGiftCodeInFirestore(uid: string, rawCode: string): Promise<RedeemCodeResult> {
   const code = rawCode.trim().toUpperCase();
   const codeRef = doc(db, 'redeem_codes', code);
-  const claimRef = doc(db, 'redeem_codes', code, 'claims', uid);
+  const redemptionRef = doc(db, 'redeem_codes', code, 'redemptions', uid);
   const path = `redeem_codes/${code}`;
 
   try {
@@ -278,14 +279,63 @@ export async function redeemGiftCodeInFirestore(uid: string, rawCode: string): P
 
       const data = codeSnap.data() as RedeemCodeDoc;
       if (!data.active) return { status: 'inactive' };
-      if (data.restrictedToUid && data.restrictedToUid !== uid) return { status: 'not_allowed' };
-      if (data.maxRedemptions !== 0 && data.redemptionsCount >= data.maxRedemptions) return { status: 'exhausted' };
 
-      const claimSnap = await tx.get(claimRef);
-      if (claimSnap.exists()) return { status: 'already_redeemed' };
+      const now = new Date();
+      if (data.startAt && new Date(data.startAt).getTime() > now.getTime()) {
+        return { status: 'not_started' };
+      }
+      if (data.expiresAt && new Date(data.expiresAt).getTime() < now.getTime()) {
+        return { status: 'expired' };
+      }
 
-      tx.update(codeRef, { redemptionsCount: data.redemptionsCount + 1 });
-      tx.set(claimRef, { uid, redeemedAt: new Date().toISOString() });
+      // Developer Code protection: must match restrictedToUid exactly
+      if (data.type === 'dev') {
+        if (!data.restrictedToUid || data.restrictedToUid !== uid) {
+          return { status: 'not_allowed' };
+        }
+        // Dev codes have unlimited uses for the developer
+        tx.set(redemptionRef, {
+          uid,
+          code,
+          redeemedAt: now.toISOString(),
+          rewardCoins: data.rewardCoins || 0,
+          rewardDiamonds: data.rewardDiamonds || 0,
+          rewardTrainingPoints: data.rewardTrainingPoints || 0,
+        }, { merge: true });
+
+        return {
+          status: 'success',
+          reward: {
+            coins: data.rewardCoins || 0,
+            diamonds: data.rewardDiamonds || 0,
+            trainingPoints: data.rewardTrainingPoints || 0,
+          }
+        } as const;
+      }
+
+      // Player Code checks
+      if (data.restrictedToUid && data.restrictedToUid !== uid) {
+        return { status: 'not_allowed' };
+      }
+
+      const redemptionSnap = await tx.get(redemptionRef);
+      if (redemptionSnap.exists()) {
+        return { status: 'already_redeemed' };
+      }
+
+      if (data.maxRedemptions !== 0 && (data.redemptionsCount || 0) >= data.maxRedemptions) {
+        return { status: 'exhausted' };
+      }
+
+      // Record immutable redemption receipt
+      tx.set(redemptionRef, {
+        uid,
+        code,
+        redeemedAt: now.toISOString(),
+        rewardCoins: data.rewardCoins || 0,
+        rewardDiamonds: data.rewardDiamonds || 0,
+        rewardTrainingPoints: data.rewardTrainingPoints || 0,
+      });
 
       return {
         status: 'success',
@@ -297,9 +347,8 @@ export async function redeemGiftCodeInFirestore(uid: string, rawCode: string): P
       } as const;
     });
   } catch (err) {
-    // A permission-denied here almost always means the code was already
-    // claimed by this account or has just been exhausted by someone else.
     console.error('Redeem code error:', err);
     handleFirestoreError(err, OperationType.UPDATE, path);
+    return { status: 'error' };
   }
 }

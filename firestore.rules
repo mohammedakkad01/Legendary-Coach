@@ -270,5 +270,57 @@ service cloud.firestore {
         allow delete: if isSignedIn() && request.auth.uid == orderUid;
       }
     }
+
+    // ==========================================
+    // LAYER 4: Gift & Redeem Codes System
+    // Path: /redeem_codes/{code}
+    // Subcollection: /redeem_codes/{code}/redemptions/{uid}
+    // ==========================================
+    match /redeem_codes/{code} {
+      // Clients can inspect an exact code document ONLY if they know its code.
+      // Listing is strictly forbidden to prevent scraping/discovering hidden codes.
+      allow get: if isSignedIn();
+      allow list: if false;
+
+      // Clients can NEVER create, update, or delete redeem codes.
+      // Only Firebase Admin SDK (via GitHub Actions) can manage codes.
+      allow create, update, delete: if false;
+
+      // Subcollection: per-user redemption receipt
+      match /redemptions/{uid} {
+        // Player can only inspect their own redemption receipt
+        allow get: if isSignedIn() && (request.auth.uid == uid);
+        allow list: if false;
+
+        // Player can create a redemption receipt if:
+        // 1. Signed in and writing their OWN uid receipt (uid == request.auth.uid).
+        // 2. The parent code exists and is active.
+        // 3. If the code is restricted to a developer UID, request.auth.uid MUST match.
+        // 4. Recorded rewards MUST match the actual parent code's reward fields.
+        allow create: if isSignedIn() &&
+          request.auth.uid == uid &&
+          incoming().uid == request.auth.uid &&
+          incoming().code == code &&
+          exists(/databases/$(database)/documents/redeem_codes/$(code)) &&
+          get(/databases/$(database)/documents/redeem_codes/$(code)).data.active == true &&
+          (
+            get(/databases/$(database)/documents/redeem_codes/$(code)).data.restrictedToUid == "" ||
+            get(/databases/$(database)/documents/redeem_codes/$(code)).data.restrictedToUid == request.auth.uid
+          ) &&
+          incoming().rewardCoins == get(/databases/$(database)/documents/redeem_codes/$(code)).data.rewardCoins &&
+          incoming().rewardDiamonds == get(/databases/$(database)/documents/redeem_codes/$(code)).data.rewardDiamonds &&
+          incoming().rewardTrainingPoints == get(/databases/$(database)/documents/redeem_codes/$(code)).data.rewardTrainingPoints;
+
+        // Dev codes allow multiple uses: developer can update timestamp on re-test
+        allow update: if isSignedIn() &&
+          request.auth.uid == uid &&
+          exists(/databases/$(database)/documents/redeem_codes/$(code)) &&
+          get(/databases/$(database)/documents/redeem_codes/$(code)).data.type == 'dev' &&
+          get(/databases/$(database)/documents/redeem_codes/$(code)).data.restrictedToUid == request.auth.uid;
+
+        // Never allow clients to delete redemption receipts
+        allow delete: if false;
+      }
+    }
   }
 }

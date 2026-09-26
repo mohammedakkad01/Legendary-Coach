@@ -65,18 +65,18 @@ export const RedeemCodeModal: React.FC<RedeemCodeModalProps> = ({ isOpen, onClos
           <div>
             <h3 className="text-lg font-black text-white">{isAr ? 'كود الهدية' : 'Gift Code'}</h3>
             <p className="text-xs text-slate-400">
-              {isAr ? 'أدخل الكود المكوّن من 10 خانات لاستلام مكافأتك' : 'Enter your 10-character code to claim your reward'}
+              {isAr ? 'أدخل كود الهدية المخصص لاستلام مكافأتك' : 'Enter your gift code to claim your reward'}
             </p>
           </div>
         </div>
 
         <input
           value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase().slice(0, 10))}
-          placeholder={isAr ? 'مثال: ABC123XYZ0' : 'e.g. ABC123XYZ0'}
-          maxLength={10}
+          onChange={(e) => setCode(e.target.value.toUpperCase().slice(0, 16))}
+          placeholder={isAr ? 'مثال: WELCOME2026' : 'e.g. WELCOME2026'}
+          maxLength={16}
           dir="ltr"
-          className="w-full text-center tracking-[0.3em] font-mono font-bold text-lg bg-black/40 border border-amber-500/30 rounded-2xl px-4 py-3 text-amber-300 placeholder:text-slate-600 focus:outline-none focus:border-amber-400"
+          className="w-full text-center tracking-[0.2em] font-mono font-bold text-lg bg-black/40 border border-amber-500/30 rounded-2xl px-4 py-3 text-amber-300 placeholder:text-slate-600 focus:outline-none focus:border-amber-400"
         />
 
         {feedback && (
@@ -93,7 +93,7 @@ export const RedeemCodeModal: React.FC<RedeemCodeModalProps> = ({ isOpen, onClos
 
         <button
           onClick={handleSubmit}
-          disabled={submitting || code.length !== 10}
+          disabled={submitting || code.length < 8}
           className="mt-4 w-full py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 text-black font-black flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}

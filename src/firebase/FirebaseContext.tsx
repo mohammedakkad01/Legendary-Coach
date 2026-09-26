@@ -255,11 +255,11 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         message: isAr ? 'يجب تسجيل الدخول بحساب Google أولاً لاستخدام أكواد الهدايا.' : 'Please sign in with Google first to use gift codes.'
       };
     }
-    const trimmed = code.trim();
-    if (trimmed.length !== 10) {
+    const trimmed = code.trim().toUpperCase();
+    if (!/^[A-Z0-9]{8,16}$/.test(trimmed)) {
       return {
         success: false,
-        message: isAr ? 'الكود يجب أن يتكون من 10 خانات بالضبط.' : 'The code must be exactly 10 characters long.'
+        message: isAr ? 'الكود غير صالح (يجب أن يتكون من 8 إلى 16 حرفاً ورقم باللغة الإنجليزية).' : 'Invalid code format (must be 8-16 alphanumeric characters).'
       };
     }
 
@@ -278,14 +278,18 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return { success: false, message: isAr ? 'هذا الكود غير صحيح.' : 'This code is not valid.' };
         case 'inactive':
           return { success: false, message: isAr ? 'هذا الكود لم يعد فعالاً.' : 'This code is no longer active.' };
+        case 'not_started':
+          return { success: false, message: isAr ? 'هذا الكود لم تبدأ فترة صلاحيته بعد.' : 'This code redemption period has not started yet.' };
+        case 'expired':
+          return { success: false, message: isAr ? 'هذا الكود منتهي الصلاحية.' : 'This code has expired.' };
         case 'exhausted':
-          return { success: false, message: isAr ? 'تم استنفاد عدد مرات استخدام هذا الكود.' : 'This code has reached its redemption limit.' };
+          return { success: false, message: isAr ? 'تم استنفاد الحد الأقصى لعدد مرات استخدام هذا الكود.' : 'This code has reached its redemption limit.' };
         case 'not_allowed':
           return { success: false, message: isAr ? 'هذا الكود غير مخصص لحسابك.' : 'This code is not assigned to your account.' };
         case 'already_redeemed':
           return { success: false, message: isAr ? 'لقد استخدمت هذا الكود من قبل.' : "You've already redeemed this code." };
         default:
-          return { success: false, message: isAr ? 'حدث خطأ غير متوقع، حاول مجدداً.' : 'Unexpected error, please try again.' };
+          return { success: false, message: isAr ? 'حدث خطأ أثناء معالجة الكود، حاول مجدداً.' : 'Error processing code, please try again.' };
       }
     } catch (error: any) {
       return {

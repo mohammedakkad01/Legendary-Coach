@@ -31,7 +31,12 @@ import {
   RoundSummary,
   RoundMatchResult,
   RoundPerformer,
-  MatchScoutReport
+  MatchScoutReport,
+  SavedTacticalPlan,
+  PendingFacilityUpgrade,
+  PlayerNegotiation,
+  NegotiationStatus,
+  AcademyDiscovery
 } from '../types/game';
 import { 
   REAL_INITIAL_PLAYER_CLUB, 
@@ -122,6 +127,11 @@ interface GameState {
   vipPoints: number;
   vipClaimedToday: boolean;
   lastVipClaimDate: string | null;
+  missionSkipUsedDate: string | null; // VIP 10+ one-click mission skip, once per day
+  savedTacticalPlans: SavedTacticalPlan[]; // VIP 12+ exclusive: up to 5 saved tactic presets
+  pendingFacilityUpgrades: PendingFacilityUpgrade[]; // facilities now take real construction time
+  activeNegotiations: PlayerNegotiation[]; // VIP 6+ get an extra simultaneous negotiation slot
+  academyDiscoveries: AcademyDiscovery[]; // VIP 13+ get an extra simultaneous academy scout slot
   checkInStreak: number;
   checkInClaimedToday: boolean;
   lastCheckInDate: string | null;
@@ -203,6 +213,7 @@ interface GameState {
   updateFootballTactics: (newTactics: Partial<FootballTactics>) => void;
   updateBasketballTactics: (newTactics: Partial<BasketballTactics>) => void;
   swapFootballLineup: (lineupIndex: number, benchPlayerId: string) => void;
+  moveToBench: (playerId: string) => { success: boolean; message: string };
   setFootballRoles: (roles: { captainId?: string; penaltyTakerId?: string; freeKickTakerId?: string; cornerTakerId?: string }) => void;
 
   // Training & Facilities
@@ -213,7 +224,10 @@ interface GameState {
   buyPlayer: (player: Player) => boolean;
   addPlayerToSquad: (player: Player) => boolean;
   sellPlayer: (playerId: string) => void;
-  promoteAcademyTalent: () => void;
+  promoteAcademyTalent: () => void; // legacy basketball-only path (kept for basketball; football uses the scouting flow below)
+  scoutAcademyTalent: () => { success: boolean; message: string };
+  promoteAcademyDiscovery: (discoveryId: string) => { success: boolean; message: string };
+  releaseAcademyDiscovery: (discoveryId: string) => void;
   refreshScoutMarket: () => void;
 
   // Narrative
@@ -243,6 +257,24 @@ interface GameState {
   upgradeVipWithDiamonds: () => { success: boolean; message: string };
   claimVipUpgradeChest: (level: number) => { success: boolean; message: string };
   claimDailyVIPReward: () => { success: boolean; message: string };
+  // VIP 10+: instantly complete & claim one chosen unclaimed daily mission, once per day.
+  skipDailyMissionInstant: (missionId: string) => { success: boolean; message: string };
+  saveTacticalPlan: (name: string) => { success: boolean; message: string };
+  loadTacticalPlan: (id: string) => { success: boolean; message: string };
+  deleteTacticalPlan: (id: string) => void;
+  // Facility construction: completes any pending upgrades whose timer has elapsed
+  // (called on load + on a periodic tick from App.tsx so offline time counts too).
+  processFacilityUpgrades: () => void;
+  skipFacilityUpgrade: (facility: keyof ClubFacilities) => { success: boolean; message: string };
+  // Real transfer negotiations: an initial offer gets accepted, rejected, or
+  // countered by the player's agent depending on personality + offer ratio.
+  startNegotiation: (playerId: string, initialOfferAmount: number) => { success: boolean; message: string };
+  submitCounterOffer: (negotiationId: string, newOfferAmount: number) => { success: boolean; message: string };
+  acceptNegotiationCounter: (negotiationId: string) => { success: boolean; message: string };
+  cancelNegotiation: (negotiationId: string) => void;
+  // Applies a reward that has ALREADY been granted server-side by a redeemed
+  // gift code (see FirebaseContext.redeemGiftCode) into local game state.
+  applyRedeemReward: (reward: { coins: number; diamonds: number; trainingPoints: number }) => void;
   claimDailyCheckIn: () => void;
 
   // Custom Data Pack Editor
@@ -256,6 +288,194 @@ export const useGameStore = create<GameState>((set, get) => {
   // (VIP daily chest, coach daily check-in) against real day changes
   // instead of an in-memory flag that resets on every page refresh.
   const getTodayStr = () => new Date().toISOString().split('T')[0];
+
+  // VIP-gated matchday bench capacity (see VIPPrivilege.maxBenchSlots).
+  // A newly signed/promoted player only joins the tactical-swap-eligible
+  // bench if there's room; otherwise they stay in the squad as a reserve
+  // (still sellable/manageable, just not swap-in eligible until a slot frees
+  // up or the coach reaches a higher VIP tier).
+  const getMaxBenchSlots = (vipPoints: number) => {
+    let level = 1;
+    for (const tier of VIP_LEVELS) {
+      if (vipPoints >= tier.pointsRequired) level = tier.level;
+    }
+    const tier = VIP_LEVELS.find(t => t.level === level) || VIP_LEVELS[0];
+    return tier.maxBenchSlots || 5;
+  };
+
+  const getMaxActiveNegotiations = (vipPoints: number) => {
+    let level = 1;
+    for (const tier of VIP_LEVELS) {
+      if (vipPoints >= tier.pointsRequired) level = tier.level;
+    }
+    const tier = VIP_LEVELS.find(t => t.level === level) || VIP_LEVELS[0];
+    return tier.maxActiveNegotiations || 1;
+  };
+
+  const getMaxAcademySlots = (vipPoints: number) => {
+    let level = 1;
+    for (const tier of VIP_LEVELS) {
+      if (vipPoints >= tier.pointsRequired) level = tier.level;
+    }
+    const tier = VIP_LEVELS.find(t => t.level === level) || VIP_LEVELS[0];
+    return tier.maxAcademySlots || 1;
+  };
+
+  // VIP 14+: 25% less post-match fatigue buildup / stamina drain for starters.
+  const getFatigueProtectionMultiplier = (vipPoints: number) => {
+    let level = 1;
+    for (const tier of VIP_LEVELS) {
+      if (vipPoints >= tier.pointsRequired) level = tier.level;
+    }
+    const tier = VIP_LEVELS.find(t => t.level === level) || VIP_LEVELS[0];
+    return tier.fatigueProtectionPercent ? 1 - tier.fatigueProtectionPercent / 100 : 1;
+  };
+
+  // Small first/last name pool for freshly-scouted academy prospects — kept
+  // local (rather than pulling from realLeaguesData's private NAME_POOLS)
+  // to avoid touching that module's exports.
+  const ACADEMY_FIRST_NAMES_AR = ['خالد', 'ياسر', 'فيصل', 'سلطان', 'ماجد', 'عبدالعزيز', 'تركي', 'نواف', 'بندر', 'راكان'];
+  const ACADEMY_LAST_NAMES_AR = ['الغامدي', 'العتيبي', 'القحطاني', 'الزهراني', 'الشمري', 'الدوسري', 'المطيري', 'الحربي'];
+  const ACADEMY_POSITIONS: Array<Player['position']> = ['GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LW', 'RW', 'ST'];
+
+  /**
+   * Generates one freshly-scouted academy prospect. Higher youthAcademyLevel
+   * shifts the potential distribution upward (better facility = better eye
+   * for 5-star talent), with genuine randomness on top so it's never the
+   * same guaranteed player twice.
+   */
+  const generateAcademyTalent = (sport: 'football' | 'basketball', youthAcademyLevel: number): { talent: Player; starRating: number } => {
+    const first = ACADEMY_FIRST_NAMES_AR[Math.floor(Math.random() * ACADEMY_FIRST_NAMES_AR.length)];
+    const last = ACADEMY_LAST_NAMES_AR[Math.floor(Math.random() * ACADEMY_LAST_NAMES_AR.length)];
+    const fullName = `${first} ${last}`;
+    const position: Player['position'] = sport === 'football'
+      ? ACADEMY_POSITIONS[Math.floor(Math.random() * ACADEMY_POSITIONS.length)]
+      : (['PG', 'SG', 'SF', 'PF', 'C'] as Player['position'][])[Math.floor(Math.random() * 5)];
+
+    // Facility level 1-10 nudges the average potential from ~72 up to ~90.
+    const facilityBonus = (youthAcademyLevel - 1) * 1.8;
+    const potential = Math.max(60, Math.min(96, Math.round(68 + facilityBonus + (Math.random() * 20 - 4))));
+    const overall = Math.max(48, Math.round(potential - (12 + Math.random() * 10)));
+    const starRating = potential >= 90 ? 5 : potential >= 84 ? 4 : potential >= 76 ? 3 : potential >= 68 ? 2 : 1;
+    const rarity: Player['rarity'] = starRating >= 5 ? 'legend' : starRating >= 4 ? 'rare' : 'prospect';
+
+    const talent: Player = {
+      id: `academy_gen_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      sport,
+      name: fullName,
+      nameEn: fullName,
+      age: 16 + Math.floor(Math.random() * 3),
+      nationality: 'السعودية',
+      nationalityFlag: '🇸🇦',
+      position,
+      secondaryPositions: [],
+      overall,
+      potential,
+      attributes: {
+        pace: overall + Math.floor(Math.random() * 6) - 3,
+        dribbling: overall + Math.floor(Math.random() * 6) - 3,
+        passing: overall + Math.floor(Math.random() * 6) - 3,
+        shooting: overall + Math.floor(Math.random() * 6) - 3,
+        physical: overall + Math.floor(Math.random() * 6) - 3,
+        defending: position === 'GK' ? 30 : overall + Math.floor(Math.random() * 6) - 3,
+        goalkeeping: position === 'GK' ? overall : 10,
+        speed: overall,
+        playmaking: overall,
+        shootingThree: overall,
+      },
+      rarity,
+      personality: (['ambitious', 'professional', 'nervous', 'leader'] as const)[Math.floor(Math.random() * 4)],
+      traits: starRating >= 5 ? ['خريج الأكاديمية الذهبي', 'مهارات فطرية'] : ['خريج الأكاديمية'],
+      morale: 90,
+      form: 6 + Math.floor(Math.random() * 3),
+      stamina: 95,
+      fatigue: 0,
+      injuredWeeks: 0,
+      suspendedMatches: 0,
+      contractYears: 4,
+      wage: Math.round(overall * 12),
+      marketValue: Math.round(overall * overall * 700),
+      matchesPlayed: 0,
+      goalsOrPoints: 0,
+      assists: 0,
+      cleanSheetsOrRebounds: 0,
+      averageRating: 0,
+    };
+
+    return { talent, starRating };
+  };
+
+  // Personality drives how hard an agent haggles: the minimum offer/marketValue
+  // ratio they'll accept outright, and how likely they are to blow up a
+  // reasonable-looking offer out of unpredictability (temperamental only).
+  const getPersonalityDemandFactor = (personality: string): { minAcceptRatio: number; volatile: boolean } => {
+    switch (personality) {
+      case 'leader': return { minAcceptRatio: 1.08, volatile: false };
+      case 'ambitious': return { minAcceptRatio: 1.03, volatile: false };
+      case 'temperamental': return { minAcceptRatio: 0.98, volatile: true };
+      case 'professional': return { minAcceptRatio: 0.95, volatile: false };
+      case 'loyal': return { minAcceptRatio: 0.90, volatile: false };
+      case 'nervous': return { minAcceptRatio: 0.88, volatile: false };
+      default: return { minAcceptRatio: 0.95, volatile: false };
+    }
+  };
+
+  /**
+   * Resolves one round of a negotiation: accepted / countered / rejected,
+   * with a bilingual flavor message. Mutates nothing — pure function.
+   */
+  const resolveNegotiationRound = (
+    player: Player,
+    offerAmount: number,
+    roundsUsed: number,
+    maxRounds: number,
+    isAr: boolean
+  ): { status: NegotiationStatus; counterAmount?: number; messageAr: string; messageEn: string } => {
+    const { minAcceptRatio, volatile } = getPersonalityDemandFactor(player.personality);
+    const ratio = offerAmount / player.marketValue;
+
+    // Temperamental players occasionally reject a perfectly fine offer out of pride.
+    if (volatile && Math.random() < 0.18 && ratio < 1.15) {
+      return {
+        status: 'rejected',
+        messageAr: `😤 وكيل ${player.name} رفض العرض فجأة ويطلب وقتاً للتفكير — شخصية اللاعب متقلبة المزاج.`,
+        messageEn: `😤 ${player.nameEn}'s agent suddenly rejected the offer — his temperamental personality strikes again.`
+      };
+    }
+
+    if (ratio >= minAcceptRatio) {
+      return {
+        status: 'accepted',
+        messageAr: `✅ وافق ${player.name} ووكيله على الانتقال بهذا العرض!`,
+        messageEn: `✅ ${player.nameEn} and his agent accepted the offer!`
+      };
+    }
+
+    // Too insulting to even counter.
+    if (ratio < minAcceptRatio - 0.30) {
+      return {
+        status: 'rejected',
+        messageAr: `❌ اعتبر وكيل ${player.name} العرض مهيناً وأنهى المفاوضات فوراً.`,
+        messageEn: `❌ ${player.nameEn}'s agent found the offer insulting and ended talks on the spot.`
+      };
+    }
+
+    if (roundsUsed >= maxRounds) {
+      return {
+        status: 'expired',
+        messageAr: `⌛ انتهت جولات التفاوض المتاحة دون اتفاق مع ${player.name}.`,
+        messageEn: `⌛ Ran out of negotiation rounds with ${player.nameEn} — no deal reached.`
+      };
+    }
+
+    const counterAmount = Math.round((player.marketValue * (minAcceptRatio - 0.03)) / 5000) * 5000;
+    return {
+      status: 'countered',
+      counterAmount: Math.max(counterAmount, offerAmount + 5000),
+      messageAr: `🤝 رفض وكيل ${player.name} العرض الأولي وقدّم طلباً مضاداً.`,
+      messageEn: `🤝 ${player.nameEn}'s agent declined the opening bid and made a counter-demand.`
+    };
+  };
 
   // Load saved state if present
   const loadSavedState = () => {
@@ -280,6 +500,11 @@ export const useGameStore = create<GameState>((set, get) => {
         energy: state.energy !== undefined ? state.energy : current.energy,
         vipPoints: state.vipPoints !== undefined ? state.vipPoints : current.vipPoints,
         lastVipClaimDate: state.lastVipClaimDate !== undefined ? state.lastVipClaimDate : current.lastVipClaimDate,
+        missionSkipUsedDate: state.missionSkipUsedDate !== undefined ? state.missionSkipUsedDate : current.missionSkipUsedDate,
+        savedTacticalPlans: state.savedTacticalPlans || current.savedTacticalPlans,
+        pendingFacilityUpgrades: state.pendingFacilityUpgrades || current.pendingFacilityUpgrades,
+        activeNegotiations: state.activeNegotiations || current.activeNegotiations,
+        academyDiscoveries: state.academyDiscoveries || current.academyDiscoveries,
         checkInStreak: state.checkInStreak !== undefined ? state.checkInStreak : current.checkInStreak,
         lastCheckInDate: state.lastCheckInDate !== undefined ? state.lastCheckInDate : current.lastCheckInDate,
         dailyMissions: state.dailyMissions || current.dailyMissions,
@@ -636,6 +861,11 @@ export const useGameStore = create<GameState>((set, get) => {
     lastEnergyUpdate: Date.now(),
     vipPoints: initialSave?.vipPoints || 0, // Starts from ZERO!
     lastVipClaimDate: initialSave?.lastVipClaimDate || null,
+    missionSkipUsedDate: initialSave?.missionSkipUsedDate || null,
+    savedTacticalPlans: initialSave?.savedTacticalPlans || [],
+    pendingFacilityUpgrades: initialSave?.pendingFacilityUpgrades || [],
+    activeNegotiations: initialSave?.activeNegotiations || [],
+    academyDiscoveries: initialSave?.academyDiscoveries || [],
     vipClaimedToday: !!initialSave?.lastVipClaimDate && initialSave.lastVipClaimDate === getTodayStr(),
     claimedVipUpgradeChests: initialSave?.claimedVipUpgradeChests || [1], // Level 1 is claimed initially or claimable
     checkInStreak: initialSave?.checkInStreak || 0, // Starts from ZERO!
@@ -842,7 +1072,7 @@ export const useGameStore = create<GameState>((set, get) => {
       updatedClub.footballLineup = [gk, ...outfield].filter((p): p is Player => !!p).map(p => p.id);
       updatedClub.footballBench = updatedClub.footballSquad
         .filter(p => !updatedClub.footballLineup.includes(p.id))
-        .slice(0, 4)
+        .slice(0, getMaxBenchSlots(0))
         .map(p => p.id);
 
       const newStandings = generateStandingsForLeague(clubConfig.leagueId, clubConfig.id, clubConfig.name);
@@ -914,6 +1144,82 @@ export const useGameStore = create<GameState>((set, get) => {
       }));
     },
 
+    saveTacticalPlan: (name: string) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+
+      let currentLevel = 1;
+      for (const tier of VIP_LEVELS) {
+        if (state.vipPoints >= tier.pointsRequired) currentLevel = tier.level;
+      }
+      const currentTier = VIP_LEVELS.find(t => t.level === currentLevel) || VIP_LEVELS[0];
+      const maxSlots = currentTier.maxSavedTacticalPlans || 0;
+
+      if (maxSlots <= 0) {
+        return {
+          success: false,
+          message: isAr ? 'حفظ خطط التكتيك ميزة حصرية لأعضاء VIP 12 فما فوق.' : 'Saving tactical plans is exclusive to VIP 12 and above.'
+        };
+      }
+      const trimmedName = name.trim().slice(0, 24);
+      if (!trimmedName) {
+        return { success: false, message: isAr ? 'يرجى إدخال اسم للخطة' : 'Please enter a plan name' };
+      }
+      if (state.savedTacticalPlans.length >= maxSlots) {
+        return {
+          success: false,
+          message: isAr
+            ? `وصلت للحد الأقصى (${maxSlots} خطط). احذف خطة قديمة لحفظ خطة جديدة.`
+            : `You've reached the max (${maxSlots} plans). Delete an old one to save a new plan.`
+        };
+      }
+
+      const newPlan: SavedTacticalPlan = {
+        id: `plan_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        name: trimmedName,
+        tactics: { ...state.club.footballTactics },
+        savedAt: new Date().toISOString(),
+      };
+      const updatedPlans = [...state.savedTacticalPlans, newPlan];
+      soundEffects.playFanfare();
+      set({ savedTacticalPlans: updatedPlans });
+      saveToStorage({ savedTacticalPlans: updatedPlans });
+
+      return {
+        success: true,
+        message: isAr ? `👑 تم حفظ خطة "${trimmedName}" (${updatedPlans.length}/${maxSlots})` : `👑 Saved plan "${trimmedName}" (${updatedPlans.length}/${maxSlots})`
+      };
+    },
+
+    loadTacticalPlan: (id: string) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      const plan = state.savedTacticalPlans.find(p => p.id === id);
+      if (!plan) {
+        return { success: false, message: isAr ? 'الخطة غير موجودة' : 'Plan not found' };
+      }
+      soundEffects.playTap();
+      set((s) => ({
+        club: {
+          ...s.club,
+          footballTactics: { ...plan.tactics },
+        },
+      }));
+      saveToStorage({ club: { ...state.club, footballTactics: { ...plan.tactics } } });
+      return {
+        success: true,
+        message: isAr ? `⚡ تم تفعيل خطة "${plan.name}" فوراً` : `⚡ Switched to plan "${plan.name}" instantly`
+      };
+    },
+
+    deleteTacticalPlan: (id: string) => {
+      const state = get();
+      const updatedPlans = state.savedTacticalPlans.filter(p => p.id !== id);
+      soundEffects.playTap();
+      set({ savedTacticalPlans: updatedPlans });
+      saveToStorage({ savedTacticalPlans: updatedPlans });
+    },
+
     updateBasketballTactics: (newTactics) => {
       soundEffects.playTap();
       set((state) => ({
@@ -942,6 +1248,211 @@ export const useGameStore = create<GameState>((set, get) => {
           footballBench: newBench,
         },
       });
+    },
+
+    moveToBench: (playerId: string) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      const { club } = state;
+
+      if (club.footballBench.includes(playerId)) {
+        return { success: false, message: isAr ? 'اللاعب موجود بالفعل في دكة البدلاء' : 'Player is already on the bench' };
+      }
+      if (club.footballLineup.includes(playerId)) {
+        return { success: false, message: isAr ? 'اللاعب أساسي بالفعل' : 'Player is already a starter' };
+      }
+      const maxSlots = getMaxBenchSlots(state.vipPoints);
+      if (club.footballBench.length >= maxSlots) {
+        return {
+          success: false,
+          message: isAr
+            ? `دكة البدلاء ممتلئة (${maxSlots} خانات). ترقَّ إلى VIP 3 لفتح خانة إضافية.`
+            : `The bench is full (${maxSlots} slots). Reach VIP 3 to unlock an extra slot.`
+        };
+      }
+
+      soundEffects.playTap();
+      const updatedBench = [...club.footballBench, playerId];
+      set({ club: { ...club, footballBench: updatedBench } });
+      saveToStorage({ club: { ...club, footballBench: updatedBench } });
+      return { success: true, message: isAr ? '✅ تمت إضافة اللاعب إلى دكة البدلاء' : '✅ Player added to the bench' };
+    },
+
+    startNegotiation: (playerId: string, initialOfferAmount: number) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+
+      const player = state.scoutMarket.find(p => p.id === playerId);
+      if (!player) {
+        return { success: false, message: isAr ? 'اللاعب غير متاح في السوق' : 'Player not available in the market' };
+      }
+      if (state.activeNegotiations.some(n => n.playerId === playerId)) {
+        return { success: false, message: isAr ? 'يوجد تفاوض جارٍ بالفعل مع هذا اللاعب' : 'A negotiation is already in progress with this player' };
+      }
+      const maxSlots = getMaxActiveNegotiations(state.vipPoints);
+      if (state.activeNegotiations.length >= maxSlots) {
+        return {
+          success: false,
+          message: isAr
+            ? `وصلت للحد الأقصى من المفاوضات المتزامنة (${maxSlots}). أنهِ إحداها أو ترقَّ إلى VIP 6 لفتح خانة إضافية.`
+            : `You've reached the max simultaneous negotiations (${maxSlots}). Finish one or reach VIP 6 for an extra slot.`
+        };
+      }
+      if (initialOfferAmount <= 0 || initialOfferAmount > state.club.finances.coins) {
+        return { success: false, message: isAr ? 'العرض المبدئي غير صالح أو يتجاوز رصيدك' : 'The opening offer is invalid or exceeds your balance' };
+      }
+
+      const maxRounds = 4;
+      const result = resolveNegotiationRound(player, initialOfferAmount, 1, maxRounds, isAr);
+      soundEffects.playTap();
+
+      const negotiation: PlayerNegotiation = {
+        id: `neg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        playerId: player.id,
+        playerName: isAr ? player.name : player.nameEn,
+        marketValue: player.marketValue,
+        currentOfferAmount: initialOfferAmount,
+        counterAmount: result.counterAmount,
+        roundsUsed: 1,
+        maxRounds,
+        status: result.status,
+        lastMessageAr: result.messageAr,
+        lastMessageEn: result.messageEn,
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Accepted on the opening bid: finalize immediately, no need to keep a slot open.
+      if (result.status === 'accepted') {
+        return get().acceptNegotiationCounter(
+          // Temporarily register it so acceptNegotiationCounter can find & finalize it.
+          (() => {
+            set({ activeNegotiations: [...state.activeNegotiations, { ...negotiation, counterAmount: initialOfferAmount }] });
+            return negotiation.id;
+          })()
+        );
+      }
+
+      const updatedNegotiations = [...state.activeNegotiations, negotiation];
+      set({ activeNegotiations: updatedNegotiations });
+      saveToStorage({ activeNegotiations: updatedNegotiations });
+
+      return { success: true, message: isAr ? result.messageAr : result.messageEn };
+    },
+
+    submitCounterOffer: (negotiationId: string, newOfferAmount: number) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      const negotiation = state.activeNegotiations.find(n => n.id === negotiationId);
+      if (!negotiation) {
+        return { success: false, message: isAr ? 'لا توجد مفاوضة بهذا المعرّف' : 'Negotiation not found' };
+      }
+      if (negotiation.status !== 'countered') {
+        return { success: false, message: isAr ? 'هذه المفاوضة ليست بانتظار عرض جديد' : 'This negotiation is not awaiting a new offer' };
+      }
+      const player = state.scoutMarket.find(p => p.id === negotiation.playerId);
+      if (!player) {
+        return { success: false, message: isAr ? 'اللاعب لم يعد متاحاً' : 'Player is no longer available' };
+      }
+      if (newOfferAmount <= negotiation.currentOfferAmount) {
+        return { success: false, message: isAr ? 'يجب أن يكون العرض الجديد أعلى من السابق' : 'The new offer must be higher than the previous one' };
+      }
+      if (newOfferAmount > state.club.finances.coins) {
+        return { success: false, message: isAr ? 'هذا العرض يتجاوز رصيدك الحالي' : 'This offer exceeds your current balance' };
+      }
+
+      const nextRound = negotiation.roundsUsed + 1;
+      const result = resolveNegotiationRound(player, newOfferAmount, nextRound, negotiation.maxRounds, isAr);
+      soundEffects.playTap();
+
+      const updatedNegotiation: PlayerNegotiation = {
+        ...negotiation,
+        currentOfferAmount: newOfferAmount,
+        counterAmount: result.counterAmount,
+        roundsUsed: nextRound,
+        status: result.status,
+        lastMessageAr: result.messageAr,
+        lastMessageEn: result.messageEn,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (result.status === 'accepted') {
+        const withFinalOffer = { ...updatedNegotiation, counterAmount: newOfferAmount };
+        const updatedList = state.activeNegotiations.map(n => n.id === negotiationId ? withFinalOffer : n);
+        set({ activeNegotiations: updatedList });
+        return get().acceptNegotiationCounter(negotiationId);
+      }
+
+      const updatedNegotiations = state.activeNegotiations.map(n => n.id === negotiationId ? updatedNegotiation : n);
+      set({ activeNegotiations: updatedNegotiations });
+      saveToStorage({ activeNegotiations: updatedNegotiations });
+
+      return { success: true, message: isAr ? result.messageAr : result.messageEn };
+    },
+
+    acceptNegotiationCounter: (negotiationId: string) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      const negotiation = state.activeNegotiations.find(n => n.id === negotiationId);
+      if (!negotiation) {
+        return { success: false, message: isAr ? 'لا توجد مفاوضة بهذا المعرّف' : 'Negotiation not found' };
+      }
+      let currentLevel = 1;
+      for (const tier of VIP_LEVELS) {
+        if (state.vipPoints >= tier.pointsRequired) currentLevel = tier.level;
+      }
+      const currentTier = VIP_LEVELS.find(t => t.level === currentLevel) || VIP_LEVELS[0];
+      const discountMult = 1 - (currentTier.transferDiscountPercent || 0) / 100;
+      const finalPrice = Math.round((negotiation.counterAmount ?? negotiation.currentOfferAmount) * discountMult);
+      if (finalPrice > state.club.finances.coins) {
+        return { success: false, message: isAr ? 'رصيدك لا يكفي لإتمام هذا الاتفاق الآن' : "You don't have enough funds to close this deal now" };
+      }
+      const player = state.scoutMarket.find(p => p.id === negotiation.playerId);
+      if (!player) {
+        return { success: false, message: isAr ? 'اللاعب لم يعد متاحاً في السوق' : 'Player is no longer available in the market' };
+      }
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 60, spread: 75 });
+
+      const canJoinBench = state.club.footballBench.length < getMaxBenchSlots(state.vipPoints);
+      const updatedNegotiations = state.activeNegotiations.filter(n => n.id !== negotiationId);
+      const updatedClub = {
+        ...state.club,
+        footballSquad: [...state.club.footballSquad, player],
+        footballBench: canJoinBench ? [...state.club.footballBench, player.id] : state.club.footballBench,
+        fanMood: Math.min(100, state.club.fanMood + 5),
+        finances: {
+          ...state.club.finances,
+          coins: state.club.finances.coins - finalPrice,
+          reputation: state.club.finances.reputation + 25,
+        },
+      };
+      const updatedScoutMarket = state.scoutMarket.filter(p => p.id !== player.id);
+      const updatedVipPoints = state.vipPoints + 40;
+
+      set({
+        club: updatedClub,
+        activeNegotiations: updatedNegotiations,
+        scoutMarket: updatedScoutMarket,
+        vipPoints: updatedVipPoints,
+      });
+      saveToStorage({ club: updatedClub, activeNegotiations: updatedNegotiations, scoutMarket: updatedScoutMarket, vipPoints: updatedVipPoints });
+
+      return {
+        success: true,
+        message: isAr
+          ? `🎉 تم التعاقد مع ${negotiation.playerName} مقابل ${finalPrice.toLocaleString()} 💰!${discountMult < 1 ? ` (خصم VIP ${currentLevel}: ${currentTier.transferDiscountPercent}%)` : ''}`
+          : `🎉 Signed ${negotiation.playerName} for ${finalPrice.toLocaleString()} 💰!${discountMult < 1 ? ` (VIP ${currentLevel} discount: ${currentTier.transferDiscountPercent}%)` : ''}`
+      };
+    },
+
+    cancelNegotiation: (negotiationId: string) => {
+      const state = get();
+      soundEffects.playTap();
+      const updatedNegotiations = state.activeNegotiations.filter(n => n.id !== negotiationId);
+      set({ activeNegotiations: updatedNegotiations });
+      saveToStorage({ activeNegotiations: updatedNegotiations });
     },
 
     setFootballRoles: (roles) => {
@@ -993,29 +1504,121 @@ export const useGameStore = create<GameState>((set, get) => {
       const state = get();
       const currentLevel = state.club.facilities[facility];
       if (currentLevel >= 10) return false;
+      if (state.pendingFacilityUpgrades.some(p => p.facility === facility)) return false;
 
       const upgradeCost = currentLevel * 35000;
       if (state.club.finances.coins < upgradeCost) return false;
 
-      soundEffects.playFanfare();
-      confetti({ particleCount: 40, spread: 60 });
+      soundEffects.playTap();
+
+      const durationMs = currentLevel * 15 * 60 * 1000; // 15 min per current level
+      const now = Date.now();
+      const newPending: PendingFacilityUpgrade = {
+        facility,
+        targetLevel: currentLevel + 1,
+        startedAt: new Date(now).toISOString(),
+        completesAt: new Date(now + durationMs).toISOString(),
+      };
+      const updatedPending = [...state.pendingFacilityUpgrades, newPending];
 
       set({
-        vipPoints: state.vipPoints + 50,
+        pendingFacilityUpgrades: updatedPending,
         club: {
           ...state.club,
-          facilities: {
-            ...state.club.facilities,
-            [facility]: currentLevel + 1,
-          },
           finances: {
             ...state.club.finances,
             coins: state.club.finances.coins - upgradeCost,
-            reputation: state.club.finances.reputation + 40,
           },
         },
       });
+      saveToStorage({ pendingFacilityUpgrades: updatedPending, club: get().club });
       return true;
+    },
+
+    processFacilityUpgrades: () => {
+      const state = get();
+      if (state.pendingFacilityUpgrades.length === 0) return;
+
+      const now = Date.now();
+      const completed = state.pendingFacilityUpgrades.filter(p => new Date(p.completesAt).getTime() <= now);
+      if (completed.length === 0) return;
+
+      const stillPending = state.pendingFacilityUpgrades.filter(p => new Date(p.completesAt).getTime() > now);
+
+      let updatedFacilities = { ...state.club.facilities };
+      let updatedFinances = { ...state.club.finances };
+      let updatedVipPoints = state.vipPoints;
+
+      for (const p of completed) {
+        updatedFacilities = { ...updatedFacilities, [p.facility]: p.targetLevel };
+        updatedFinances = { ...updatedFinances, reputation: updatedFinances.reputation + 40 };
+        updatedVipPoints += 50;
+      }
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 40, spread: 60 });
+
+      const updatedClub = { ...state.club, facilities: updatedFacilities, finances: updatedFinances };
+      set({
+        club: updatedClub,
+        pendingFacilityUpgrades: stillPending,
+        vipPoints: updatedVipPoints,
+      });
+      saveToStorage({ club: updatedClub, pendingFacilityUpgrades: stillPending, vipPoints: updatedVipPoints });
+    },
+
+    skipFacilityUpgrade: (facility) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      const pending = state.pendingFacilityUpgrades.find(p => p.facility === facility);
+      if (!pending) {
+        return { success: false, message: isAr ? 'لا يوجد تطوير جارٍ لهذه المنشأة' : 'No upgrade in progress for this facility' };
+      }
+
+      let currentLevel = 1;
+      for (const tier of VIP_LEVELS) {
+        if (state.vipPoints >= tier.pointsRequired) currentLevel = tier.level;
+      }
+      const currentTier = VIP_LEVELS.find(t => t.level === currentLevel) || VIP_LEVELS[0];
+      const isFreeVip = !!currentTier.hasFreeSkipWaitTimes;
+
+      const remainingMs = Math.max(0, new Date(pending.completesAt).getTime() - Date.now());
+      const remainingMinutes = Math.ceil(remainingMs / 60000);
+      const diamondCost = Math.max(5, remainingMinutes); // 1 diamond/minute remaining, 5 min
+
+      if (!isFreeVip) {
+        if ((state.club.finances.diamonds || 0) < diamondCost) {
+          return {
+            success: false,
+            message: isAr
+              ? `تحتاج ${diamondCost} جوهرة لتخطي الوقت المتبقي (أو كن VIP 17 للتخطي المجاني).`
+              : `You need ${diamondCost} diamonds to skip the remaining time (or become VIP 17 for free skips).`
+          };
+        }
+      }
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 60, spread: 70 });
+
+      const updatedPending = state.pendingFacilityUpgrades.filter(p => p.facility !== facility);
+      const updatedFacilities = { ...state.club.facilities, [facility]: pending.targetLevel };
+      const updatedFinances = {
+        ...state.club.finances,
+        reputation: state.club.finances.reputation + 40,
+        diamonds: isFreeVip ? (state.club.finances.diamonds || 0) : (state.club.finances.diamonds || 0) - diamondCost,
+      };
+      const updatedClub = { ...state.club, facilities: updatedFacilities, finances: updatedFinances };
+      const updatedVipPoints = state.vipPoints + 50;
+
+      set({ club: updatedClub, pendingFacilityUpgrades: updatedPending, vipPoints: updatedVipPoints });
+      saveToStorage({ club: updatedClub, pendingFacilityUpgrades: updatedPending, vipPoints: updatedVipPoints });
+
+      return {
+        success: true,
+        message: isFreeVip
+          ? (isAr ? '👑 تم التخطي فوراً مجاناً بفضل امتياز VIP 17!' : '👑 Skipped instantly for free with your VIP 17 perk!')
+          : (isAr ? `⚡ تم تخطي الوقت المتبقي مقابل ${diamondCost} جوهرة.` : `⚡ Skipped remaining time for ${diamondCost} diamonds.`)
+      };
     },
 
     buyPlayer: (player) => {
@@ -1025,12 +1628,14 @@ export const useGameStore = create<GameState>((set, get) => {
       soundEffects.playFanfare();
       confetti({ particleCount: 50, spread: 70 });
 
+      const canJoinBench = state.club.footballBench.length < getMaxBenchSlots(state.vipPoints);
+
       set({
         vipPoints: state.vipPoints + 40,
         club: {
           ...state.club,
           footballSquad: [...state.club.footballSquad, player],
-          footballBench: [...state.club.footballBench, player.id],
+          footballBench: canJoinBench ? [...state.club.footballBench, player.id] : state.club.footballBench,
           fanMood: Math.min(100, state.club.fanMood + 5),
           finances: {
             ...state.club.finances,
@@ -1048,12 +1653,15 @@ export const useGameStore = create<GameState>((set, get) => {
       soundEffects.playFanfare();
       confetti({ particleCount: 75, spread: 80 });
 
+      const alreadyOnBench = state.club.footballBench.includes(player.id);
+      const canJoinBench = alreadyOnBench || state.club.footballBench.length < getMaxBenchSlots(state.vipPoints);
+
       set({
         vipPoints: state.vipPoints + 50,
         club: {
           ...state.club,
           footballSquad: [...state.club.footballSquad.filter(p => p.id !== player.id), player],
-          footballBench: [...state.club.footballBench.filter(id => id !== player.id), player.id],
+          footballBench: canJoinBench ? [...state.club.footballBench.filter(id => id !== player.id), player.id] : state.club.footballBench.filter(id => id !== player.id),
           fanMood: Math.min(100, state.club.fanMood + 10),
           finances: {
             ...state.club.finances,
@@ -1085,75 +1693,122 @@ export const useGameStore = create<GameState>((set, get) => {
       });
     },
 
+    // Basketball still uses the simple instant-promote path (unchanged);
+    // football uses the real scouting flow below (scoutAcademyTalent -> promote/release).
     promoteAcademyTalent: () => {
       const state = get();
+      if (state.currentSport === 'football') return; // football: use scoutAcademyTalent instead
       soundEffects.playFanfare();
       confetti({ particleCount: 60, spread: 80 });
 
-      const newTalent: Player = {
-        id: `academy_gen_${Date.now()}`,
-        sport: state.currentSport,
-        name: state.currentSport === 'football' ? 'حمزة الشبل الذهبي' : 'أيهم الموهوب الصاعد',
-        nameEn: state.currentSport === 'football' ? 'Hamza The Golden Cub' : 'Ayham The Prodigy',
-        age: 17,
-        nationality: 'السعودية',
-        nationalityFlag: '🇸🇦',
-        position: state.currentSport === 'football' ? 'CAM' : 'PG',
-        secondaryPositions: [],
-        overall: 65,
-        potential: 85,
-        attributes: {
-          pace: 81,
-          dribbling: 76,
-          passing: 74,
-          shooting: 68,
-          physical: 62,
-          defending: 40,
-          goalkeeping: 10,
-          speed: 82,
-          playmaking: 78,
-          shootingThree: 74,
+      const { talent: newTalent } = generateAcademyTalent('basketball', state.club.facilities.youthAcademyLevel);
+      set({
+        vipPoints: state.vipPoints + 50,
+        club: {
+          ...state.club,
+          basketballSquad: [...state.club.basketballSquad, newTalent],
+          basketballBench: [...state.club.basketballBench, newTalent.id],
+          fanMood: Math.min(100, state.club.fanMood + 6),
         },
-        rarity: 'prospect',
-        personality: 'ambitious',
-        traits: ['خريج الأكاديمية الذهبي', 'مهارات فطرية'],
-        morale: 95,
-        form: 8,
-        stamina: 95,
-        fatigue: 0,
-        injuredWeeks: 0,
-        suspendedMatches: 0,
-        contractYears: 4,
-        wage: 850,
-        marketValue: 180000,
-        matchesPlayed: 0,
-        goalsOrPoints: 0,
-        assists: 0,
-        cleanSheetsOrRebounds: 0,
-        averageRating: 0,
+      });
+    },
+
+    scoutAcademyTalent: () => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      const SCOUT_COST_TP = 60;
+
+      const maxSlots = getMaxAcademySlots(state.vipPoints);
+      if (state.academyDiscoveries.length >= maxSlots) {
+        return {
+          success: false,
+          message: isAr
+            ? `دفتر الاكتشافات ممتلئ (${maxSlots}). قرّر بشأن موهبة موجودة (ترقية أو استبعاد) قبل استكشاف موهبة جديدة، أو ترقَّ لـ VIP 13 لفتح خانة إضافية.`
+            : `Discovery slots are full (${maxSlots}). Decide on an existing prospect (promote or release) before scouting a new one, or reach VIP 13 for an extra slot.`
+        };
+      }
+      if (state.club.finances.trainingPoints < SCOUT_COST_TP) {
+        return {
+          success: false,
+          message: isAr ? `تحتاج ${SCOUT_COST_TP} نقطة تدريب لإرسال الكشافين` : `You need ${SCOUT_COST_TP} training points to send scouts out`
+        };
+      }
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 50, spread: 70 });
+
+      const { talent, starRating } = generateAcademyTalent(state.currentSport, state.club.facilities.youthAcademyLevel);
+      const discovery: AcademyDiscovery = {
+        id: `disc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        talent,
+        starRating,
+        discoveredAt: new Date().toISOString(),
       };
 
-      if (state.currentSport === 'football') {
-        set({
-          vipPoints: state.vipPoints + 50,
-          club: {
-            ...state.club,
-            footballSquad: [...state.club.footballSquad, newTalent],
-            footballBench: [...state.club.footballBench, newTalent.id],
-            fanMood: Math.min(100, state.club.fanMood + 6),
-          },
-        });
-      } else {
-        set({
-          vipPoints: state.vipPoints + 50,
-          club: {
-            ...state.club,
-            basketballSquad: [...state.club.basketballSquad, newTalent],
-            basketballBench: [...state.club.basketballBench, newTalent.id],
-            fanMood: Math.min(100, state.club.fanMood + 6),
-          },
-        });
+      const updatedDiscoveries = [...state.academyDiscoveries, discovery];
+      const updatedClub = {
+        ...state.club,
+        finances: { ...state.club.finances, trainingPoints: state.club.finances.trainingPoints - SCOUT_COST_TP },
+      };
+      set({ academyDiscoveries: updatedDiscoveries, club: updatedClub });
+      saveToStorage({ academyDiscoveries: updatedDiscoveries, club: updatedClub });
+
+      const starsStr = '⭐'.repeat(starRating);
+      return {
+        success: true,
+        message: isAr
+          ? `🔍 اكتشف الكشافون موهبة: ${talent.name} (${starsStr}) — إمكانية ${talent.potential}!`
+          : `🔍 Scouts discovered a prospect: ${talent.nameEn} (${starsStr}) — Potential ${talent.potential}!`
+      };
+    },
+
+    promoteAcademyDiscovery: (discoveryId: string) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      const discovery = state.academyDiscoveries.find(d => d.id === discoveryId);
+      if (!discovery) {
+        return { success: false, message: isAr ? 'هذا الاكتشاف لم يعد موجوداً' : 'This discovery no longer exists' };
       }
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 70, spread: 80 });
+
+      const updatedDiscoveries = state.academyDiscoveries.filter(d => d.id !== discoveryId);
+      const updatedVipPoints = state.vipPoints + 50;
+
+      if (discovery.talent.sport === 'football') {
+        const canJoinBench = state.club.footballBench.length < getMaxBenchSlots(state.vipPoints);
+        const updatedClub = {
+          ...state.club,
+          footballSquad: [...state.club.footballSquad, discovery.talent],
+          footballBench: canJoinBench ? [...state.club.footballBench, discovery.talent.id] : state.club.footballBench,
+          fanMood: Math.min(100, state.club.fanMood + 6),
+        };
+        set({ club: updatedClub, academyDiscoveries: updatedDiscoveries, vipPoints: updatedVipPoints });
+        saveToStorage({ club: updatedClub, academyDiscoveries: updatedDiscoveries, vipPoints: updatedVipPoints });
+      } else {
+        const updatedClub = {
+          ...state.club,
+          basketballSquad: [...state.club.basketballSquad, discovery.talent],
+          basketballBench: [...state.club.basketballBench, discovery.talent.id],
+          fanMood: Math.min(100, state.club.fanMood + 6),
+        };
+        set({ club: updatedClub, academyDiscoveries: updatedDiscoveries, vipPoints: updatedVipPoints });
+        saveToStorage({ club: updatedClub, academyDiscoveries: updatedDiscoveries, vipPoints: updatedVipPoints });
+      }
+
+      return {
+        success: true,
+        message: isAr ? `🎉 تمت ترقية ${discovery.talent.name} للفريق الأول!` : `🎉 ${discovery.talent.nameEn} promoted to the senior squad!`
+      };
+    },
+
+    releaseAcademyDiscovery: (discoveryId: string) => {
+      const state = get();
+      soundEffects.playTap();
+      const updatedDiscoveries = state.academyDiscoveries.filter(d => d.id !== discoveryId);
+      set({ academyDiscoveries: updatedDiscoveries });
+      saveToStorage({ academyDiscoveries: updatedDiscoveries });
     },
 
     refreshScoutMarket: () => {
@@ -1436,12 +2091,13 @@ export const useGameStore = create<GameState>((set, get) => {
 
         // Squad Fatigue Simulation: starters drain energy, bench recovers
         const lineupIds = new Set(state.club.footballLineup);
+        const fatigueMult = getFatigueProtectionMultiplier(state.vipPoints);
         const updatedSquad = state.club.footballSquad.map((p) => {
           if (lineupIds.has(p.id)) {
             return {
               ...p,
-              fatigue: Math.min(100, (p.fatigue || 0) + 20),
-              stamina: Math.max(10, (p.stamina || 100) - 22),
+              fatigue: Math.min(100, (p.fatigue || 0) + Math.round(20 * fatigueMult)),
+              stamina: Math.max(10, (p.stamina || 100) - Math.round(22 * fatigueMult)),
             };
           } else {
             return {
@@ -1704,7 +2360,9 @@ export const useGameStore = create<GameState>((set, get) => {
       // Update standings & finances (50% revenue deduction for skipping/instant simulate)
       const pts = won ? 3 : (drawn ? 1 : 0);
       const baseMatchIncome = state.club.finances.ticketPrice * 5200 + state.club.finances.sponsorIncomePerMatch;
-      const matchIncome = Math.round(baseMatchIncome * 0.5);
+      let __curLevel = 1; for (const __t of VIP_LEVELS) { if (state.vipPoints >= __t.pointsRequired) __curLevel = __t.level; }
+      const __curTier = VIP_LEVELS.find(t => t.level === __curLevel) || VIP_LEVELS[0];
+      const matchIncome = __curTier.hasFullInstantSimRewards ? Math.round(baseMatchIncome) : Math.round(baseMatchIncome * 0.5);
 
       const updatedStandings = state.leagueStandings.map(s => {
         if (s.clubId === state.club.id) {
@@ -1769,12 +2427,13 @@ export const useGameStore = create<GameState>((set, get) => {
 
       // Squad Fatigue Simulation
       const lineupIds = new Set(state.club.footballLineup);
+      const fatigueMult = getFatigueProtectionMultiplier(state.vipPoints);
       const updatedSquad = state.club.footballSquad.map((p) => {
         if (lineupIds.has(p.id)) {
           return {
             ...p,
-            fatigue: Math.min(100, (p.fatigue || 0) + 20),
-            stamina: Math.max(10, (p.stamina || 100) - 22),
+            fatigue: Math.min(100, (p.fatigue || 0) + Math.round(20 * fatigueMult)),
+            stamina: Math.max(10, (p.stamina || 100) - Math.round(22 * fatigueMult)),
           };
         } else {
           return {
@@ -1899,7 +2558,9 @@ export const useGameStore = create<GameState>((set, get) => {
 
       // 50% revenue deduction for skipping match
       const baseMatchIncome = state.club.finances.ticketPrice * 5200 + state.club.finances.sponsorIncomePerMatch;
-      const matchIncome = Math.round(baseMatchIncome * 0.5);
+      let __curLevel = 1; for (const __t of VIP_LEVELS) { if (state.vipPoints >= __t.pointsRequired) __curLevel = __t.level; }
+      const __curTier = VIP_LEVELS.find(t => t.level === __curLevel) || VIP_LEVELS[0];
+      const matchIncome = __curTier.hasFullInstantSimRewards ? Math.round(baseMatchIncome) : Math.round(baseMatchIncome * 0.5);
 
       const updatedStandings = state.leagueStandings.map(s => {
         if (s.clubId === state.club.id) {
@@ -1961,12 +2622,13 @@ export const useGameStore = create<GameState>((set, get) => {
       };
 
       const lineupIds = new Set(state.club.footballLineup);
+      const fatigueMult = getFatigueProtectionMultiplier(state.vipPoints);
       const updatedSquad = state.club.footballSquad.map((p) => {
         if (lineupIds.has(p.id)) {
           return {
             ...p,
-            fatigue: Math.min(100, (p.fatigue || 0) + 20),
-            stamina: Math.max(10, (p.stamina || 100) - 22),
+            fatigue: Math.min(100, (p.fatigue || 0) + Math.round(20 * fatigueMult)),
+            stamina: Math.max(10, (p.stamina || 100) - Math.round(22 * fatigueMult)),
           };
         } else {
           return {
@@ -2367,6 +3029,97 @@ export const useGameStore = create<GameState>((set, get) => {
       };
     },
 
+    applyRedeemReward: (reward) => {
+      const state = get();
+      soundEffects.playFanfare();
+      confetti({ particleCount: 90, spread: 80 });
+
+      const updatedClub = {
+        ...state.club,
+        finances: {
+          ...state.club.finances,
+          coins: state.club.finances.coins + (reward.coins || 0),
+          trainingPoints: state.club.finances.trainingPoints + (reward.trainingPoints || 0),
+          diamonds: (state.club.finances.diamonds || 0) + (reward.diamonds || 0),
+        },
+      };
+
+      set({ club: updatedClub });
+      saveToStorage({ club: updatedClub });
+    },
+
+    skipDailyMissionInstant: (missionId: string) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+
+      let currentLevel = 1;
+      for (const tier of VIP_LEVELS) {
+        if (state.vipPoints >= tier.pointsRequired) currentLevel = tier.level;
+      }
+      const currentTier = VIP_LEVELS.find(t => t.level === currentLevel) || VIP_LEVELS[0];
+
+      if (!currentTier.hasOneClickMissionSkip) {
+        return {
+          success: false,
+          message: isAr ? 'هذه الميزة حصرية لأعضاء VIP 10 فما فوق.' : 'This feature is exclusive to VIP 10 and above.'
+        };
+      }
+
+      const todayStr = getTodayStr();
+      if (state.missionSkipUsedDate === todayStr) {
+        return {
+          success: false,
+          message: isAr ? 'استخدمت تخطي المهمة اليومي مسبقاً لهذا اليوم — عُد غداً!' : "You've already used today's mission skip — come back tomorrow!"
+        };
+      }
+
+      const mission = (state.dailyMissions || INITIAL_DAILY_MISSIONS).find((m) => m.id === missionId);
+      if (!mission) {
+        return { success: false, message: isAr ? 'المهمة غير موجودة' : 'Mission not found' };
+      }
+      if (mission.isClaimed) {
+        return { success: false, message: isAr ? 'تم استلام هذه المهمة مسبقاً' : 'This mission is already claimed' };
+      }
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 90, spread: 75 });
+
+      const updatedMissions = (state.dailyMissions || INITIAL_DAILY_MISSIONS).map((m) =>
+        m.id === missionId ? { ...m, current: m.target, isClaimed: true } : m
+      );
+
+      const updatedClub = {
+        ...state.club,
+        finances: {
+          ...state.club.finances,
+          coins: state.club.finances.coins + mission.rewardCoins,
+          diamonds: (state.club.finances.diamonds || 0) + mission.rewardDiamonds,
+          trainingPoints: state.club.finances.trainingPoints + mission.rewardTrainingPoints,
+        },
+      };
+      const newVipPoints = state.vipPoints + mission.rewardVipPoints;
+
+      set({
+        dailyMissions: updatedMissions,
+        vipPoints: newVipPoints,
+        club: updatedClub,
+        missionSkipUsedDate: todayStr,
+      });
+      saveToStorage({
+        dailyMissions: updatedMissions,
+        vipPoints: newVipPoints,
+        club: updatedClub,
+        missionSkipUsedDate: todayStr,
+      });
+
+      return {
+        success: true,
+        message: isAr
+          ? `👑 تم تخطي المهمة بنقرة واحدة (VIP ${currentLevel})! استلمت: ${mission.rewardCoins.toLocaleString()} كوينز، ${mission.rewardDiamonds} جوهرة، ${mission.rewardTrainingPoints} نقطة تدريب.`
+          : `👑 Mission skipped in one click (VIP ${currentLevel})! Received: ${mission.rewardCoins.toLocaleString()} Coins, ${mission.rewardDiamonds} Diamonds, ${mission.rewardTrainingPoints} Training Pts.`
+      };
+    },
+
     claimDailyCheckIn: () => {
       const state = get();
       if (state.checkInClaimedToday) return;
@@ -2374,8 +3127,15 @@ export const useGameStore = create<GameState>((set, get) => {
       soundEffects.playFanfare();
       confetti({ particleCount: 70, spread: 80 });
 
+      let currentLevel = 1;
+      for (const tier of VIP_LEVELS) {
+        if (state.vipPoints >= tier.pointsRequired) currentLevel = tier.level;
+      }
+      const currentTier = VIP_LEVELS.find(t => t.level === currentLevel) || VIP_LEVELS[0];
+      const loginMult = currentTier.loginBonusMultiplier || 1;
+
       const newStreak = (state.checkInStreak % 7) + 1;
-      const rewardCoins = newStreak * 8000;
+      const rewardCoins = Math.round(newStreak * 8000 * loginMult);
       const rewardVip = 30 + newStreak * 15;
       const todayStr = getTodayStr();
 
@@ -2465,10 +3225,17 @@ export const useGameStore = create<GameState>((set, get) => {
       soundEffects.playLevelUp();
       confetti({ particleCount: 50, spread: 60 });
 
+      let currentLevel = 1;
+      for (const tier of VIP_LEVELS) {
+        if (state.vipPoints >= tier.pointsRequired) currentLevel = tier.level;
+      }
+      const currentTier = VIP_LEVELS.find(t => t.level === currentLevel) || VIP_LEVELS[0];
+      const recoveryBonusMult = 1 + (currentTier.recoverySpeedBonusPercent || 0) / 100;
+
       const updatedSquad = state.club.footballSquad.map((p) => ({
         ...p,
-        fatigue: Math.max(0, (p.fatigue || 0) - 35),
-        stamina: Math.min(100, (p.stamina || 100) + 30),
+        fatigue: Math.max(0, (p.fatigue || 0) - Math.round(35 * recoveryBonusMult)),
+        stamina: Math.min(100, (p.stamina || 100) + Math.round(30 * recoveryBonusMult)),
       }));
 
       const updatedMissions = (state.dailyMissions || INITIAL_DAILY_MISSIONS).map((m) => {

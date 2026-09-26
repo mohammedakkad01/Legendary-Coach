@@ -19,6 +19,7 @@ import {
   publishTacticToFirestore,
   fetchCommunityTacticsFromFirestore,
   likeTacticInFirestore,
+  redeemGiftCodeInFirestore,
   CloudSaveMetadata,
   CloudCommunityTactic
 } from './firebase';
@@ -41,6 +42,7 @@ interface FirebaseContextType {
   shareCurrentTactic: (title: string) => Promise<{ success: boolean; message: string }>;
   likeTactic: (tacticId: string, currentLikes: number) => Promise<void>;
   refreshTactics: () => Promise<void>;
+  redeemGiftCode: (code: string) => Promise<{ success: boolean; message: string }>;
 }
 
 const FirebaseContext = createContext<FirebaseContextType | undefined>(undefined);
@@ -63,7 +65,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     language,
     hasClaimedLoginBonus,
     claimLoginBonus,
-    setIsGuest
+    setIsGuest,
+    applyRedeemReward
   } = useGameStore();
   const isAr = language === 'ar';
 
@@ -245,6 +248,53 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
+  const redeemGiftCode = async (code: string): Promise<{ success: boolean; message: string }> => {
+    if (!user) {
+      return {
+        success: false,
+        message: isAr ? 'يجب تسجيل الدخول بحساب Google أولاً لاستخدام أكواد الهدايا.' : 'Please sign in with Google first to use gift codes.'
+      };
+    }
+    const trimmed = code.trim();
+    if (trimmed.length !== 10) {
+      return {
+        success: false,
+        message: isAr ? 'الكود يجب أن يتكون من 10 خانات بالضبط.' : 'The code must be exactly 10 characters long.'
+      };
+    }
+
+    try {
+      const result = await redeemGiftCodeInFirestore(user.uid, trimmed);
+      switch (result.status) {
+        case 'success':
+          applyRedeemReward(result.reward);
+          return {
+            success: true,
+            message: isAr
+              ? `🎁 تم تفعيل الكود بنجاح! حصلت على ${result.reward.coins.toLocaleString()} كوينز، ${result.reward.diamonds.toLocaleString()} جوهرة، و ${result.reward.trainingPoints} نقطة تدريب.`
+              : `🎁 Code redeemed! You received ${result.reward.coins.toLocaleString()} Coins, ${result.reward.diamonds.toLocaleString()} Diamonds, and ${result.reward.trainingPoints} Training Points.`
+          };
+        case 'not_found':
+          return { success: false, message: isAr ? 'هذا الكود غير صحيح.' : 'This code is not valid.' };
+        case 'inactive':
+          return { success: false, message: isAr ? 'هذا الكود لم يعد فعالاً.' : 'This code is no longer active.' };
+        case 'exhausted':
+          return { success: false, message: isAr ? 'تم استنفاد عدد مرات استخدام هذا الكود.' : 'This code has reached its redemption limit.' };
+        case 'not_allowed':
+          return { success: false, message: isAr ? 'هذا الكود غير مخصص لحسابك.' : 'This code is not assigned to your account.' };
+        case 'already_redeemed':
+          return { success: false, message: isAr ? 'لقد استخدمت هذا الكود من قبل.' : "You've already redeemed this code." };
+        default:
+          return { success: false, message: isAr ? 'حدث خطأ غير متوقع، حاول مجدداً.' : 'Unexpected error, please try again.' };
+      }
+    } catch (error: any) {
+      return {
+        success: false,
+        message: isAr ? `فشل تفعيل الكود: ${error?.message || 'خطأ في الاتصال'}` : `Failed to redeem code: ${error?.message || 'Connection error'}`
+      };
+    }
+  };
+
   const likeTactic = async (tacticId: string, currentLikes: number) => {
     if (!user) {
       setAuthModalOpen(true);
@@ -274,7 +324,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     refreshCloudSaves,
     shareCurrentTactic,
     likeTactic,
-    refreshTactics
+    refreshTactics,
+    redeemGiftCode
   }), [user, loading, isOnline, authModalOpen, cloudSaves, communityTactics, club, currentSport, vipPoints, storyMissions, language]);
 
   return (

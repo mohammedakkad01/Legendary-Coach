@@ -123,7 +123,7 @@ const ALL_FORMATIONS: FormationItem[] = [
 ];
 
 export const TacticalBoardView: React.FC = () => {
-  const { club, updateFootballTactics, swapFootballLineup, setFootballRoles, language, startNewMatch, vipPoints, setActiveTab } = useGameStore();
+  const { club, updateFootballTactics, swapFootballLineup, setFootballRoles, language, startNewMatch, vipPoints, setActiveTab, savedTacticalPlans, saveTacticalPlan, loadTacticalPlan, deleteTacticalPlan, moveToBench } = useGameStore();
   const isAr = language === 'ar';
   const tactics = club.footballTactics;
 
@@ -138,6 +138,30 @@ export const TacticalBoardView: React.FC = () => {
 
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null);
   const [formationLockWarning, setFormationLockWarning] = useState<string | null>(null);
+  const [newPlanName, setNewPlanName] = useState('');
+  const [planFeedback, setPlanFeedback] = useState<string | null>(null);
+  const maxPlanSlots = currentVipTier.maxSavedTacticalPlans || 0;
+  const maxBenchSlots = currentVipTier.maxBenchSlots || 5;
+  const [benchFeedback, setBenchFeedback] = useState<string | null>(null);
+
+  const handleMoveToBench = (playerId: string) => {
+    const res = moveToBench(playerId);
+    setBenchFeedback(res.message);
+    setTimeout(() => setBenchFeedback(null), 3500);
+  };
+
+  const handleSavePlan = () => {
+    const res = saveTacticalPlan(newPlanName);
+    setPlanFeedback(res.message);
+    if (res.success) setNewPlanName('');
+    setTimeout(() => setPlanFeedback(null), 4000);
+  };
+
+  const handleLoadPlan = (id: string) => {
+    const res = loadTacticalPlan(id);
+    setPlanFeedback(res.message);
+    setTimeout(() => setPlanFeedback(null), 3000);
+  };
 
   const lineupPlayers = club.footballLineup.map((id, index) => {
     const player = club.footballSquad.find(p => p.id === id);
@@ -145,6 +169,9 @@ export const TacticalBoardView: React.FC = () => {
   });
 
   const benchPlayers = club.footballBench.map(id => club.footballSquad.find(p => p.id === id)).filter(Boolean);
+  const reservePlayers = club.footballSquad.filter(
+    p => !club.footballLineup.includes(p.id) && !club.footballBench.includes(p.id)
+  );
 
   const coords = FORMATION_COORDINATES[tactics.formation] || FORMATION_COORDINATES['4-3-3'];
 
@@ -490,7 +517,7 @@ export const TacticalBoardView: React.FC = () => {
                 <UserCheck className="w-4 h-4 text-sky-400" />
                 <span>{isAr ? 'دكة البدلاء والاحتياط' : 'Substitutes & Bench'}</span>
               </div>
-              <span className="text-xs text-slate-400">{benchPlayers.length} {isAr ? 'لاعبين' : 'players'}</span>
+              <span className="text-xs text-slate-400">{benchPlayers.length}/{maxBenchSlots} {isAr ? 'خانات' : 'slots'}</span>
             </h3>
 
             <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
@@ -536,6 +563,142 @@ export const TacticalBoardView: React.FC = () => {
                 );
               })}
             </div>
+
+            {/* Reserves not yet on the matchday bench */}
+            {reservePlayers.length > 0 && (
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-400">
+                    {isAr ? 'احتياط (خارج دكة البدلاء)' : 'Reserves (not on bench)'}
+                  </span>
+                  {benchPlayers.length >= maxBenchSlots && (
+                    <span className="text-[10px] text-purple-400 flex items-center gap-1">
+                      <Crown className="w-3 h-3" /> {isAr ? 'VIP 3 لخانة إضافية' : 'VIP 3 for extra slot'}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                  {reservePlayers.map((player) => {
+                    if (!player) return null;
+                    const isFull = benchPlayers.length >= maxBenchSlots;
+                    return (
+                      <div
+                        key={player.id}
+                        className="p-2 rounded-xl border border-slate-800/70 bg-slate-950/40 flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-md bg-slate-800 flex items-center justify-center font-black text-[10px] text-slate-300">
+                            {player.overall}
+                          </div>
+                          <span className="text-[11px] font-bold text-slate-300">{isAr ? player.name : player.nameEn}</span>
+                        </div>
+                        <button
+                          onClick={() => handleMoveToBench(player.id)}
+                          disabled={isFull}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-black ${
+                            isFull
+                              ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                              : 'bg-sky-600 hover:bg-sky-500 text-white'
+                          }`}
+                        >
+                          {isAr ? 'إضافة للدكة' : 'To Bench'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {benchFeedback && (
+              <div className="p-2 rounded-xl bg-sky-950/60 border border-sky-500/40 text-sky-200 text-[11px] font-bold text-center">
+                {benchFeedback}
+              </div>
+            )}
+          </div>
+
+          {/* Saved Tactical Plans — VIP 12+ exclusive */}
+          <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-2xl space-y-3">
+            <h3 className="text-sm font-black font-heading text-white flex items-center justify-between border-b border-slate-800 pb-2">
+              <div className="flex items-center gap-1.5">
+                <Crown className="w-4 h-4 text-purple-400" />
+                <span>{isAr ? 'الخطط التكتيكية المحفوظة' : 'Saved Tactical Plans'}</span>
+              </div>
+              {maxPlanSlots > 0 && (
+                <span className="text-xs text-slate-400">{savedTacticalPlans.length}/{maxPlanSlots}</span>
+              )}
+            </h3>
+
+            {maxPlanSlots <= 0 ? (
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 text-xs text-purple-200">
+                <Lock className="w-4 h-4 flex-shrink-0 text-purple-400" />
+                <span>
+                  {isAr
+                    ? 'حفظ حتى 5 خطط تكتيكية والتبديل الفوري بينها ميزة حصرية لأعضاء VIP 12 فما فوق.'
+                    : 'Saving up to 5 tactical plans with instant swapping is exclusive to VIP 12+.'}
+                </span>
+              </div>
+            ) : (
+              <>
+                {planFeedback && (
+                  <div className="p-2.5 rounded-xl bg-purple-950/60 border border-purple-500/40 text-purple-200 text-[11px] font-bold text-center">
+                    {planFeedback}
+                  </div>
+                )}
+
+                <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                  {savedTacticalPlans.length === 0 && (
+                    <p className="text-[11px] text-slate-500 text-center py-2">
+                      {isAr ? 'لا توجد خطط محفوظة بعد' : 'No saved plans yet'}
+                    </p>
+                  )}
+                  {savedTacticalPlans.map((plan) => (
+                    <div
+                      key={plan.id}
+                      className="p-2.5 rounded-xl border border-slate-800 bg-slate-950/60 flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-white truncate">{plan.name}</p>
+                        <p className="text-[10px] text-slate-500">{plan.tactics.formation} · {plan.tactics.mentality}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          onClick={() => handleLoadPlan(plan.id)}
+                          className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-500 hover:to-fuchsia-500 text-white text-[10px] font-black"
+                        >
+                          {isAr ? 'تفعيل' : 'Load'}
+                        </button>
+                        <button
+                          onClick={() => deleteTacticalPlan(plan.id)}
+                          className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 text-[10px] font-bold"
+                        >
+                          {isAr ? 'حذف' : 'Del'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {savedTacticalPlans.length < maxPlanSlots && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      value={newPlanName}
+                      onChange={(e) => setNewPlanName(e.target.value)}
+                      placeholder={isAr ? 'اسم الخطة الحالية...' : 'Name this plan...'}
+                      maxLength={24}
+                      className="flex-1 bg-black/40 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-400"
+                    />
+                    <button
+                      onClick={handleSavePlan}
+                      disabled={!newPlanName.trim()}
+                      className="px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-black text-[11px] font-black disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isAr ? 'حفظ' : 'Save'}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
         </div>

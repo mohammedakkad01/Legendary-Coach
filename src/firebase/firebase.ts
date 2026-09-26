@@ -26,7 +26,8 @@ import {
   query,
   orderBy,
   limit,
-  updateDoc
+  updateDoc,
+  runTransaction
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -228,6 +229,77 @@ export async function likeTacticInFirestore(tacticId: string, currentLikes: numb
       likesCount: currentLikes + 1
     });
   } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+  }
+}
+
+// ==========================================
+// Redeem Codes
+// Docs live at /redeem_codes/{CODE} (10-char code = the doc ID, never listed —
+// so it can only be reached by someone who was actually given the code).
+// A per-user "claim" receipt at /redeem_codes/{CODE}/claims/{uid} makes each
+// code single-use-per-account; redemptionsCount is bumped inside the SAME
+// transaction so a max-redemptions cap can never be oversold by a race.
+// ==========================================
+export interface RedeemCodeDoc {
+  code: string;
+  type: 'dev' | 'player';
+  active: boolean;
+  maxRedemptions: number;       // 0 = unlimited
+  redemptionsCount: number;
+  restrictedToUid: string;      // '' = anyone with the code; else only this uid
+  rewardCoins: number;
+  rewardDiamonds: number;
+  rewardTrainingPoints: number;
+  labelAr?: string;
+  labelEn?: string;
+  createdAt: string;
+}
+
+export type RedeemCodeResult =
+  | { status: 'success'; reward: { coins: number; diamonds: number; trainingPoints: number } }
+  | { status: 'not_found' | 'inactive' | 'exhausted' | 'not_allowed' | 'already_redeemed' | 'error' };
+
+/**
+ * Atomically validates and redeems a gift code for `uid`.
+ * Throws only on unexpected/network errors; expected failure modes come back
+ * as a typed `status` so the UI can show a friendly Arabic/English message.
+ */
+export async function redeemGiftCodeInFirestore(uid: string, rawCode: string): Promise<RedeemCodeResult> {
+  const code = rawCode.trim().toUpperCase();
+  const codeRef = doc(db, 'redeem_codes', code);
+  const claimRef = doc(db, 'redeem_codes', code, 'claims', uid);
+  const path = `redeem_codes/${code}`;
+
+  try {
+    return await runTransaction(db, async (tx) => {
+      const codeSnap = await tx.get(codeRef);
+      if (!codeSnap.exists()) return { status: 'not_found' };
+
+      const data = codeSnap.data() as RedeemCodeDoc;
+      if (!data.active) return { status: 'inactive' };
+      if (data.restrictedToUid && data.restrictedToUid !== uid) return { status: 'not_allowed' };
+      if (data.maxRedemptions !== 0 && data.redemptionsCount >= data.maxRedemptions) return { status: 'exhausted' };
+
+      const claimSnap = await tx.get(claimRef);
+      if (claimSnap.exists()) return { status: 'already_redeemed' };
+
+      tx.update(codeRef, { redemptionsCount: data.redemptionsCount + 1 });
+      tx.set(claimRef, { uid, redeemedAt: new Date().toISOString() });
+
+      return {
+        status: 'success',
+        reward: {
+          coins: data.rewardCoins || 0,
+          diamonds: data.rewardDiamonds || 0,
+          trainingPoints: data.rewardTrainingPoints || 0,
+        }
+      } as const;
+    });
+  } catch (err) {
+    // A permission-denied here almost always means the code was already
+    // claimed by this account or has just been exhausted by someone else.
+    console.error('Redeem code error:', err);
     handleFirestoreError(err, OperationType.UPDATE, path);
   }
 }

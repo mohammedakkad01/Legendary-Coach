@@ -44,6 +44,17 @@ function MainAppLayout() {
     document.documentElement.lang = language;
   }, [language]);
 
+  // Complete any facility upgrades whose construction timer has finished
+  // (once on load to catch offline completions, then a light periodic check).
+  useEffect(() => {
+    const { processFacilityUpgrades } = useGameStore.getState();
+    processFacilityUpgrades();
+    const interval = setInterval(() => {
+      useGameStore.getState().processFacilityUpgrades();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Load the full live club lists once at startup so standings, fixtures and opponents
   // (also for a saved game that never reopens the club picker) use every real club.
   useEffect(() => {

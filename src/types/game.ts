@@ -14,7 +14,27 @@ export type PlayerPosition =
   // Basketball
   | 'PG' | 'SG' | 'SF' | 'PF' | 'C';
 
+export type NegotiationStatus = 'countered' | 'accepted' | 'rejected' | 'expired';
+
 export type PlayerPersonality = 'leader' | 'temperamental' | 'professional' | 'ambitious' | 'loyal' | 'nervous';
+
+// A real back-and-forth transfer negotiation instead of an instant buy-at-value click.
+// VIP 6+ get an extra simultaneous negotiation slot (see VIPPrivilege.maxActiveNegotiations).
+export interface PlayerNegotiation {
+  id: string;
+  playerId: string;
+  playerName: string;
+  marketValue: number;
+  currentOfferAmount: number;   // the club's last submitted offer
+  counterAmount?: number;       // the player's/agent's asking counter, if status === 'countered'
+  roundsUsed: number;
+  maxRounds: number;
+  status: NegotiationStatus;
+  lastMessageAr: string;
+  lastMessageEn: string;
+  startedAt: string;
+  updatedAt: string;
+}
 
 export type PlayerRarity = 'standard' | 'rare' | 'prospect' | 'legend';
 
@@ -101,6 +121,24 @@ export interface FootballTactics {
   cornerTakerId: string;
 }
 
+// VIP 12+ exclusive: up to 5 saved tactical presets, instantly swappable.
+export interface SavedTacticalPlan {
+  id: string;
+  name: string;
+  tactics: FootballTactics;
+  savedAt: string;
+}
+
+// A real scouted prospect sitting in an academy slot, awaiting a decision
+// (promote to the senior squad, or release to free the slot for a new scout).
+// VIP 13+ get a 2nd simultaneous slot (see VIPPrivilege.maxAcademySlots).
+export interface AcademyDiscovery {
+  id: string;
+  talent: Player;
+  starRating: number; // 1-5, derived from the talent's potential
+  discoveredAt: string;
+}
+
 export interface BasketballTactics {
   pace: 'slow_half_court' | 'balanced' | 'fast_break';
   defenseScheme: 'man_to_man' | 'zone_2_3' | 'full_court_press';
@@ -115,6 +153,16 @@ export interface ClubFacilities {
   youthAcademyLevel: number; // 1-10 (talent star probability)
   medicalCenterLevel: number;// 1-10 (injury recovery speed)
   scoutingNetworkLevel: number; // 1-10 (scouting accuracy)
+}
+
+// A facility upgrade now takes real construction time instead of completing
+// instantly; VIP 17+ can skip the wait for free (see VIPPrivilege.hasFreeSkipWaitTimes),
+// everyone else can pay diamonds to rush it.
+export interface PendingFacilityUpgrade {
+  facility: keyof ClubFacilities;
+  targetLevel: number;
+  startedAt: string;   // ISO timestamp
+  completesAt: string; // ISO timestamp
 }
 
 export interface ClubStaff {
@@ -375,6 +423,17 @@ export interface VIPPrivilege {
   unlockedSpecialBadge?: boolean;
   hasDailyExclusiveChest?: boolean;
   unlockedSpeed4x?: boolean;
+  hasOneClickMissionSkip?: boolean; // VIP 10+: instantly complete & claim 1 daily mission per day
+  maxSavedTacticalPlans?: number; // VIP 12+: number of saveable/swappable tactical presets (0 = locked)
+  hasFreeSkipWaitTimes?: boolean; // VIP 17+: skip facility-upgrade construction time for free, unlimited
+  maxBenchSlots?: number; // VIP 3+: matchday-eligible substitutes bench capacity (base = 5)
+  maxActiveNegotiations?: number; // VIP 6+: simultaneous transfer negotiations (base = 1)
+  maxAcademySlots?: number; // VIP 13+: simultaneous pending academy discoveries (base = 1)
+  fatigueProtectionPercent?: number; // VIP 14+: reduces post-match fatigue/stamina drain (0-100)
+  recoverySpeedBonusPercent?: number; // VIP 2+: boosts squad recovery session effectiveness
+  loginBonusMultiplier?: number; // VIP 15+: multiplies the daily check-in coin reward (base = 1)
+  transferDiscountPercent?: number; // VIP 11+: discount applied to negotiated transfer prices
+  hasFullInstantSimRewards?: boolean; // VIP 16+: instant-simulate keeps 100% match income instead of 50%
 }
 
 export interface LeagueStanding {

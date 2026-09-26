@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { useGameStore } from '../state/useGameStore';
 import { DailyMission } from '../types/game';
+import { VIP_LEVELS } from '../data/vipData';
 
 export const DailyMissionsModal: React.FC = () => {
   const { 
@@ -38,13 +39,31 @@ export const DailyMissionsModal: React.FC = () => {
     setDailyMissionsModalOpen, 
     dailyMissions, 
     claimDailyMission, 
+    skipDailyMissionInstant,
     runSquadRecoverySession,
     club,
+    vipPoints,
+    missionSkipUsedDate,
     language 
   } = useGameStore();
 
   const isAr = language === 'ar';
   const [activeTab, setActiveTab] = useState<'daily' | 'weekly' | 'achievement'>('daily');
+  const [skipFeedback, setSkipFeedback] = useState<string | null>(null);
+
+  let currentVipLevel = 1;
+  for (const tier of VIP_LEVELS) {
+    if (vipPoints >= tier.pointsRequired) currentVipLevel = tier.level;
+  }
+  const currentVipTier = VIP_LEVELS.find(t => t.level === currentVipLevel) || VIP_LEVELS[0];
+  const todayStr = new Date().toISOString().split('T')[0];
+  const canUseMissionSkip = !!currentVipTier.hasOneClickMissionSkip && missionSkipUsedDate !== todayStr;
+
+  const handleSkip = (missionId: string) => {
+    const res = skipDailyMissionInstant(missionId);
+    setSkipFeedback(res.message);
+    setTimeout(() => setSkipFeedback(null), 4000);
+  };
 
   if (!isDailyMissionsModalOpen) return null;
 
@@ -126,6 +145,13 @@ export const DailyMissionsModal: React.FC = () => {
               <X className="w-5 h-5" />
             </button>
           </div>
+
+          {/* VIP Mission Skip Feedback Toast */}
+          {skipFeedback && (
+            <div className="mx-4 mt-3 p-3 rounded-2xl bg-purple-950/80 border border-purple-500/50 text-purple-200 text-xs font-bold text-center">
+              {skipFeedback}
+            </div>
+          )}
 
           {/* Sub Navigation Tabs: Daily / Weekly / Achievements */}
           <div className="flex border-b border-neutral-800 bg-neutral-950/60 p-2 gap-2">
@@ -308,9 +334,22 @@ export const DailyMissionsModal: React.FC = () => {
                             {mission.target} / {mission.target}
                           </span>
                         ) : (
-                          <span className="text-xs font-bold text-amber-400/90">
-                            {mission.current} / {mission.target}
-                          </span>
+                          <>
+                            <span className="text-xs font-bold text-amber-400/90">
+                              {mission.current} / {mission.target}
+                            </span>
+                            {canUseMissionSkip && (
+                              <button
+                                id={`skip-mission-${mission.id}-btn`}
+                                onClick={() => handleSkip(mission.id)}
+                                className="px-3 py-1 rounded-xl bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-500 hover:to-fuchsia-500 text-white font-black text-[11px] shadow-lg transition active:scale-95 flex items-center gap-1"
+                                title={isAr ? 'حصري VIP 10+ : إكمال وتخطي بنقرة واحدة (مرة واحدة يومياً)' : 'VIP 10+ exclusive: one-click complete & skip (once/day)'}
+                              >
+                                <Crown className="w-3 h-3" />
+                                <span>{isAr ? 'تخطي VIP' : 'VIP Skip'}</span>
+                              </button>
+                            )}
+                          </>
                         )}
 
                         <div className="w-20 h-1.5 bg-neutral-800 rounded-full overflow-hidden">

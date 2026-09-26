@@ -37,10 +37,12 @@ import {
   Sliders,
   DollarSign,
   TrendingUp,
-  Tag
+  Tag,
+  Handshake
 } from 'lucide-react';
 import { searchRealPlayersApi, convertApiPlayerToGamePlayer, ApiPlayerResult } from '../services/footballApi';
 import { useFirebase } from '../firebase/FirebaseContext';
+import { NegotiationModal } from './NegotiationModal';
 
 type PositionCategory = 'all' | 'ATT' | 'MID' | 'DEF' | 'GK';
 type SpecificPosition = 'all' | 'ST' | 'LW' | 'RW' | 'CAM' | 'CM' | 'CDM' | 'CB' | 'LB' | 'RB' | 'GK';
@@ -48,7 +50,7 @@ type SortOption = 'rating_desc' | 'rating_asc' | 'potential_desc' | 'price_asc' 
 type AgeFilterOption = 'all' | 'u21' | '21_25' | '26_29' | '30plus';
 
 export const TransfersMarketView: React.FC = () => {
-  const { club, scoutMarket, buyPlayer, sellPlayer, addPlayerToSquad, refreshScoutMarket, language } = useGameStore();
+  const { club, scoutMarket, buyPlayer, sellPlayer, addPlayerToSquad, refreshScoutMarket, language, activeNegotiations } = useGameStore();
   const { setAuthModalOpen, user } = useFirebase();
   const isAr = language === 'ar';
 
@@ -76,6 +78,7 @@ export const TransfersMarketView: React.FC = () => {
   const [worldResults, setWorldResults] = useState<ApiPlayerResult[]>([]);
   const [signedWorldNames, setSignedWorldNames] = useState<string[]>([]);
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
+  const [negotiatingPlayer, setNegotiatingPlayer] = useState<Player | null>(null);
 
   // Check if any filter is active
   const hasActiveFilters = useMemo(() => {
@@ -768,18 +771,21 @@ export const TransfersMarketView: React.FC = () => {
                           <Eye className="w-4 h-4" />
                         </button>
 
-                        {/* Sign Player Button */}
+                        {/* Negotiate Button (real back-and-forth instead of instant buy) */}
                         <button
-                          onClick={() => handleBuyPlayer(player)}
-                          disabled={!canAfford}
+                          onClick={() => setNegotiatingPlayer(player)}
                           className={`px-3.5 py-2 rounded-xl text-xs font-black shadow-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                            canAfford
-                              ? 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/20 active:scale-95'
-                              : 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-60'
+                            activeNegotiations.some(n => n.playerId === player.id)
+                              ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-black shadow-amber-500/20 active:scale-95'
+                              : 'bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-400 hover:to-cyan-400 text-slate-950 shadow-sky-500/20 active:scale-95'
                           }`}
                         >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>{canAfford ? (isAr ? 'إتمام التعاقد' : 'Sign Player') : (isAr ? 'الميزانية لا تكفي' : 'No Budget')}</span>
+                          <Handshake className="w-3.5 h-3.5" />
+                          <span>
+                            {activeNegotiations.some(n => n.playerId === player.id)
+                              ? (isAr ? 'متابعة التفاوض' : 'Continue Talks')
+                              : (isAr ? 'بدء التفاوض' : 'Negotiate')}
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -1161,16 +1167,11 @@ export const TransfersMarketView: React.FC = () => {
                       {isAr ? 'إلغاء' : 'Cancel'}
                     </button>
                     <button
-                      onClick={() => handleBuyPlayer(inspectingPlayer)}
-                      disabled={club.finances.coins < inspectingPlayer.marketValue}
-                      className={`px-5 py-2.5 rounded-xl font-black text-xs shadow-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                        club.finances.coins >= inspectingPlayer.marketValue
-                          ? 'bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 shadow-amber-500/30'
-                          : 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-60'
-                      }`}
+                      onClick={() => { setNegotiatingPlayer(inspectingPlayer); setInspectingPlayer(null); }}
+                      className="px-5 py-2.5 rounded-xl font-black text-xs shadow-lg transition-all flex items-center gap-1.5 cursor-pointer bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-400 hover:to-cyan-400 text-slate-950 shadow-sky-500/30"
                     >
-                      <Check className="w-4 h-4" />
-                      <span>{club.finances.coins >= inspectingPlayer.marketValue ? (isAr ? 'تأكيد التعاقد' : 'Confirm Signing') : (isAr ? 'الميزانية لا تكفي' : 'Insufficient Budget')}</span>
+                      <Handshake className="w-4 h-4" />
+                      <span>{isAr ? 'بدء التفاوض' : 'Negotiate'}</span>
                     </button>
                   </div>
                 </div>
@@ -1179,6 +1180,8 @@ export const TransfersMarketView: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      <NegotiationModal player={negotiatingPlayer} onClose={() => setNegotiatingPlayer(null)} />
 
     </div>
   );

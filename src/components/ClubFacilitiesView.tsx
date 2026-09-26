@@ -6,16 +6,41 @@
  * Stadium expansion, medical center, training grounds, and financial balance sheet.
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGameStore } from '../state/useGameStore';
 import { ClubFacilities } from '../types/game';
-import { Building2, Landmark, ShieldCheck, HeartPulse, Sparkles, TrendingUp, Crown, Zap } from 'lucide-react';
+import { Building2, Landmark, ShieldCheck, HeartPulse, Sparkles, TrendingUp, Crown, Zap, Clock } from 'lucide-react';
 import { VIP_LEVELS } from '../data/vipData';
 
+const formatRemaining = (ms: number, isAr: boolean) => {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return isAr ? `${h}س ${m}د` : `${h}h ${m}m`;
+  if (m > 0) return isAr ? `${m}د ${s}ث` : `${m}m ${s}s`;
+  return isAr ? `${s}ث` : `${s}s`;
+};
+
 export const ClubFacilitiesView: React.FC = () => {
-  const { club, upgradeFacility, vipPoints, language } = useGameStore();
+  const { club, upgradeFacility, skipFacilityUpgrade, pendingFacilityUpgrades, vipPoints, language } = useGameStore();
   const isAr = language === 'ar';
   const f = club.facilities;
+  const [, forceTick] = useState(0);
+  const [skipFeedback, setSkipFeedback] = useState<string | null>(null);
+
+  // Re-render every second so countdowns move; actual completion is handled
+  // by the global tick in App.tsx (processFacilityUpgrades).
+  useEffect(() => {
+    const interval = setInterval(() => forceTick(t => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSkip = (key: keyof ClubFacilities) => {
+    const res = skipFacilityUpgrade(key);
+    setSkipFeedback(res.message);
+    setTimeout(() => setSkipFeedback(null), 4000);
+  };
 
   // Calculate current VIP Tier for facility benefits
   let currentVipTier = VIP_LEVELS[0];
@@ -24,6 +49,7 @@ export const ClubFacilitiesView: React.FC = () => {
       currentVipTier = tier;
     }
   }
+  const hasFreeSkip = !!currentVipTier.hasFreeSkipWaitTimes;
 
   const facilityList: {
     key: keyof ClubFacilities;
@@ -117,11 +143,19 @@ export const ClubFacilitiesView: React.FC = () => {
         </div>
       </div>
 
+      {skipFeedback && (
+        <div className="p-3 rounded-2xl bg-purple-950/70 border border-purple-500/40 text-purple-200 text-xs font-bold text-center">
+          {skipFeedback}
+        </div>
+      )}
+
       {/* Facilities Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {facilityList.map((item) => {
           const upgradeCost = item.level * 35000;
           const canAfford = club.finances.coins >= upgradeCost && item.level < 10;
+          const pending = pendingFacilityUpgrades.find(p => p.facility === item.key);
+          const remainingMs = pending ? Math.max(0, new Date(pending.completesAt).getTime() - Date.now()) : 0;
 
           return (
             <div key={item.key} className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-xl flex flex-col justify-between">
@@ -143,35 +177,57 @@ export const ClubFacilitiesView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-slate-500 block">{isAr ? 'تكلفة التطوير' : 'Cost'}</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-black text-amber-300">
-                      {item.level < 10 ? `${upgradeCost.toLocaleString()} 💰` : (isAr ? 'الحد الأقصى' : 'Max Level')}
-                    </span>
-                    {item.level < 10 && (
-                      <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1 rounded border border-amber-500/20">
-                        +50 VIP
-                      </span>
-                    )}
+              {pending ? (
+                <div className="pt-3 border-t border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between text-[11px] text-amber-300 font-bold">
+                    <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {isAr ? 'قيد التطوير...' : 'Under construction...'}</span>
+                    <span>{formatRemaining(remainingMs, isAr)}</span>
                   </div>
-                </div>
-
-                {item.level < 10 && (
                   <button
-                    onClick={() => upgradeFacility(item.key)}
-                    disabled={!canAfford}
-                    className={`px-4 py-2 rounded-xl text-xs font-black shadow-lg transition-all ${
-                      canAfford
-                        ? 'bg-indigo-500 hover:bg-indigo-400 text-white cursor-pointer shadow-indigo-500/20'
-                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    onClick={() => handleSkip(item.key)}
+                    className={`w-full px-3 py-2 rounded-xl text-xs font-black shadow-lg transition-all flex items-center justify-center gap-1.5 ${
+                      hasFreeSkip
+                        ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-black'
+                        : 'bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white'
                     }`}
                   >
-                    {canAfford ? (isAr ? 'ترقية المنشأة' : 'Upgrade') : (isAr ? 'الرصيد لا يكفي' : 'No Funds')}
+                    {hasFreeSkip ? <Crown className="w-3.5 h-3.5" /> : <Zap className="w-3.5 h-3.5" />}
+                    {hasFreeSkip
+                      ? (isAr ? 'تخطي فوري مجاني (VIP 17)' : 'Free Instant Skip (VIP 17)')
+                      : (isAr ? 'تخطي بالجواهر 💎' : 'Skip with Diamonds 💎')}
                   </button>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-slate-500 block">{isAr ? 'تكلفة التطوير' : 'Cost'}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-black text-amber-300">
+                        {item.level < 10 ? `${upgradeCost.toLocaleString()} 💰` : (isAr ? 'الحد الأقصى' : 'Max Level')}
+                      </span>
+                      {item.level < 10 && (
+                        <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1 rounded border border-amber-500/20">
+                          +50 VIP
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {item.level < 10 && (
+                    <button
+                      onClick={() => upgradeFacility(item.key)}
+                      disabled={!canAfford}
+                      className={`px-4 py-2 rounded-xl text-xs font-black shadow-lg transition-all ${
+                        canAfford
+                          ? 'bg-indigo-500 hover:bg-indigo-400 text-white cursor-pointer shadow-indigo-500/20'
+                          : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                      }`}
+                    >
+                      {canAfford ? (isAr ? 'ترقية المنشأة' : 'Upgrade') : (isAr ? 'الرصيد لا يكفي' : 'No Funds')}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

@@ -10,6 +10,7 @@ import React, { useState } from 'react';
 import { useGameStore } from '../state/useGameStore';
 import { useFirebase } from '../firebase/FirebaseContext';
 import { CloudSyncModal } from './CloudSyncModal';
+import { RedeemCodeModal } from './RedeemCodeModal';
 import { VIP_LEVELS } from '../data/vipData';
 import { 
   Trophy, 
@@ -25,7 +26,8 @@ import {
   Gem,
   Sparkles,
   Swords,
-  Database
+  Database,
+  Gift
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -49,6 +51,7 @@ export const Header: React.FC = () => {
 
   const { user, isOnline, setAuthModalOpen } = useFirebase();
   const [showCloudModal, setShowCloudModal] = useState(false);
+  const [showRedeemModal, setShowRedeemModal] = useState(false);
 
   const claimableMissionsCount = (dailyMissions || []).filter(m => m.current >= m.target && !m.isClaimed).length;
 
@@ -239,6 +242,17 @@ export const Header: React.FC = () => {
             <span>{isAr ? 'كوتا API' : 'API Quota'}</span>
           </button>
 
+          {/* Gift / Redeem Code Button */}
+          <button
+            id="btn_redeem_code"
+            onClick={() => setShowRedeemModal(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-950/60 border border-amber-500/40 text-amber-300 hover:border-amber-400 hover:text-white transition-colors"
+            title={isAr ? 'كود الهدية' : 'Gift Code'}
+          >
+            <Gift className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">{isAr ? 'كود هدية' : 'Gift Code'}</span>
+          </button>
+
           {/* Firebase Cloud Sync / Profile Button */}
           <button
             id="btn_cloud_sync"
@@ -285,6 +299,12 @@ export const Header: React.FC = () => {
         </div>
 
       </div>
+
+      {/* Gift / Redeem Code Modal */}
+      <RedeemCodeModal
+        isOpen={showRedeemModal}
+        onClose={() => setShowRedeemModal(false)}
+      />
 
       {/* Cloud Sync & Firebase Modal */}
       <CloudSyncModal 

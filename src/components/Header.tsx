@@ -46,7 +46,8 @@ export const Header: React.FC = () => {
     dailyMissions,
     setDailyMissionsModalOpen,
     startTacticalDuel,
-    hasSelectedInitialClub
+    hasSelectedInitialClub,
+    saveStatus
   } = useGameStore();
 
   const { user, isOnline, setAuthModalOpen } = useFirebase();
@@ -252,6 +253,14 @@ export const Header: React.FC = () => {
             <Gift className="w-3.5 h-3.5 text-amber-400" />
             <span className="hidden sm:inline">{isAr ? 'كود هدية' : 'Gift Code'}</span>
           </button>
+
+          {/* Autosave Status Indicator */}
+          {saveStatus === 'saving' && (
+            <span className="hidden sm:flex items-center gap-1 text-[11px] text-sky-400 font-bold bg-sky-950/50 border border-sky-500/30 px-2 py-0.5 rounded-lg animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />
+              {isAr ? 'جارٍ الحفظ...' : 'Saving...'}
+            </span>
+          )}
 
           {/* Firebase Cloud Sync / Profile Button */}
           <button

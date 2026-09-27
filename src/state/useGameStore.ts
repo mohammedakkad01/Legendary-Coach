@@ -88,8 +88,8 @@ import { BasketballMatchEngine } from '../engine/basketballEngine';
 import { soundEffects } from '../audio/soundFX';
 import confetti from 'canvas-confetti';
 import { calculateTeamSynergy, TeamSynergyResult } from '../utils/teamSynergy';
-
-const STORAGE_KEY = 'MODAREB_LEGEND_REAL_V2';
+import { persistenceService } from '../services/persistenceService';
+import { SaveStatus } from '../types/save';
 
 export type GameTab = 
   | 'dashboard' 
@@ -285,6 +285,10 @@ interface GameState {
 
   // Squad Synergy & Chemistry feedback for the current football lineup/formation/tactics
   getTeamSynergy: () => TeamSynergyResult;
+
+  // Centralized Persistence & Save Management
+  saveStatus: SaveStatus;
+  saveCareerImmediate: () => boolean;
 }
 
 export const useGameStore = create<GameState>((set, get) => {
@@ -481,54 +485,16 @@ export const useGameStore = create<GameState>((set, get) => {
     };
   };
 
-  // Load saved state if present
+  // Load saved state if present via centralized persistence service
   const loadSavedState = () => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch {
-      // ignore
-    }
-    return null;
+    return persistenceService.loadFromStorage();
   };
 
-  const saveToStorage = (state: Partial<GameState>) => {
-    try {
-      const current = get();
-      const payload = {
-        currentSport: state.currentSport || current.currentSport,
-        language: state.language || current.language,
-        club: state.club || current.club,
-        energy: state.energy !== undefined ? state.energy : current.energy,
-        vipPoints: state.vipPoints !== undefined ? state.vipPoints : current.vipPoints,
-        lastVipClaimDate: state.lastVipClaimDate !== undefined ? state.lastVipClaimDate : current.lastVipClaimDate,
-        missionSkipUsedDate: state.missionSkipUsedDate !== undefined ? state.missionSkipUsedDate : current.missionSkipUsedDate,
-        savedTacticalPlans: state.savedTacticalPlans || current.savedTacticalPlans,
-        pendingFacilityUpgrades: state.pendingFacilityUpgrades || current.pendingFacilityUpgrades,
-        activeNegotiations: state.activeNegotiations || current.activeNegotiations,
-        academyDiscoveries: state.academyDiscoveries || current.academyDiscoveries,
-        checkInStreak: state.checkInStreak !== undefined ? state.checkInStreak : current.checkInStreak,
-        lastCheckInDate: state.lastCheckInDate !== undefined ? state.lastCheckInDate : current.lastCheckInDate,
-        dailyMissions: state.dailyMissions || current.dailyMissions,
-        hasClaimedLoginBonus: state.hasClaimedLoginBonus !== undefined ? state.hasClaimedLoginBonus : current.hasClaimedLoginBonus,
-        isGuest: state.isGuest !== undefined ? state.isGuest : current.isGuest,
-        hasSelectedInitialClub: state.hasSelectedInitialClub !== undefined ? state.hasSelectedInitialClub : current.hasSelectedInitialClub,
-        leagueStandings: state.leagueStandings || current.leagueStandings,
-        leagueFixtures: state.leagueFixtures || current.leagueFixtures,
-        matchHistory: state.matchHistory || current.matchHistory,
-        tournamentStats: state.tournamentStats || current.tournamentStats,
-        simulatedMatchdays: state.simulatedMatchdays || current.simulatedMatchdays,
-        storyMissions: state.storyMissions || current.storyMissions,
-        scoutMarket: state.scoutMarket || current.scoutMarket,
-        claimedVipUpgradeChests: state.claimedVipUpgradeChests || current.claimedVipUpgradeChests,
-        unlockedSpeed2x: state.unlockedSpeed2x !== undefined ? state.unlockedSpeed2x : current.unlockedSpeed2x,
-        matchScoutReports: state.matchScoutReports || current.matchScoutReports,
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-    } catch {
-      // ignore
+  const saveToStorage = (_state?: Partial<GameState>, immediate = false) => {
+    if (immediate) {
+      persistenceService.saveImmediate(get());
+    } else {
+      persistenceService.scheduleAutoSave(get, 600);
     }
   };
 
@@ -848,6 +814,11 @@ export const useGameStore = create<GameState>((set, get) => {
   const initialClubSelected = initialSave?.hasSelectedInitialClub ?? false;
 
   return {
+    saveStatus: 'idle',
+    saveCareerImmediate: () => {
+      return persistenceService.saveImmediate(get());
+    },
+
     currentSport: initialSave?.currentSport || 'football',
     language: initialSave?.language || 'ar',
     activeTab: 'dashboard',
@@ -1146,6 +1117,7 @@ export const useGameStore = create<GameState>((set, get) => {
           },
         },
       }));
+      saveToStorage();
     },
 
     saveTacticalPlan: (name: string) => {
@@ -1235,6 +1207,7 @@ export const useGameStore = create<GameState>((set, get) => {
           },
         },
       }));
+      saveToStorage();
     },
 
     swapFootballLineup: (lineupIndex, benchPlayerId) => {
@@ -1252,6 +1225,7 @@ export const useGameStore = create<GameState>((set, get) => {
           footballBench: newBench,
         },
       });
+      saveToStorage();
     },
 
     moveToBench: (playerId: string) => {
@@ -1470,6 +1444,7 @@ export const useGameStore = create<GameState>((set, get) => {
           },
         },
       }));
+      saveToStorage();
     },
 
     runTrainingDrill: (drillType) => {
@@ -1501,6 +1476,7 @@ export const useGameStore = create<GameState>((set, get) => {
           },
         },
       });
+      saveToStorage();
       return true;
     },
 
@@ -1649,6 +1625,7 @@ export const useGameStore = create<GameState>((set, get) => {
         },
         scoutMarket: state.scoutMarket.filter(p => p.id !== player.id),
       });
+      saveToStorage(undefined, true);
       return true;
     },
 
@@ -1673,6 +1650,7 @@ export const useGameStore = create<GameState>((set, get) => {
           },
         },
       });
+      saveToStorage(undefined, true);
       return true;
     },
 
@@ -1695,6 +1673,7 @@ export const useGameStore = create<GameState>((set, get) => {
           },
         },
       });
+      saveToStorage(undefined, true);
     },
 
     // Basketball still uses the simple instant-promote path (unchanged);
@@ -1715,6 +1694,7 @@ export const useGameStore = create<GameState>((set, get) => {
           fanMood: Math.min(100, state.club.fanMood + 6),
         },
       });
+      saveToStorage();
     },
 
     scoutAcademyTalent: () => {
@@ -1866,6 +1846,7 @@ export const useGameStore = create<GameState>((set, get) => {
           },
         },
       });
+      saveToStorage();
     },
 
     openPreMatchPreview: async () => {
@@ -3492,51 +3473,89 @@ export const useGameStore = create<GameState>((set, get) => {
     },
 
     exportGameData: () => {
-      const state = get();
-      const exportObj = {
-        version: '1.0.0',
-        exportedAt: new Date().toISOString(),
-        club: state.club,
-        vipPoints: state.vipPoints,
-        storyMissions: state.storyMissions,
-        leagueStandings: state.leagueStandings,
-      };
-      return JSON.stringify(exportObj, null, 2);
+      return persistenceService.exportJson(get(), true);
     },
 
     importCustomDataPack: (jsonText) => {
-      try {
-        const parsed = JSON.parse(jsonText);
-        if (!parsed.club || !parsed.club.name) {
-          return { success: false, message: 'ملف البيانات غير صالح — ينقصه كائن النادي الأساسي.' };
-        }
-        set({
-          club: parsed.club,
-          vipPoints: parsed.vipPoints || get().vipPoints,
-          storyMissions: parsed.storyMissions || get().storyMissions,
-          leagueStandings: parsed.leagueStandings || get().leagueStandings,
-        });
-        soundEffects.playFanfare();
-        return { success: true, message: 'تم استيراد حزمة البيانات بنجاح وتطبيقها محلياً!' };
-      } catch {
-        return { success: false, message: 'خطأ في تنسيق JSON. يرجى التأكد من صحة الملف المرفوع.' };
+      const res = persistenceService.deserialize(jsonText);
+      if (!res.success || !res.data) {
+        return { success: false, message: res.message };
       }
+      const data = res.data;
+      set({
+        club: data.club,
+        currentSport: data.currentSport,
+        language: data.language,
+        soundEnabled: data.soundEnabled,
+        hasSelectedInitialClub: data.hasSelectedInitialClub,
+        isGuest: data.isGuest,
+        hasClaimedLoginBonus: data.hasClaimedLoginBonus,
+        energy: data.energy,
+        lastEnergyUpdate: data.lastEnergyUpdate,
+        vipPoints: data.vipPoints,
+        lastVipClaimDate: data.lastVipClaimDate,
+        claimedVipUpgradeChests: data.claimedVipUpgradeChests,
+        missionSkipUsedDate: data.missionSkipUsedDate,
+        checkInStreak: data.checkInStreak,
+        lastCheckInDate: data.lastCheckInDate,
+        vipClaimedToday: !!data.lastVipClaimDate && data.lastVipClaimDate === getTodayStr(),
+        checkInClaimedToday: !!data.lastCheckInDate && data.lastCheckInDate === getTodayStr(),
+        savedTacticalPlans: data.savedTacticalPlans,
+        pendingFacilityUpgrades: data.pendingFacilityUpgrades,
+        activeNegotiations: data.activeNegotiations,
+        academyDiscoveries: data.academyDiscoveries,
+        scoutMarket: data.scoutMarket,
+        dailyMissions: data.dailyMissions,
+        storyMissions: data.storyMissions,
+        leagueStandings: data.leagueStandings,
+        leagueFixtures: data.leagueFixtures,
+        matchHistory: data.matchHistory,
+        tournamentStats: data.tournamentStats,
+        simulatedMatchdays: data.simulatedMatchdays,
+        matchScoutReports: data.matchScoutReports,
+        unlockedSpeed2x: data.unlockedSpeed2x,
+        activeTab: 'dashboard',
+        clubSelectionModalOpen: false,
+      });
+
+      persistenceService.saveImmediate(get());
+      soundEffects.playFanfare();
+      return {
+        success: true,
+        message: data.language === 'ar'
+          ? 'تم استرجاع مسيرة النادي والبيانات بالكامل بنجاح!'
+          : 'Career save and all season data restored successfully!'
+      };
     },
 
     resetCareer: () => {
-      localStorage.removeItem(STORAGE_KEY);
+      persistenceService.clearStorage();
       set({
         club: REAL_INITIAL_PLAYER_CLUB,
         vipPoints: 0,
+        energy: 100,
         checkInStreak: 0,
+        lastCheckInDate: null,
+        lastVipClaimDate: null,
+        claimedVipUpgradeChests: [1],
+        missionSkipUsedDate: null,
+        savedTacticalPlans: [],
+        pendingFacilityUpgrades: [],
+        activeNegotiations: [],
+        academyDiscoveries: [],
         hasClaimedLoginBonus: false,
         isGuest: true,
+        hasSelectedInitialClub: false,
+        clubSelectionModalOpen: true,
         storyMissions: STORY_CHAPTER_1_MISSIONS,
+        dailyMissions: INITIAL_DAILY_MISSIONS,
         leagueStandings: REAL_INITIAL_STANDINGS,
+        leagueFixtures: [],
         matchHistory: [],
         tournamentStats: [],
         simulatedMatchdays: [],
         lastRoundSummary: null,
+        matchScoutReports: {},
         activeTab: 'dashboard',
         isMatchLive: false,
       });
@@ -3551,3 +3570,15 @@ export const useGameStore = create<GameState>((set, get) => {
     },
   };
 });
+
+// Subscribe persistenceService status to store
+persistenceService.subscribe((status) => {
+  useGameStore.setState({ saveStatus: status });
+});
+
+// Guard against tab close / page refresh while an auto-save is pending
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    persistenceService.flush(() => useGameStore.getState());
+  });
+}

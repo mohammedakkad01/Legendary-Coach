@@ -24,6 +24,7 @@ import {
   CloudCommunityTactic
 } from './firebase';
 import { useGameStore } from '../state/useGameStore';
+import { persistenceService } from '../services/persistenceService';
 
 interface FirebaseContextType {
   user: User | null;
@@ -152,7 +153,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     try {
       const saveId = `save_${Date.now()}`;
-      const payload = exportGameData();
+      const fullSaveData = persistenceService.extractSaveData(useGameStore.getState());
+      const payload = persistenceService.serialize(fullSaveData, false);
       const firstMission = storyMissions.find(m => !m.isCompleted);
       const missionId = firstMission ? firstMission.id : 10;
 
@@ -161,7 +163,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         currentSport,
         reputation: club.finances.reputation,
         coins: club.finances.coins,
-        diamonds: 0,
+        diamonds: club.finances.diamonds || 0,
         vipPoints,
         currentChapter: 1,
         currentMissionId: missionId,

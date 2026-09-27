@@ -167,7 +167,15 @@ async function main() {
     clubsMatched += 1;
     console.log(`  [ok] ${club.nameEn} -> "${resolved.matchedName}": ${players.length} real players`);
 
-    batch.set(db.collection('squads_cache').doc(`squad_${club.id}`), {
+    const squadDocRef = db.collection('squads_cache').doc(`squad_${club.id}`);
+    const existingSnap = await squadDocRef.get();
+    if (existingSnap.exists && existingSnap.data()?.source === 'api-football') {
+      console.log(`  [SKIPPED] Squad for ${club.nameEn} already contains official API-Football data. Skipping to prevent conflict.`);
+      continue;
+    }
+
+    batch.set(squadDocRef, {
+      id: `squad_${club.id}`,
       clubId: club.id,
       clubNameEn: club.nameEn,
       leagueId: club.leagueId,
@@ -175,8 +183,12 @@ async function main() {
       matchedTeamName: resolved.matchedName,
       players,
       playerCount: players.length,
+      source: 'thesportsdb',
+      season: '2024',
+      version: '1.0',
       updatedAt: new Date().toISOString(),
-    });
+      expiresAt: new Date(Date.now() + 30 * 86400 * 1000).toISOString(),
+    }, { merge: true });
   }
 
   const logId = `squad_log_${Date.now()}`;

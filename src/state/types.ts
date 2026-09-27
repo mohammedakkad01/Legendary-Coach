@@ -1,0 +1,229 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Game Store Types & State Definition
+ */
+
+import {
+  Club,
+  Player,
+  FootballTactics,
+  BasketballTactics,
+  StoryMission,
+  LeagueStanding,
+  MatchRecord,
+  MatchEvent,
+  SportType,
+  ClubFacilities,
+  DailyMission,
+  MatchResultsCharacter,
+  TacticalDuelState,
+  TacticalStance,
+  Fixture,
+  PreMatchData,
+  DuelRoom,
+  PlayerStats,
+  RoundSummary,
+  MatchScoutReport,
+  SavedTacticalPlan,
+  PendingFacilityUpgrade,
+  PlayerNegotiation
+} from '../types/game';
+import { RealClubConfig } from '../data/realLeaguesData';
+import { FootballMatchEngine } from '../engine/footballEngine';
+import { TeamSynergyResult } from '../utils/teamSynergy';
+import { SaveStatus } from '../types/save';
+
+export type GameTab = 
+  | 'dashboard' 
+  | 'tactics' 
+  | 'match' 
+  | 'story' 
+  | 'squad'
+  | 'training' 
+  | 'transfers' 
+  | 'club' 
+  | 'league' 
+  | 'calendar'
+  | 'vip' 
+  | 'editor'
+  | 'scout'
+  | 'football_api'
+  | 'tactical_duel'
+  | 'round_summary';
+
+export interface GameState {
+  currentSport: SportType;
+  language: 'ar' | 'en';
+  activeTab: GameTab;
+  soundEnabled: boolean;
+  
+  // Auth & Guest state
+  isGuest: boolean;
+  hasClaimedLoginBonus: boolean;
+  hasSelectedInitialClub: boolean;
+  clubSelectionModalOpen: boolean;
+
+  // Club & Career
+  club: Club;
+  energy: number; // 0-100
+  lastEnergyUpdate: number;
+  vipPoints: number;
+  vipClaimedToday: boolean;
+  lastVipClaimDate: string | null;
+  missionSkipUsedDate: string | null; // VIP 10+ one-click mission skip, once per day
+  savedTacticalPlans: SavedTacticalPlan[]; // VIP 12+ exclusive: up to 5 saved tactic presets
+  pendingFacilityUpgrades: PendingFacilityUpgrade[]; // facilities now take real construction time
+  activeNegotiations: PlayerNegotiation[]; // VIP 6+ get an extra simultaneous negotiation slot
+  academyDiscoveries: any[]; // VIP 13+ get an extra simultaneous academy scout slot
+  checkInStreak: number;
+  checkInClaimedToday: boolean;
+  lastCheckInDate: string | null;
+
+  // Daily Missions System
+  dailyMissions: DailyMission[];
+  isDailyMissionsModalOpen: boolean;
+
+  // Match Results Character & Tactical Analyst
+  postMatchAnalyst: MatchResultsCharacter | null;
+
+  // Simultaneous Reveal Tactical Duel (صانع المعارك)
+  tacticalDuel: TacticalDuelState;
+  isTacticalDuelModalOpen: boolean;
+
+  // Story & Campaign
+  storyMissions: StoryMission[];
+  selectedMissionId: number | null;
+
+  // League & Competitions
+  leagueStandings: LeagueStanding[];
+  leagueFixtures: Fixture[]; // full season calendar for the player's league
+  matchHistory: MatchRecord[];
+
+  // Matchday simulation & league-wide player statistics
+  tournamentStats: PlayerStats[];      // season totals for EVERY player in the league
+  simulatedMatchdays: number[];        // matchdays whose non-user games were already played
+  lastRoundSummary: RoundSummary | null; // shown by RoundSummaryView
+
+  // Match Scouting Reports
+  matchScoutReports: Record<number, MatchScoutReport>;
+
+  // Season Finale & Career Transition
+  isSeasonFinaleModalOpen: boolean;
+
+  // Live Match Simulation
+  activeEngine: FootballMatchEngine | null;
+  activeMatchRecord: MatchRecord | null;
+  isMatchLive: boolean;
+  isMatchPaused: boolean;
+  isLoadingMatch: boolean;
+  preMatchPreview: PreMatchData | null;
+  nextMatchInsight: PreMatchData | null; // live preview of the next fixture
+  preMatchModalOpen: boolean;
+  matchSpeed: number; // 1, 2, 4
+  unlockedSpeed2x: boolean; // Purchased via Coins or Diamonds
+  currentMatchMinute: number;
+  pendingInteractiveEvent: MatchEvent | null;
+
+  // Market & Scouts
+  scoutMarket: Player[];
+
+  // Actions
+  setSport: (sport: SportType) => void;
+  setLanguage: (lang: 'ar' | 'en') => void;
+  setActiveTab: (tab: GameTab) => void;
+  toggleSound: () => void;
+  setIsGuest: (val: boolean) => void;
+  claimLoginBonus: () => { success: boolean; message: string };
+  chooseClub: (club: Club) => void;
+  setClubSelectionModalOpen: (open: boolean) => void;
+  selectLeagueAndClub: (clubConfig: RealClubConfig, realSquad?: Player[]) => { success: boolean; message: string };
+  
+  // Daily Missions & Squad Fatigue Actions
+  claimDailyMission: (missionId: string) => { success: boolean; message: string };
+  runSquadRecoverySession: () => { success: boolean; message: string };
+  setDailyMissionsModalOpen: (open: boolean) => void;
+  setPostMatchAnalyst: (analyst: MatchResultsCharacter | null) => void;
+
+  // Tactical Duel Actions
+  startTacticalDuel: (difficulty?: 'novice' | 'tactical') => void;
+  selectDuelPieceAndStance: (pieceId: string, stance: TacticalStance) => void;
+  submitDuelRoundOrder: () => void;
+  syncPvPRoomToDuelState: (room: DuelRoom, currentUid: string) => void;
+  closeTacticalDuel: () => void;
+  setTacticalDuelModalOpen: (open: boolean) => void;
+  
+  // Tactics & Lineup
+  updateFootballTactics: (newTactics: Partial<FootballTactics>) => void;
+  updateBasketballTactics: (newTactics: Partial<BasketballTactics>) => void;
+  swapFootballLineup: (lineupIndex: number, benchPlayerId: string) => void;
+  moveToBench: (playerId: string) => { success: boolean; message: string };
+  setFootballRoles: (roles: { captainId?: string; penaltyTakerId?: string; freeKickTakerId?: string; cornerTakerId?: string }) => void;
+
+  // Training & Facilities
+  runTrainingDrill: (drillType: 'stamina' | 'technical' | 'finishing') => boolean;
+  upgradeFacility: (facility: keyof ClubFacilities) => boolean;
+
+  // Transfers & Academy
+  buyPlayer: (player: Player) => boolean;
+  addPlayerToSquad: (player: Player) => boolean;
+  sellPlayer: (playerId: string) => void;
+  promoteAcademyTalent: () => void;
+  scoutAcademyTalent: () => { success: boolean; message: string };
+  promoteAcademyDiscovery: (discoveryId: string) => { success: boolean; message: string };
+  releaseAcademyDiscovery: (discoveryId: string) => void;
+  refreshScoutMarket: () => void;
+
+  // Narrative
+  chooseMissionOption: (missionId: number, choiceId: string) => void;
+  selectMission: (id: number | null) => void;
+
+  // Match Operations
+  openPreMatchPreview: () => Promise<void>;
+  loadNextMatchInsight: () => Promise<void>;
+  closePreMatchPreview: () => void;
+  startNewMatch: () => Promise<void>;
+  confirmStartMatch: () => void;
+  stepMatchMinute: () => void;
+  toggleMatchPause: () => void;
+  setMatchSpeed: (speed: number) => void;
+  unlockMatchSpeed2x: (currency: 'coins' | 'diamonds') => { success: boolean; message: string };
+  submitInteractiveDecision: (optionId: string) => void;
+  instantSimulateMatch: () => void;
+  skipAndSimulateNextMatch: () => Promise<void>;
+  simulateMatchday: (matchday: number) => RoundSummary | null;
+  unlockMatchScout: (method: 'coins' | 'diamonds') => { success: boolean; message: string };
+  setSeasonFinaleModalOpen: (open: boolean) => void;
+  renewSeasonWithCurrentClub: () => void;
+
+  // Daily & VIP
+  claimedVipUpgradeChests: number[]; // VIP levels where the one-time upgrade chest was opened
+  upgradeVipWithDiamonds: () => { success: boolean; message: string };
+  claimVipUpgradeChest: (level: number) => { success: boolean; message: string };
+  claimDailyVIPReward: () => { success: boolean; message: string };
+  skipDailyMissionInstant: (missionId: string) => { success: boolean; message: string };
+  saveTacticalPlan: (name: string) => { success: boolean; message: string };
+  loadTacticalPlan: (id: string) => { success: boolean; message: string };
+  deleteTacticalPlan: (id: string) => void;
+  processFacilityUpgrades: () => void;
+  skipFacilityUpgrade: (facility: keyof ClubFacilities) => { success: boolean; message: string };
+  startNegotiation: (playerId: string, initialOfferAmount: number) => { success: boolean; message: string };
+  submitCounterOffer: (negotiationId: string, newOfferAmount: number) => { success: boolean; message: string };
+  acceptNegotiationCounter: (negotiationId: string) => { success: boolean; message: string };
+  cancelNegotiation: (negotiationId: string) => void;
+  applyRedeemReward: (reward: { coins: number; diamonds: number; trainingPoints: number }) => void;
+  claimDailyCheckIn: () => void;
+
+  // Custom Data Pack Editor
+  exportGameData: () => string;
+  importCustomDataPack: (jsonText: string) => { success: boolean; message: string };
+  resetCareer: () => void;
+
+  // Squad Synergy
+  getTeamSynergy: () => TeamSynergyResult;
+
+  // Centralized Persistence & Save Management
+  saveStatus: SaveStatus;
+  saveCareerImmediate: () => boolean;
+}

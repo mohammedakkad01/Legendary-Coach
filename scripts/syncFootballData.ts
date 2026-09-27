@@ -151,7 +151,14 @@ async function main() {
     console.log(`  -> ${rawTeams.length} clubs found`);
 
     const leagueDocId = `league_${league.key}`;
-    batch.set(db.collection('leagues_cache').doc(leagueDocId), {
+    const leagueDocRef = db.collection('leagues_cache').doc(leagueDocId);
+    const existingSnap = await leagueDocRef.get();
+    if (existingSnap.exists && existingSnap.data()?.source === 'api-football') {
+      console.log(`  [SKIPPED] League ${league.key} already contains official API-Football data. Skipping to prevent conflict.`);
+      continue;
+    }
+
+    batch.set(leagueDocRef, {
       id: leagueDocId,
       leagueKey: league.key,
       matchedVia,
@@ -159,8 +166,12 @@ async function main() {
       nameEn: league.nameEn,
       country: league.country,
       totalClubs: rawTeams.length,
+      source: 'thesportsdb',
+      season: '2024',
+      version: '1.0',
       updatedAt: new Date().toISOString(),
-    });
+      expiresAt: new Date(Date.now() + 30 * 86400 * 1000).toISOString(),
+    }, { merge: true });
 
     for (const t of rawTeams) {
       const idTeam = t.idTeam;
@@ -177,8 +188,12 @@ async function main() {
         logo: t.strBadge || t.strLogo || '',
         venue: t.strStadium || '',
         descriptionEn: t.strDescriptionEN || '',
+        source: 'thesportsdb',
+        season: '2024',
+        version: '1.0',
         updatedAt: new Date().toISOString(),
-      });
+        expiresAt: new Date(Date.now() + 30 * 86400 * 1000).toISOString(),
+      }, { merge: true });
       totalClubs += 1;
     }
   }

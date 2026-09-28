@@ -8,11 +8,13 @@
 
 import React, { useState } from 'react';
 import { useGameStore } from '../state/useGameStore';
+import { useFeedback } from '../context/FeedbackContext';
 import { Player } from '../types/game';
 import { Users, Star, Award, Shield, Zap, Sparkles, HeartPulse, Activity } from 'lucide-react';
 
 export const SquadView: React.FC = () => {
   const { club, currentSport, language, runSquadRecoverySession } = useGameStore();
+  const { toast } = useFeedback();
   const isAr = language === 'ar';
 
   const squad = currentSport === 'football' ? club.footballSquad : club.basketballSquad;
@@ -54,9 +56,13 @@ export const SquadView: React.FC = () => {
             id="squad_view_recovery_action_btn"
             onClick={() => {
               const res = runSquadRecoverySession();
-              alert(res.message);
+              if (res.success) {
+                toast.success(res.message, isAr ? 'جلسة الاستشفاء' : 'Squad Recovery');
+              } else {
+                toast.error(res.message, isAr ? 'تعذر الاستشفاء' : 'Recovery Failed');
+              }
             }}
-            className="px-4 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-lg transition active:scale-95 flex items-center gap-2"
+            className="px-4 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-lg transition active:scale-95 flex items-center gap-2 cursor-pointer"
           >
             <HeartPulse className="w-4 h-4" />
             <span>{isAr ? 'جلسة استشفاء عامة (500 💰)' : 'Full Recovery (500 💰)'}</span>

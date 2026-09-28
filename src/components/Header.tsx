@@ -6,7 +6,7 @@
  * Displays Club Badge, Liquid Cash, Energy, VIP Tier, Sport Switcher, and Controls.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGameStore } from '../state/useGameStore';
 import { useFirebase } from '../firebase/FirebaseContext';
 import { CloudSyncModal } from './CloudSyncModal';
@@ -50,9 +50,18 @@ export const Header: React.FC = () => {
     saveStatus
   } = useGameStore();
 
-  const { user, isOnline, setAuthModalOpen } = useFirebase();
+  const { user, isOnline, setAuthModalOpen, isAdmin } = useFirebase();
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [showRedeemModal, setShowRedeemModal] = useState(false);
+  const [showSavedPill, setShowSavedPill] = useState(false);
+
+  useEffect(() => {
+    if (saveStatus === 'saved') {
+      setShowSavedPill(true);
+      const timer = setTimeout(() => setShowSavedPill(false), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [saveStatus]);
 
   const claimableMissionsCount = (dailyMissions || []).filter(m => m.current >= m.target && !m.isClaimed).length;
 
@@ -232,16 +241,18 @@ export const Header: React.FC = () => {
             <span>VIP {currentTier.level}</span>
           </button>
 
-          {/* API-Football Sync Quick Access */}
-          <button
-            id="header_api_sync_btn"
-            onClick={() => setActiveTab('football_api')}
-            className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-950/60 border border-indigo-500/40 text-indigo-300 hover:border-indigo-400 hover:text-white transition-colors"
-            title={isAr ? 'لوحة تحكم كوتا ومزامنة API-Sports' : 'API-Sports Quota & Sync Dashboard'}
-          >
-            <Database className="w-3.5 h-3.5 text-indigo-400" />
-            <span>{isAr ? 'كوتا API' : 'API Quota'}</span>
-          </button>
+          {/* Developer / Admin Console Access (Protected & Role-Restricted) */}
+          {isAdmin && (
+            <button
+              id="header_admin_btn"
+              onClick={() => setActiveTab('admin')}
+              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-950/80 border border-indigo-500/50 text-indigo-300 hover:border-indigo-400 hover:text-white transition-colors cursor-pointer"
+              title={isAr ? 'لوحة تحكم المشرف والمطور' : 'Admin & Developer Console'}
+            >
+              <Database className="w-3.5 h-3.5 text-indigo-400" />
+              <span>{isAr ? 'أدوات الإدارة' : 'Admin Hub'}</span>
+            </button>
+          )}
 
           {/* Gift / Redeem Code Button */}
           <button
@@ -254,13 +265,26 @@ export const Header: React.FC = () => {
             <span className="hidden sm:inline">{isAr ? 'كود هدية' : 'Gift Code'}</span>
           </button>
 
-          {/* Autosave Status Indicator */}
-          {saveStatus === 'saving' && (
-            <span className="hidden sm:flex items-center gap-1 text-[11px] text-sky-400 font-bold bg-sky-950/50 border border-sky-500/30 px-2 py-0.5 rounded-lg animate-pulse">
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />
-              {isAr ? 'جارٍ الحفظ...' : 'Saving...'}
+          {/* Cloud Save & Autosave Status Indicator */}
+          {saveStatus === 'saving' ? (
+            <span 
+              role="status"
+              aria-live="polite"
+              className="hidden sm:flex items-center gap-1.5 text-[11px] text-sky-300 font-bold bg-sky-950/60 border border-sky-500/40 px-2.5 py-1 rounded-lg animate-pulse"
+            >
+              <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping" />
+              <span>{isAr ? 'جارٍ الحفظ السحابي...' : 'Saving to cloud...'}</span>
             </span>
-          )}
+          ) : showSavedPill ? (
+            <span 
+              role="status"
+              aria-live="polite"
+              className="hidden sm:flex items-center gap-1.5 text-[11px] text-emerald-300 font-bold bg-emerald-950/60 border border-emerald-500/40 px-2.5 py-1 rounded-lg transition-all"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span>{isAr ? 'تم الحفظ ✓' : 'Cloud Saved ✓'}</span>
+            </span>
+          ) : null}
 
           {/* Firebase Cloud Sync / Profile Button */}
           <button

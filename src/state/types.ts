@@ -50,6 +50,7 @@ export type GameTab =
   | 'editor'
   | 'scout'
   | 'football_api'
+  | 'admin'
   | 'tactical_duel'
   | 'round_summary';
 

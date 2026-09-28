@@ -9,6 +9,7 @@
 import React, { useState } from 'react';
 import { useFirebase } from '../firebase/FirebaseContext';
 import { useGameStore } from '../state/useGameStore';
+import { useFeedback } from '../context/FeedbackContext';
 import { 
   Cloud, 
   CloudUpload, 
@@ -54,6 +55,7 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose 
   const [tacticTitle, setTacticTitle] = useState('');
   const [statusMessage, setStatusMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const { showConfirm, toast } = useFeedback();
 
   if (!isOpen) return null;
 
@@ -63,18 +65,58 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose 
     const res = await saveCareerToCloud(saveName.trim() || club.name);
     setStatusMessage({ text: res.message, isError: !res.success });
     setIsProcessing(false);
-    if (res.success) setSaveName('');
+    if (res.success) {
+      setSaveName('');
+      toast.success(res.message, isAr ? 'الحفظ السحابي' : 'Cloud Save');
+    } else {
+      toast.error(res.message, isAr ? 'فشل الحفظ' : 'Save Error');
+    }
   };
 
   const handleLoadSave = async (save: any) => {
-    if (!window.confirm(isAr ? `هل ترغب حقاً في استرجاع مسيرة "${save.clubName}"؟ سيتم استبدال الوضع المحلي الحالي.` : `Load save "${save.clubName}"? Current local progress will be replaced.`)) {
-      return;
-    }
+    const confirmed = await showConfirm({
+      title: isAr ? 'استرجاع المسيرة من السحابة' : 'Load Cloud Career',
+      message: isAr 
+        ? `هل ترغب حقاً في استرجاع مسيرة "${save.clubName}"؟ سيتم استبدال الوضع المحلي الحالي.`
+        : `Load save "${save.clubName}"? Current local progress will be replaced.`,
+      confirmLabel: isAr ? 'استرجاع ومتابعة' : 'Load Save',
+      cancelLabel: isAr ? 'إلغاء' : 'Cancel',
+      isDestructive: false
+    });
+
+    if (!confirmed) return;
+
     setIsProcessing(true);
     setStatusMessage(null);
     const res = await loadCareerFromCloud(save);
     setStatusMessage({ text: res.message, isError: !res.success });
     setIsProcessing(false);
+    if (res.success) {
+      toast.success(res.message, isAr ? 'تم استرجاع المسيرة' : 'Save Restored');
+    } else {
+      toast.error(res.message, isAr ? 'فشل التحميل' : 'Load Failed');
+    }
+  };
+
+  const handleDeleteCloudSave = async (saveId: string, clubName: string) => {
+    const confirmed = await showConfirm({
+      title: isAr ? 'حذف الحفظ السحابي' : 'Delete Cloud Save',
+      message: isAr 
+        ? `هل تريد حقاً حذف حفظ مسيرة "${clubName}" نهائياً من السحابة؟ لا يمكن التراجع عن هذا الإجراء.`
+        : `Permanently delete "${clubName}" save from Firestore? This action cannot be undone.`,
+      confirmLabel: isAr ? 'حذف نهائي' : 'Delete Permanently',
+      cancelLabel: isAr ? 'إلغاء' : 'Cancel',
+      isDestructive: true
+    });
+
+    if (!confirmed) return;
+
+    try {
+      await deleteCloudSave(saveId);
+      toast.success(isAr ? 'تم حذف الحفظ السحابي بنجاح' : 'Cloud save deleted');
+    } catch (e: any) {
+      toast.error(e?.message || (isAr ? 'فشل حذف الملف' : 'Delete failed'));
+    }
   };
 
   const handleShareTactic = async () => {
@@ -84,7 +126,12 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose 
     const res = await shareCurrentTactic(tacticTitle);
     setStatusMessage({ text: res.message, isError: !res.success });
     setIsProcessing(false);
-    if (res.success) setTacticTitle('');
+    if (res.success) {
+      setTacticTitle('');
+      toast.success(res.message, isAr ? 'مشاركة التكتيك' : 'Tactic Shared');
+    } else {
+      toast.error(res.message, isAr ? 'تعذر المشاركة' : 'Sharing Failed');
+    }
   };
 
   return (
@@ -287,8 +334,9 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ isOpen, onClose 
                           <span>{isAr ? 'تحميل' : 'Load'}</span>
                         </button>
                         <button
-                          onClick={() => deleteCloudSave(save.id)}
-                          className="p-2 rounded-xl bg-slate-800 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 transition-colors"
+                          onClick={() => handleDeleteCloudSave(save.id, save.clubName)}
+                          aria-label={isAr ? `حذف حفظ ${save.clubName}` : `Delete save ${save.clubName}`}
+                          className="p-2 rounded-xl bg-slate-800 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

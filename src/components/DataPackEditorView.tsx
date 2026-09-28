@@ -9,6 +9,7 @@
 import React, { useState } from 'react';
 import { useGameStore } from '../state/useGameStore';
 import { useFirebase } from '../firebase/FirebaseContext';
+import { useFeedback } from '../context/FeedbackContext';
 import { Database, Download, Upload, ShieldCheck, AlertTriangle, Cloud, CloudUpload, CloudDownload, LogIn, Trash2 } from 'lucide-react';
 
 export const DataPackEditorView: React.FC = () => {
@@ -22,13 +23,13 @@ export const DataPackEditorView: React.FC = () => {
     loadCareerFromCloud, 
     deleteCloudSave 
   } = useFirebase();
+  const { showConfirm, toast } = useFeedback();
 
   const isAr = language === 'ar';
 
   const [jsonInput, setJsonInput] = useState('');
   const [importStatus, setImportStatus] = useState<{ success?: boolean; message?: string } | null>(null);
   const [cloudStatus, setCloudStatus] = useState<{ success?: boolean; message?: string } | null>(null);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [isCloudSaving, setIsCloudSaving] = useState(false);
 
   const handleCloudSave = async () => {
@@ -37,12 +38,50 @@ export const DataPackEditorView: React.FC = () => {
     const res = await saveCareerToCloud(club.name);
     setCloudStatus(res);
     setIsCloudSaving(false);
+    if (res.success) {
+      toast.success(res.message, isAr ? 'الحفظ السحابي' : 'Cloud Save');
+    } else {
+      toast.error(res.message, isAr ? 'خطأ في الحفظ' : 'Save Error');
+    }
   };
 
   const handleCloudLoad = async (save: any) => {
-    if (!window.confirm(isAr ? `استرجاع مسيرة "${save.clubName}"؟ سيتم استبدال البيانات المحلية.` : `Load save "${save.clubName}"?`)) return;
+    const confirmed = await showConfirm({
+      title: isAr ? 'استرجاع مسيرة من السحابة' : 'Restore Cloud Career',
+      message: isAr 
+        ? `هل تريد استرجاع مسيرة "${save.clubName}"؟ سيتم استبدال البيانات المحلية الحالية.` 
+        : `Load save "${save.clubName}"? Current local data will be replaced.`,
+      confirmLabel: isAr ? 'استرجاع ومتابعة' : 'Load Save',
+      cancelLabel: isAr ? 'إلغاء' : 'Cancel',
+      isDestructive: false
+    });
+
+    if (!confirmed) return;
+
     const res = await loadCareerFromCloud(save);
     setCloudStatus(res);
+    if (res.success) {
+      toast.success(res.message, isAr ? 'تم الاسترجاع' : 'Restored');
+    } else {
+      toast.error(res.message, isAr ? 'فشل الاسترجاع' : 'Restore Failed');
+    }
+  };
+
+  const handleResetCareer = async () => {
+    const confirmed = await showConfirm({
+      title: isAr ? 'إعادة ضبط المسيرة والبدء من جديد' : 'Reset Career & Wipe Save',
+      message: isAr 
+        ? 'تحذير: سيتم حذف كافة البيانات والتقدم المحلي نهائياً وإعادة النادي إلى اليوم الأول. هل أنت متأكد؟'
+        : 'Warning: All local progress will be erased permanently and reset to day 1. Are you sure?',
+      confirmLabel: isAr ? 'نعم، مسح كل شيء' : 'Yes, Wipe Everything',
+      cancelLabel: isAr ? 'إلغاء' : 'Cancel',
+      isDestructive: true
+    });
+
+    if (confirmed) {
+      resetCareer();
+      toast.warning(isAr ? 'تمت إعادة ضبط مسيرة النادي بنجاح' : 'Career reset successfully');
+    }
   };
 
   const handleExport = () => {
@@ -255,32 +294,12 @@ export const DataPackEditorView: React.FC = () => {
           </div>
         </div>
 
-        {showResetConfirm ? (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                resetCareer();
-                setShowResetConfirm(false);
-              }}
-              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs cursor-pointer shadow-lg shadow-rose-600/30"
-            >
-              {isAr ? 'نعم، مسح كل شيء' : 'Yes, Wipe Everything'}
-            </button>
-            <button
-              onClick={() => setShowResetConfirm(false)}
-              className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs"
-            >
-              {isAr ? 'إلغاء' : 'Cancel'}
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowResetConfirm(true)}
-            className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-black cursor-pointer"
-          >
-            {isAr ? 'إعادة تعيين المسيرة' : 'Reset Progress'}
-          </button>
-        )}
+        <button
+          onClick={handleResetCareer}
+          className="px-4 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-black cursor-pointer shadow-lg transition-all"
+        >
+          {isAr ? 'إعادة تعيين المسيرة' : 'Reset Progress'}
+        </button>
       </div>
 
     </div>

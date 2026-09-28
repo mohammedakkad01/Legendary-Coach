@@ -5,11 +5,13 @@
  * Main Application Component: المدرب الأسطورة (The Legendary Coach)
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useGameStore } from './state/useGameStore';
 import { FirebaseProvider, useFirebase } from './firebase/FirebaseContext';
+import { FeedbackProvider } from './context/FeedbackContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
+import { CareerLoopBar } from './components/CareerLoopBar';
 import { DashboardView } from './components/DashboardView';
 import { TacticalBoardView } from './components/TacticalBoardView';
 import { LiveMatchView } from './components/LiveMatchView';
@@ -24,6 +26,8 @@ import { VIPClubView } from './components/VIPClubView';
 import { DataPackEditorView } from './components/DataPackEditorView';
 import { FootballApiView } from './components/FootballApiView';
 import { FootballApiAdminView } from './components/FootballApiAdminView';
+import { AdminConsoleView } from './components/AdminConsoleView';
+import { AdminGuard } from './components/AdminGuard';
 import { AuthModal } from './components/AuthModal';
 import { InitialClubSelectModal } from './components/InitialClubSelectModal';
 import { DailyMissionsModal } from './components/DailyMissionsModal';
@@ -68,40 +72,56 @@ function MainAppLayout() {
       sessionStorage.setItem('has_seen_welcome_prompt', 'true');
       setAuthModalOpen(true);
     }
-  }, [loading, user]);
+  }, [loading, user, setAuthModalOpen]);
+
+  // Determine if this is an admin route
+  const isAdminRoute = activeTab === 'admin' || activeTab === 'football_api' || activeTab === 'editor';
 
   const renderActiveView = () => {
     switch (activeTab) {
       case 'dashboard':
         return <DashboardView />;
-      case 'scout':
-        return <FootballApiView />;
-      case 'football_api':
-        return <FootballApiAdminView />;
+      case 'squad':
+        return <SquadView />;
       case 'tactics':
         return <TacticalBoardView />;
       case 'match':
         return <LiveMatchView />;
-      case 'story':
-        return <StoryMissionsView />;
-      case 'squad':
-        return <SquadView />;
-      case 'training':
-        return <TrainingAcademyView />;
       case 'transfers':
         return <TransfersMarketView />;
+      case 'training':
+        return <TrainingAcademyView />;
       case 'club':
         return <ClubFacilitiesView />;
       case 'league':
         return <LeagueTableView />;
-      case 'calendar':
-        return <LeagueCalendarView />;
       case 'vip':
         return <VIPClubView />;
-      case 'editor':
-        return <DataPackEditorView />;
       case 'round_summary':
         return <RoundSummaryView />;
+      case 'calendar':
+        return <LeagueCalendarView />;
+      case 'story':
+        return <StoryMissionsView />;
+      case 'scout':
+        return <FootballApiView />;
+      
+      // Protected Admin & Developer Routes
+      case 'admin':
+        return <AdminConsoleView />;
+      case 'football_api':
+        return (
+          <AdminGuard requiredPermission="canTriggerApiSync">
+            <FootballApiAdminView />
+          </AdminGuard>
+        );
+      case 'editor':
+        return (
+          <AdminGuard requiredPermission="canEditDataPacks">
+            <DataPackEditorView />
+          </AdminGuard>
+        );
+
       default:
         return <DashboardView />;
     }
@@ -117,6 +137,9 @@ function MainAppLayout() {
 
       {/* Main View Area */}
       <main className="flex-1 pb-16 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4">
+        {/* Core Managerial Career Loop Stepper (for player experience) */}
+        {!isAdminRoute && <CareerLoopBar />}
+
         {renderActiveView()}
       </main>
 
@@ -158,7 +181,9 @@ function MainAppLayout() {
 export default function App() {
   return (
     <FirebaseProvider>
-      <MainAppLayout />
+      <FeedbackProvider>
+        <MainAppLayout />
+      </FeedbackProvider>
     </FirebaseProvider>
   );
 }

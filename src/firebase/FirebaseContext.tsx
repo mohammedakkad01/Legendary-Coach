@@ -25,11 +25,15 @@ import {
 } from './firebase';
 import { useGameStore } from '../state/useGameStore';
 import { persistenceService } from '../services/persistenceService';
+import { UserRoleProfile, resolveUserProfile } from '../types/auth';
 
 interface FirebaseContextType {
   user: User | null;
   loading: boolean;
   isOnline: boolean;
+  roleProfile: UserRoleProfile;
+  isAdmin: boolean;
+  isDeveloper: boolean;
   cloudSaves: CloudSaveMetadata[];
   communityTactics: CloudCommunityTactic[];
   authModalOpen: boolean;
@@ -314,10 +318,17 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
+  const roleProfile = useMemo(() => resolveUserProfile(user), [user]);
+  const isAdmin = roleProfile.isAdmin;
+  const isDeveloper = roleProfile.isDeveloper;
+
   const contextValue = useMemo(() => ({
     user,
     loading,
     isOnline,
+    roleProfile,
+    isAdmin,
+    isDeveloper,
     cloudSaves,
     communityTactics,
     authModalOpen,
@@ -332,7 +343,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     likeTactic,
     refreshTactics,
     redeemGiftCode
-  }), [user, loading, isOnline, authModalOpen, cloudSaves, communityTactics, club, currentSport, vipPoints, storyMissions, language]);
+  }), [user, loading, isOnline, roleProfile, isAdmin, isDeveloper, authModalOpen, cloudSaves, communityTactics, club, currentSport, vipPoints, storyMissions, language]);
 
   return (
     <FirebaseContext.Provider value={contextValue}>

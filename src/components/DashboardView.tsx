@@ -8,6 +8,7 @@
 
 import React from 'react';
 import { useDashboardData } from '../hooks/useDashboardData';
+import { useFeedback } from '../context/FeedbackContext';
 import { DashboardHeaderCard } from './dashboard/DashboardHeaderCard';
 import { DashboardPromotionBanners } from './dashboard/DashboardPromotionBanners';
 import { DashboardReadinessTrio } from './dashboard/DashboardReadinessTrio';
@@ -49,6 +50,7 @@ export const DashboardView: React.FC = () => {
     isLoadingMatch,
     setSeasonFinaleModalOpen,
   } = useDashboardData();
+  const { toast } = useFeedback();
 
   return (
     <div className="max-w-7xl mx-auto p-3 sm:p-6 space-y-6">
@@ -93,7 +95,11 @@ export const DashboardView: React.FC = () => {
         onOpenMissions={() => setDailyMissionsModalOpen(true)}
         onSquadRecovery={() => {
           const res = runSquadRecoverySession();
-          alert(res.message);
+          if (res.success) {
+            toast.success(res.message, isAr ? 'جلسة الاستشفاء' : 'Squad Recovery');
+          } else {
+            toast.error(res.message, isAr ? 'تعذر الاستشفاء' : 'Recovery Failed');
+          }
         }}
       />
 

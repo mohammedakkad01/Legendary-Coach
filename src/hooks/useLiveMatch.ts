@@ -14,6 +14,7 @@ export function useLiveMatch() {
   const { 
     club, 
     activeMatchRecord, 
+    activeMatchHomeTactics,
     isMatchLive, 
     isMatchPaused, 
     matchSpeed, 
@@ -26,6 +27,7 @@ export function useLiveMatch() {
     unlockMatchSpeed2x,
     submitInteractiveDecision, 
     instantSimulateMatch,
+    applyLiveTactics,
     startNewMatch,
     isLoadingMatch,
     postMatchAnalyst,
@@ -71,6 +73,7 @@ export function useLiveMatch() {
   return {
     club,
     record: activeMatchRecord,
+    activeMatchHomeTactics,
     isMatchLive,
     isMatchPaused,
     matchSpeed,
@@ -83,6 +86,7 @@ export function useLiveMatch() {
     unlockMatchSpeed2x,
     submitInteractiveDecision,
     instantSimulateMatch,
+    applyLiveTactics,
     startNewMatch,
     isLoadingMatch,
     postMatchAnalyst,

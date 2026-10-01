@@ -19,12 +19,13 @@
 import type { Player, PlayerPosition, FootballTactics } from '../types/game';
 import type { FootballAttrKey } from '../utils/playerCalculations';
 import { SeededRandom } from './prng';
+import { positionGroupOf } from '../domain/squad/positionTaxonomy';
 
 const attr = (p: Player, key: FootballAttrKey): number => p.attributes[key] ?? p.overall;
 
-const isMidfielder = (pos: PlayerPosition) => pos === 'CDM' || pos === 'CM' || pos === 'CAM';
-const isAttacker = (pos: PlayerPosition) => pos === 'ST' || pos === 'LW' || pos === 'RW';
-const isDefender = (pos: PlayerPosition) => pos === 'CB' || pos === 'LB' || pos === 'RB';
+const isMidfielder = (pos: PlayerPosition) => positionGroupOf(pos) === 'MID';
+const isAttacker = (pos: PlayerPosition) => positionGroupOf(pos) === 'ATT';
+const isDefender = (pos: PlayerPosition) => positionGroupOf(pos) === 'DEF';
 
 export interface TacticalCounterEffect {
   active: boolean;

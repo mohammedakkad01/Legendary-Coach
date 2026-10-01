@@ -2,21 +2,16 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * قائمة مراكز كل تشكيلة (بدون إحداثيات x/y) — مصدر مشترك يُستخدم في
- * حسابات التناغم (utils/teamSynergy.ts) بدل تكرار البيانات.
+ * قائمة مراكز كل تشكيلة (بدون إحداثيات x/y).
  *
- * ملاحظة: يجب أن تبقى هذه القائمة مطابقة لمصفوفة FORMATION_COORDINATES
- * في src/components/TacticalBoardView.tsx (نفس تسميات المراكز لكل تشكيلة).
+ * لم تعد هذه البيانات مكرّرة: المصدر الوحيد هو
+ * src/domain/squad/formations.ts وهذا الملف مجرد عرض مشتق منه للحفاظ على
+ * التوافق مع الاستيرادات القديمة.
  */
 
 import type { FootballFormation } from '../types/game';
+import { FORMATION_DEFINITIONS, FORMATION_IDS } from '../domain/squad/formations';
 
-export const FORMATION_POSITIONS: Record<FootballFormation, string[]> = {
-  '4-3-3': ['GK', 'RB', 'CB', 'CB', 'LB', 'CDM', 'CM', 'CM', 'RW', 'ST', 'LW'],
-  '4-4-2': ['GK', 'RB', 'CB', 'CB', 'LB', 'RM', 'CM', 'CM', 'LM', 'ST', 'ST'],
-  '4-2-3-1': ['GK', 'RB', 'CB', 'CB', 'LB', 'CDM', 'CDM', 'RAM', 'CAM', 'LAM', 'ST'],
-  '3-5-2': ['GK', 'CB', 'CB', 'CB', 'RWB', 'CM', 'CAM', 'CM', 'LWB', 'ST', 'ST'],
-  '5-3-2': ['GK', 'RWB', 'CB', 'CB', 'CB', 'LWB', 'CM', 'CDM', 'CM', 'ST', 'ST'],
-  '4-1-4-1': ['GK', 'RB', 'CB', 'CB', 'LB', 'CDM', 'RM', 'CM', 'CM', 'LM', 'ST'],
-  '3-4-3': ['GK', 'CB', 'CB', 'CB', 'RM', 'CM', 'CM', 'LM', 'RW', 'ST', 'LW'],
-};
+export const FORMATION_POSITIONS: Record<FootballFormation, string[]> = Object.fromEntries(
+  FORMATION_IDS.map((id) => [id, FORMATION_DEFINITIONS[id].slots.map((s) => s.label)]),
+) as Record<FootballFormation, string[]>;

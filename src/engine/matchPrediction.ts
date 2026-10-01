@@ -11,18 +11,16 @@
  * moves; face a stronger opponent and the odds swing accordingly.
  */
 
-import { Player, PlayerPosition } from '../types/game';
+import { Club, Player, PlayerPosition } from '../types/game';
 
-type Group = 'GK' | 'DEF' | 'MID' | 'ATT';
+import { positionGroupOf } from '../domain/squad/positionTaxonomy';
+import type { PositionGroup as Group } from '../domain/squad/positionTaxonomy';
+import { evaluatePositionSuitability } from '../domain/squad/positionSuitability';
+import { getFormation } from '../domain/squad/formations';
 
-const groupOf = (pos: PlayerPosition): Group => {
-  switch (pos) {
-    case 'GK': return 'GK';
-    case 'CB': case 'LB': case 'RB': return 'DEF';
-    case 'CDM': case 'CM': case 'CAM': return 'MID';
-    default: return 'ATT';
-  }
-};
+// Single taxonomy lives in domain/squad/positionTaxonomy.ts. Non-football
+// positions keep this file's historical fallback (attack).
+const groupOf = (pos: PlayerPosition): Group => positionGroupOf(pos) ?? 'ATT';
 
 // How much each position group contributes to attacking / defending strength.
 const ATTACK_WEIGHT: Record<Group, number> = { ATT: 1.0, MID: 0.6, DEF: 0.2, GK: 0.0 };
@@ -42,25 +40,72 @@ const defenseRating = (p: Player): number => {
   return core * 0.5 + (a.physical ?? p.overall) * 0.2 + p.overall * 0.3;
 };
 
-const weightedAverage = (players: Player[], rate: (p: Player) => number, weights: Record<Group, number>): number => {
+/**
+ * A starting-XI member paired with the formation slot he is ACTUALLY playing
+ * (its label, e.g. 'CDM', 'LWB' — see domain/squad/formations.ts), not just
+ * his natural position. Both the role weight (attacker vs defender) and the
+ * suitability penalty below are driven by this assigned slot: a natural
+ * center-back fielded at striker contributes like a (weak) striker, not like
+ * a great center-back who happens to be miscounted as an attacker.
+ */
+export interface SlotAssignment {
+  readonly player: Player;
+  readonly assignedPosition: string;
+}
+
+/** Wraps players at their own natural position — used where no formation slot is known (e.g. a synthetic fallback XI). */
+export const atNaturalPositions = (players: readonly Player[]): SlotAssignment[] =>
+  players.map((player) => ({ player, assignedPosition: player.position }));
+
+/**
+ * A club's REAL starting XI, each player paired with the formation slot he is
+ * actually in (club.footballLineup[i] ↔ that formation's slot i). The single
+ * place this pairing is built — the pre-match odds preview (useGameStore's
+ * nextMatchInsight) and the live match engine both call this, so a player who
+ * is out of position shows the same reduced power in both.
+ *
+ * Falls back to the first 11 squad members at their own natural position if
+ * the lineup has fewer than 7 real starters (an unfinished/corrupted squad) —
+ * the same safety net the engine has always had for a degenerate lineup.
+ */
+export function buildSlotAssignments(club: Club): SlotAssignment[] {
+  const formation = getFormation(club.footballTactics.formation);
+  const assignments: SlotAssignment[] = [];
+  club.footballLineup.forEach((id, slotIndex) => {
+    if (!id) return; // empty slot
+    const player = club.footballSquad.find((p) => p.id === id);
+    const label = formation.slots[slotIndex]?.label;
+    if (player && label) assignments.push({ player, assignedPosition: label });
+  });
+  if (assignments.length >= 7) return assignments;
+  return atNaturalPositions(club.footballSquad.slice(0, 11));
+}
+
+const weightedAverage = (
+  assignments: readonly SlotAssignment[],
+  rate: (p: Player) => number,
+  weights: Record<Group, number>,
+): number => {
   let sum = 0;
   let wSum = 0;
-  for (const p of players) {
-    const w = weights[groupOf(p.position)];
+  for (const { player: p, assignedPosition } of assignments) {
+    const suitability = evaluatePositionSuitability(p, assignedPosition);
+    const group = groupOf(suitability.assignedCore ?? p.position);
+    const w = weights[group];
     if (w <= 0) continue;
     // An unavailable player (injured/suspended) contributes nothing.
     const available = (p.injuredWeeks || 0) > 0 || (p.suspendedMatches || 0) > 0 ? 0.6 : 1;
-    sum += rate(p) * w * available;
+    sum += rate(p) * suitability.multiplier * w * available;
     wSum += w;
   }
   return wSum > 0 ? sum / wSum : 0;
 };
 
-/** Attack power (0-99) of a starting XI, position-aware. */
-export const calcAttackPower = (xi: Player[]): number => Math.round(weightedAverage(xi, attackRating, ATTACK_WEIGHT));
+/** Attack power (0-99) of a starting XI, position-aware — a player out of his assigned slot contributes less. */
+export const calcAttackPower = (xi: readonly SlotAssignment[]): number => Math.round(weightedAverage(xi, attackRating, ATTACK_WEIGHT));
 
-/** Defense power (0-99) of a starting XI, position-aware (GK + defenders matter most). */
-export const calcDefensePower = (xi: Player[]): number => Math.round(weightedAverage(xi, defenseRating, DEFENSE_WEIGHT));
+/** Defense power (0-99) of a starting XI, position-aware (GK + defenders matter most; also slot-penalized). */
+export const calcDefensePower = (xi: readonly SlotAssignment[]): number => Math.round(weightedAverage(xi, defenseRating, DEFENSE_WEIGHT));
 
 export interface MatchOdds {
   win: number;   // %

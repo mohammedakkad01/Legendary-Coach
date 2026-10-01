@@ -6,108 +6,27 @@
  * Formations, tactical mentalities, drag/click player swaps, role assignments.
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useGameStore } from '../state/useGameStore';
+import { useFeedback } from '../context/FeedbackContext';
 import { FootballFormation, MatchMentality, PressingStyle, PassingStyle, TeamTempo } from '../types/game';
-import { Shield, Sparkles, ChevronRight, UserCheck, Flame, Crown, Lock } from 'lucide-react';
+import { Shield, Sparkles, UserCheck, Flame, Crown, Lock } from 'lucide-react';
 import { VIP_LEVELS } from '../data/vipData';
-import { getEffectivePlayerRating } from '../utils/playerCalculations';
+import { getFormation } from '../domain/squad/formations';
+import { createSquadState } from '../domain/squad/squadStateAdapter';
+import { getAssignments, getBenchIds } from '../domain/squad/squadQueries';
+import { computeEffectiveRating } from '../domain/squad/positionSuitability';
+import type { MoveTarget, SquadLocation } from '../domain/squad/squadTypes';
+import { useSquadDnd } from '../hooks/squadDnd/useSquadDnd';
+import { PitchPlayerNode } from './squad/PitchPlayerNode';
+import { RosterPlayerRow } from './squad/RosterPlayerRow';
+import { SectionDropStrip } from './squad/SectionDropStrip';
+import { DragGhost } from './squad/DragGhost';
+import { SquadAriaLive } from './squad/SquadAriaLive';
+import { PlayerInfoPanel } from './squad/PlayerInfoPanel';
+import { SQUAD_DND_TEXT, moveErrorText, pick } from '../i18n/squad';
 import { simulateMatchRound, MatchRoundResult } from '../engine/tacticalMatchEngine';
 import type { Player } from '../types/game';
-
-const FORMATION_COORDINATES: Record<FootballFormation, { x: number; y: number; pos: string }[]> = {
-  '4-3-3': [
-    { x: 50, y: 88, pos: 'GK' },
-    { x: 15, y: 70, pos: 'RB' },
-    { x: 38, y: 72, pos: 'CB' },
-    { x: 62, y: 72, pos: 'CB' },
-    { x: 85, y: 70, pos: 'LB' },
-    { x: 50, y: 52, pos: 'CDM' },
-    { x: 30, y: 44, pos: 'CM' },
-    { x: 70, y: 44, pos: 'CM' },
-    { x: 18, y: 22, pos: 'RW' },
-    { x: 50, y: 16, pos: 'ST' },
-    { x: 82, y: 22, pos: 'LW' },
-  ],
-  '4-4-2': [
-    { x: 50, y: 88, pos: 'GK' },
-    { x: 15, y: 70, pos: 'RB' },
-    { x: 38, y: 72, pos: 'CB' },
-    { x: 62, y: 72, pos: 'CB' },
-    { x: 85, y: 70, pos: 'LB' },
-    { x: 16, y: 46, pos: 'RM' },
-    { x: 38, y: 48, pos: 'CM' },
-    { x: 62, y: 48, pos: 'CM' },
-    { x: 84, y: 46, pos: 'LM' },
-    { x: 38, y: 18, pos: 'ST' },
-    { x: 62, y: 18, pos: 'ST' },
-  ],
-  '4-2-3-1': [
-    { x: 50, y: 88, pos: 'GK' },
-    { x: 15, y: 70, pos: 'RB' },
-    { x: 38, y: 72, pos: 'CB' },
-    { x: 62, y: 72, pos: 'CB' },
-    { x: 85, y: 70, pos: 'LB' },
-    { x: 35, y: 56, pos: 'CDM' },
-    { x: 65, y: 56, pos: 'CDM' },
-    { x: 20, y: 36, pos: 'RAM' },
-    { x: 50, y: 34, pos: 'CAM' },
-    { x: 80, y: 36, pos: 'LAM' },
-    { x: 50, y: 16, pos: 'ST' },
-  ],
-  '3-5-2': [
-    { x: 50, y: 88, pos: 'GK' },
-    { x: 25, y: 72, pos: 'CB' },
-    { x: 50, y: 74, pos: 'CB' },
-    { x: 75, y: 72, pos: 'CB' },
-    { x: 12, y: 48, pos: 'RWB' },
-    { x: 36, y: 50, pos: 'CM' },
-    { x: 50, y: 42, pos: 'CAM' },
-    { x: 64, y: 50, pos: 'CM' },
-    { x: 88, y: 48, pos: 'LWB' },
-    { x: 38, y: 18, pos: 'ST' },
-    { x: 62, y: 18, pos: 'ST' },
-  ],
-  '5-3-2': [
-    { x: 50, y: 88, pos: 'GK' },
-    { x: 12, y: 68, pos: 'RWB' },
-    { x: 30, y: 74, pos: 'CB' },
-    { x: 50, y: 75, pos: 'CB' },
-    { x: 70, y: 74, pos: 'CB' },
-    { x: 88, y: 68, pos: 'LWB' },
-    { x: 30, y: 48, pos: 'CM' },
-    { x: 50, y: 50, pos: 'CDM' },
-    { x: 70, y: 48, pos: 'CM' },
-    { x: 38, y: 18, pos: 'ST' },
-    { x: 62, y: 18, pos: 'ST' },
-  ],
-  '4-1-4-1': [
-    { x: 50, y: 88, pos: 'GK' },
-    { x: 15, y: 70, pos: 'RB' },
-    { x: 38, y: 72, pos: 'CB' },
-    { x: 62, y: 72, pos: 'CB' },
-    { x: 85, y: 70, pos: 'LB' },
-    { x: 50, y: 56, pos: 'CDM' },
-    { x: 16, y: 38, pos: 'RM' },
-    { x: 38, y: 40, pos: 'CM' },
-    { x: 62, y: 40, pos: 'CM' },
-    { x: 84, y: 38, pos: 'LM' },
-    { x: 50, y: 18, pos: 'ST' },
-  ],
-  '3-4-3': [
-    { x: 50, y: 88, pos: 'GK' },
-    { x: 25, y: 72, pos: 'CB' },
-    { x: 50, y: 74, pos: 'CB' },
-    { x: 75, y: 72, pos: 'CB' },
-    { x: 15, y: 48, pos: 'RM' },
-    { x: 38, y: 50, pos: 'CM' },
-    { x: 62, y: 50, pos: 'CM' },
-    { x: 85, y: 48, pos: 'LM' },
-    { x: 20, y: 22, pos: 'RW' },
-    { x: 50, y: 16, pos: 'ST' },
-    { x: 80, y: 22, pos: 'LW' },
-  ],
-};
 
 interface FormationItem {
   id: FootballFormation;
@@ -126,7 +45,8 @@ const ALL_FORMATIONS: FormationItem[] = [
 ];
 
 export const TacticalBoardView: React.FC = () => {
-  const { club, updateFootballTactics, swapFootballLineup, setFootballRoles, language, startNewMatch, vipPoints, setActiveTab, savedTacticalPlans, saveTacticalPlan, loadTacticalPlan, deleteTacticalPlan, moveToBench, getTeamSynergy, nextMatchInsight } = useGameStore();
+  const { club, updateFootballTactics, setFootballRoles, language, startNewMatch, vipPoints, setActiveTab, savedTacticalPlans, saveTacticalPlan, loadTacticalPlan, deleteTacticalPlan, moveSquadEntity, getTeamSynergy, nextMatchInsight } = useGameStore();
+  const { toast } = useFeedback();
   const isAr = language === 'ar';
   const tactics = club.footballTactics;
 
@@ -139,15 +59,48 @@ export const TacticalBoardView: React.FC = () => {
   }
   const vipLevel = currentVipTier.level;
 
-  const [selectedSlotIndex, setSelectedSlotIndex] = useState<number | null>(null);
   const [formationLockWarning, setFormationLockWarning] = useState<string | null>(null);
   const [newPlanName, setNewPlanName] = useState('');
   const [planFeedback, setPlanFeedback] = useState<string | null>(null);
   const maxPlanSlots = currentVipTier.maxSavedTacticalPlans || 0;
   const maxBenchSlots = currentVipTier.maxBenchSlots || 5;
-  const [benchFeedback, setBenchFeedback] = useState<string | null>(null);
   const [roundPreview, setRoundPreview] = useState<MatchRoundResult | null>(null);
   const [roundPreviewError, setRoundPreviewError] = useState<string | null>(null);
+  const [infoPlayerId, setInfoPlayerId] = useState<string | null>(null);
+
+  // Squad domain state, derived fresh from the club each render (see
+  // domain/squad/squadStateAdapter.ts — tolerant of a short/legacy lineup).
+  const { state: squadState } = useMemo(
+    () => createSquadState(club, { maxSubstitutes: maxBenchSlots }),
+    [club.footballSquad, club.footballLineup, club.footballBench, club.footballTactics.formation, maxBenchSlots],
+  );
+  const assignments = useMemo(() => getAssignments(squadState), [squadState]);
+  const assignmentByPlayerId = useMemo(() => new Map(assignments.map((a) => [a.playerId, a])), [assignments]);
+  const benchIds = useMemo(() => getBenchIds(squadState), [squadState]);
+
+  const dnd = useSquadDnd({
+    squadState,
+    onMove: (playerId, target) => moveSquadEntity(playerId, target),
+    describeOutcome: (playerId, target, result) => {
+      const name = squadState.players.get(playerId);
+      const label = name ? (isAr ? (club.footballSquad.find((p) => p.id === playerId)?.name ?? playerId) : (club.footballSquad.find((p) => p.id === playerId)?.nameEn ?? playerId)) : playerId;
+      if (!result.ok) {
+        const message = moveErrorText(result.error, isAr);
+        toast.error(message);
+        return message;
+      }
+      if (result.value.kind === 'noop') return isAr ? 'تم إلغاء التحديد.' : 'Selection cancelled.';
+      const displaced = result.value.displacedPlayerId
+        ? club.footballSquad.find((p) => p.id === result.value.displacedPlayerId)
+        : null;
+      const displacedName = displaced ? (isAr ? displaced.name : displaced.nameEn) : null;
+      const message = displacedName
+        ? (isAr ? `تم تبديل ${label} مع ${displacedName}.` : `${label} swapped with ${displacedName}.`)
+        : (isAr ? `تم نقل ${label}.` : `${label} moved.`);
+      void target;
+      return message;
+    },
+  });
 
   const handlePreviewRound = () => {
     setRoundPreview(null);
@@ -172,12 +125,6 @@ export const TacticalBoardView: React.FC = () => {
     setRoundPreview(result);
   };
 
-  const handleMoveToBench = (playerId: string) => {
-    const res = moveToBench(playerId);
-    setBenchFeedback(res.message);
-    setTimeout(() => setBenchFeedback(null), 3500);
-  };
-
   const handleSavePlan = () => {
     const res = saveTacticalPlan(newPlanName);
     setPlanFeedback(res.message);
@@ -191,28 +138,28 @@ export const TacticalBoardView: React.FC = () => {
     setTimeout(() => setPlanFeedback(null), 3000);
   };
 
-  const lineupPlayers = club.footballLineup.map((id, index) => {
-    const player = club.footballSquad.find(p => p.id === id);
-    return { player, slotIndex: index };
-  });
+  const formationDef = getFormation(squadState.formation);
+  // Naming matches the rest of this file (and the original UI copy): "bench"
+  // here means the matchday substitutes bench (club.footballBench), and
+  // "reserves" means squad members on neither the XI nor that bench.
+  const benchPlayers = squadState.substitutes
+    .map((id) => club.footballSquad.find((p) => p.id === id))
+    .filter((p): p is Player => !!p);
+  const reservePlayers = benchIds
+    .map((id) => club.footballSquad.find((p) => p.id === id))
+    .filter((p): p is Player => !!p);
 
-  const benchPlayers = club.footballBench.map(id => club.footballSquad.find(p => p.id === id)).filter(Boolean);
-  const reservePlayers = club.footballSquad.filter(
-    p => !club.footballLineup.includes(p.id) && !club.footballBench.includes(p.id)
-  );
-
-  const coords = FORMATION_COORDINATES[tactics.formation] || FORMATION_COORDINATES['4-3-3'];
-
-  // Average Rating — يعتمد على التقييم الفعّال حسب مركز كل لاعب في التشكيلة الحالية
-  const validPlayers = lineupPlayers.map(lp => lp.player).filter(Boolean);
-  const avgOverall = validPlayers.length > 0
-    ? Math.round(
-        lineupPlayers.reduce((acc, lp) => {
-          if (!lp.player) return acc;
-          const assignedPos = coords[lp.slotIndex]?.pos ?? lp.player.position;
-          return acc + getEffectivePlayerRating(lp.player, assignedPos);
-        }, 0) / validPlayers.length
-      )
+  // Average Rating — التقييم الفعّال الحقيقي لكل لاعب حسب خانته الحالية (نفس دالة الشارة والتحذير)
+  const startingBreakdowns = squadState.slots
+    .map((id, slotIndex) => {
+      const player = id ? club.footballSquad.find((p) => p.id === id) : undefined;
+      if (!player) return null;
+      const label = formationDef.slots[slotIndex]?.label ?? player.position;
+      return computeEffectiveRating(player, label);
+    })
+    .filter((b): b is NonNullable<typeof b> => !!b);
+  const avgOverall = startingBreakdowns.length > 0
+    ? Math.round(startingBreakdowns.reduce((acc, b) => acc + b.effective, 0) / startingBreakdowns.length)
     : 65;
 
   const teamSynergy = getTeamSynergy();
@@ -237,22 +184,35 @@ export const TacticalBoardView: React.FC = () => {
     updateFootballTactics({ formation: item.id });
   };
 
-  const handleSlotClick = (index: number) => {
-    if (selectedSlotIndex === index) {
-      setSelectedSlotIndex(null);
-    } else {
-      setSelectedSlotIndex(index);
-    }
-  };
-
-  const handleBenchSwap = (benchPlayerId: string) => {
-    if (selectedSlotIndex !== null) {
-      swapFootballLineup(selectedSlotIndex, benchPlayerId);
-      setSelectedSlotIndex(null);
-    }
-  };
+  const infoPlayer = infoPlayerId ? club.footballSquad.find((p) => p.id === infoPlayerId) ?? null : null;
+  const infoAssignment = infoPlayerId ? assignmentByPlayerId.get(infoPlayerId) ?? null : null;
 
   return (
+    <>
+      {(() => {
+        const dragState = dnd.state;
+        if (dragState.phase !== 'dragging') return null;
+        const draggedPlayer = club.footballSquad.find((p) => p.id === dragState.playerId);
+        if (!draggedPlayer) return null;
+        const draggedAssignment = assignmentByPlayerId.get(draggedPlayer.id);
+        const rating = draggedAssignment?.suitability
+          ? computeEffectiveRating(draggedPlayer, draggedAssignment.assignedPosition ?? draggedPlayer.position).effective
+          : draggedPlayer.overall;
+        return (
+          <DragGhost
+            ref={dnd.ghostRef}
+            rating={rating}
+            label={isAr ? draggedPlayer.name : draggedPlayer.nameEn}
+            startX={dragState.x}
+            startY={dragState.y}
+          />
+        );
+      })()}
+
+      {infoPlayer && infoAssignment && (
+        <PlayerInfoPanel player={infoPlayer} assignment={infoAssignment} isAr={isAr} onClose={() => setInfoPlayerId(null)} />
+      )}
+
     <div className="max-w-7xl mx-auto p-3 sm:p-6 space-y-6">
       
       {/* Header Info */}
@@ -393,64 +353,50 @@ export const TacticalBoardView: React.FC = () => {
             </div>
 
             {/* Player Nodes on Pitch */}
-            {coords.map((coord, idx) => {
-              const player = lineupPlayers[idx]?.player;
-              const isSelected = selectedSlotIndex === idx;
+            {formationDef.slots.map((slot, idx) => {
+              const playerId = squadState.slots[idx];
+              const player = playerId ? club.footballSquad.find((p) => p.id === playerId) : undefined;
+              const target: MoveTarget = { section: 'starting', slotIndex: idx };
+              const location: SquadLocation = { section: 'starting', slotIndex: idx };
+              const isPicked = dnd.state.phase !== 'idle' && dnd.state.playerId === playerId;
+              const isHoverTarget = dnd.state.phase === 'dragging' && !!dnd.state.hoverTarget
+                && dnd.state.hoverTarget.section === 'starting' && dnd.state.hoverTarget.slotIndex === idx;
+              const breakdown = player ? computeEffectiveRating(player, slot.label) : null;
 
               return (
-                <div
+                <PitchPlayerNode
                   key={idx}
-                  onClick={() => handleSlotClick(idx)}
-                  className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center cursor-pointer transition-all duration-300 ${
-                    isSelected ? 'scale-115 z-30' : 'hover:scale-105 z-20'
-                  }`}
-                  style={{ left: `${coord.x}%`, top: `${coord.y}%` }}
-                >
-                  {/* Circular Player Disc */}
-                  <div className={`relative w-11 h-11 sm:w-13 sm:h-13 rounded-full flex items-center justify-center font-black text-sm shadow-xl transition-all ${
-                    isSelected
-                      ? 'bg-amber-400 text-slate-950 ring-4 ring-amber-300 shadow-amber-500/50'
-                      : 'bg-gradient-to-br from-sky-500 to-indigo-700 text-white border-2 border-white/80'
-                  }`}>
-                    {player ? (
-                      <span className="font-heading font-black">{getEffectivePlayerRating(player, coord.pos)}</span>
-                    ) : (
-                      <span className="text-xs text-slate-400">{coord.pos}</span>
-                    )}
-
-                    {/* Captain Badge */}
-                    {tactics.captainId === player?.id && (
-                      <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-amber-500 text-slate-950 font-black text-[9px] flex items-center justify-center border border-white">
-                        C
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Player Label Card */}
-                  <div className={`mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-center leading-tight whitespace-nowrap shadow-md max-w-[85px] truncate ${
-                    isSelected 
-                      ? 'bg-amber-400 text-slate-950' 
-                      : 'bg-slate-950/85 text-white border border-slate-700/60'
-                  }`}>
-                    {player ? (isAr ? player.name : player.nameEn) : coord.pos}
-                  </div>
-                </div>
+                  x={slot.x}
+                  y={slot.y}
+                  slotLabel={slot.label}
+                  target={target}
+                  player={player ?? null}
+                  breakdown={breakdown}
+                  isCaptain={!!player && tactics.captainId === player.id}
+                  isPicked={isPicked}
+                  isHoverTarget={isHoverTarget}
+                  isAr={isAr}
+                  handleProps={player ? dnd.getCardHandleProps(player.id, location, isAr ? player.name : player.nameEn) : null}
+                  dropZoneProps={!player ? dnd.getDropZoneProps(target, isAr ? `خانة ${slot.label} الفارغة` : `Empty ${slot.label} slot`) : null}
+                  onOpenInfo={() => player && setInfoPlayerId(player.id)}
+                />
               );
             })}
           </div>
 
           {/* Swap Instruction Hint */}
-          {selectedSlotIndex !== null && (
+          {dnd.state.phase === 'picked' && (
             <div className="bg-amber-500/20 border border-amber-500/40 p-3 rounded-xl flex items-center justify-between text-xs text-amber-300 animate-pulse">
-              <span>{isAr ? 'تم تحديد اللاعب. اضغط على أي لاعب بديل في القائمة بالأسفل للتبديل معه.' : 'Player selected. Click any bench player on the right to swap positions.'}</span>
-              <button 
-                onClick={() => setSelectedSlotIndex(null)}
+              <span>{pick(SQUAD_DND_TEXT.pickedHint, isAr)}</span>
+              <button
+                onClick={dnd.cancel}
                 className="font-bold underline text-white"
               >
-                {isAr ? 'إلغاء' : 'Cancel'}
+                {pick(SQUAD_DND_TEXT.cancel, isAr)}
               </button>
             </div>
           )}
+          <SquadAriaLive message={dnd.announcement} />
         </div>
 
         {/* Tactics & Bench Controls (5 Cols) */}
@@ -597,52 +543,42 @@ export const TacticalBoardView: React.FC = () => {
               <span className="text-xs text-slate-400">{benchPlayers.length}/{maxBenchSlots} {isAr ? 'خانات' : 'slots'}</span>
             </h3>
 
-            <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
-              {benchPlayers.map((player) => {
-                if (!player) return null;
-                const isSelected = selectedSlotIndex !== null;
-
+            <div
+              data-drop-target="substitutes"
+              className="space-y-2 max-h-[260px] overflow-y-auto pr-1 rounded-xl"
+            >
+              {benchPlayers.length === 0 && (
+                <p className="text-[11px] text-slate-500 text-center py-3">{isAr ? 'لا يوجد بدلاء بعد' : 'No substitutes yet'}</p>
+              )}
+              {benchPlayers.map((player, index) => {
+                const target: MoveTarget = { section: 'substitutes', index };
+                const location: SquadLocation = { section: 'substitutes', index };
+                const isPicked = dnd.state.phase !== 'idle' && dnd.state.playerId === player.id;
+                const isHoverTarget = dnd.state.phase === 'dragging' && dnd.state.hoverTarget?.section === 'substitutes' && dnd.state.hoverTarget.index === index;
                 return (
-                  <div
+                  <RosterPlayerRow
                     key={player.id}
-                    onClick={() => handleBenchSwap(player.id)}
-                    className={`p-2 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-amber-950/40 border-amber-500/50 hover:bg-amber-900/60'
-                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center font-black text-xs text-white">
-                        {player.overall}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-white">
-                            {isAr ? player.name : player.nameEn}
-                          </span>
-                          <span className="text-[10px] text-slate-400">{player.nationalityFlag}</span>
-                        </div>
-                        <span className="text-[10px] text-sky-400 font-semibold">{player.position}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="text-right">
-                        <span className="text-[10px] text-slate-400 block">{isAr ? 'اللياقة' : 'Stamina'}</span>
-                        <span className="text-xs font-bold text-emerald-400">{player.stamina}%</span>
-                      </div>
-                      {isSelected && (
-                        <ChevronRight className="w-4 h-4 text-amber-400 animate-bounce" />
-                      )}
-                    </div>
-                  </div>
+                    player={player}
+                    target={target}
+                    isPicked={isPicked}
+                    isHoverTarget={isHoverTarget}
+                    isAr={isAr}
+                    handleProps={dnd.getCardHandleProps(player.id, location, isAr ? player.name : player.nameEn)}
+                    onOpenInfo={() => setInfoPlayerId(player.id)}
+                  />
                 );
               })}
+              {benchPlayers.length < maxBenchSlots && dnd.state.phase !== 'idle' && (
+                <SectionDropStrip
+                  dropZoneProps={dnd.getDropZoneProps({ section: 'substitutes' }, isAr ? 'إضافة إلى دكة البدلاء' : 'Add to substitutes bench')}
+                  isHoverTarget={dnd.state.phase === 'dragging' && dnd.state.hoverTarget?.section === 'substitutes' && dnd.state.hoverTarget.index === undefined}
+                  label={pick(SQUAD_DND_TEXT.dropHere, isAr)}
+                />
+              )}
             </div>
 
             {/* Reserves not yet on the matchday bench */}
-            {reservePlayers.length > 0 && (
+            {(reservePlayers.length > 0 || dnd.state.phase !== 'idle') && (
               <div className="pt-2 border-t border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold text-slate-400">
@@ -654,42 +590,32 @@ export const TacticalBoardView: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                <div data-drop-target="bench" className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1 rounded-xl">
                   {reservePlayers.map((player) => {
-                    if (!player) return null;
-                    const isFull = benchPlayers.length >= maxBenchSlots;
+                    const target: MoveTarget = { section: 'bench' };
+                    const location: SquadLocation = { section: 'bench' };
+                    const isPicked = dnd.state.phase !== 'idle' && dnd.state.playerId === player.id;
                     return (
-                      <div
+                      <RosterPlayerRow
                         key={player.id}
-                        className="p-2 rounded-xl border border-slate-800/70 bg-slate-950/40 flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-md bg-slate-800 flex items-center justify-center font-black text-[10px] text-slate-300">
-                            {player.overall}
-                          </div>
-                          <span className="text-[11px] font-bold text-slate-300">{isAr ? player.name : player.nameEn}</span>
-                        </div>
-                        <button
-                          onClick={() => handleMoveToBench(player.id)}
-                          disabled={isFull}
-                          className={`px-2 py-1 rounded-lg text-[10px] font-black ${
-                            isFull
-                              ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
-                              : 'bg-sky-600 hover:bg-sky-500 text-white'
-                          }`}
-                        >
-                          {isAr ? 'إضافة للدكة' : 'To Bench'}
-                        </button>
-                      </div>
+                        player={player}
+                        target={target}
+                        isPicked={isPicked}
+                        isHoverTarget={false}
+                        isAr={isAr}
+                        handleProps={dnd.getCardHandleProps(player.id, location, isAr ? player.name : player.nameEn)}
+                        onOpenInfo={() => setInfoPlayerId(player.id)}
+                      />
                     );
                   })}
+                  {dnd.state.phase !== 'idle' && (
+                    <SectionDropStrip
+                      dropZoneProps={dnd.getDropZoneProps({ section: 'bench' }, isAr ? 'إرجاع إلى الاحتياط' : 'Send to reserves')}
+                      isHoverTarget={dnd.state.phase === 'dragging' && dnd.state.hoverTarget?.section === 'bench'}
+                      label={pick(SQUAD_DND_TEXT.dropHere, isAr)}
+                    />
+                  )}
                 </div>
-              </div>
-            )}
-
-            {benchFeedback && (
-              <div className="p-2 rounded-xl bg-sky-950/60 border border-sky-500/40 text-sky-200 text-[11px] font-bold text-center">
-                {benchFeedback}
               </div>
             )}
           </div>
@@ -783,5 +709,6 @@ export const TacticalBoardView: React.FC = () => {
       </div>
 
     </div>
+    </>
   );
 };

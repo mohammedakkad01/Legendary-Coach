@@ -57,6 +57,8 @@ export const MatchCommentaryFeed: React.FC<MatchCommentaryFeedProps> = ({
                   ? 'bg-amber-950/40 border-amber-500/40 text-amber-200'
                   : ev.type === 'interactive_moment'
                   ? 'bg-sky-950/40 border-sky-500/40 text-sky-200'
+                  : ev.type === 'tactical_change'
+                  ? 'bg-violet-950/40 border-violet-500/40 text-violet-200'
                   : 'bg-slate-950/60 border-slate-800/80 text-slate-300'
               }`}
             >

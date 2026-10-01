@@ -14,6 +14,8 @@
  */
 
 import type { Player, PlayerAttributes, PlayerPosition } from '../types/game';
+import { computeEffectiveRating } from '../domain/squad/positionSuitability';
+import { normalizeSlot as normalizeSlotImpl } from '../domain/squad/positionTaxonomy';
 
 // -----------------------------------------------------------------------
 // الخطوة 1: حساب الـ Overall حسب أوزان كل مركز
@@ -63,82 +65,22 @@ export function calculateOverall(attributes: PlayerAttributes, naturalPosition: 
 // -----------------------------------------------------------------------
 // الخطوة 2: عقوبة المركز (Out of Position Penalty)
 // -----------------------------------------------------------------------
+// منطق التوافق انتقل بلا أي تغيير في الأرقام إلى المصدر الوحيد:
+//   - domain/squad/positionTaxonomy.ts   (عائلات المراكز وتطبيع الخانات)
+//   - domain/squad/positionSuitability.ts (التوافق + تفصيل الأسباب)
+//   - config/gameTuning.ts               (الأرقام نفسها)
+// وتبقى الدالتان أدناه كواجهة متوافقة مع كل الاستدعاءات القديمة.
 
-/** تجميع المراكز إلى "عائلات" على خط تصاعدي من حارس المرمى حتى المهاجم. */
-type PositionFamily = 'GK' | 'DEF_CENTRAL' | 'DEF_WIDE' | 'MID_DEF' | 'MID_CENTRAL' | 'MID_ATT' | 'WIDE_ATT' | 'ST';
-
-const FAMILY_OF: Record<PlayerPosition, PositionFamily | null> = {
-  GK: 'GK',
-  CB: 'DEF_CENTRAL',
-  LB: 'DEF_WIDE', RB: 'DEF_WIDE',
-  CDM: 'MID_DEF',
-  CM: 'MID_CENTRAL',
-  CAM: 'MID_ATT',
-  LW: 'WIDE_ATT', RW: 'WIDE_ATT',
-  ST: 'ST',
-  PG: null, SG: null, SF: null, PF: null, C: null,
-};
-
-// ترتيب العائلات على "خط الملعب" من الدفاع إلى الهجوم، لحساب المسافة بينها
-const FAMILY_ORDER: PositionFamily[] = ['GK', 'DEF_CENTRAL', 'DEF_WIDE', 'MID_DEF', 'MID_CENTRAL', 'MID_ATT', 'WIDE_ATT', 'ST'];
-
-/**
- * مراكز لوحة التكتيكات (formation slots) أوسع من PlayerPosition الرسمية
- * (تشمل LWB/RWB/LM/RM/LAM/RAM). نطبّعها هنا إلى أقرب مركز رسمي مكافئ
- * لغرض حساب التوافق فقط.
- */
-const SLOT_ALIASES: Record<string, PlayerPosition> = {
-  LWB: 'LB', RWB: 'RB',
-  LM: 'LW', RM: 'RW',
-  LAM: 'CAM', RAM: 'CAM',
-};
-
+/** تطبيع اسم خانة التشكيلة (LWB/RM/…) إلى أقرب مركز رسمي — يُفوَّض للمصدر الوحيد. */
 export function normalizeSlot(assignedPosition: string): PlayerPosition | null {
-  const upper = assignedPosition.toUpperCase();
-  if (upper in FAMILY_OF) return upper as PlayerPosition;
-  return SLOT_ALIASES[upper] ?? null;
-}
-
-/** نسبة الكفاءة (0-1) حسب توافق المركز فقط، قبل تعديلات الإرهاق/المعنويات. */
-function getPositionCompatibility(natural: PlayerPosition, secondaryPositions: PlayerPosition[], assignedPosition: string): number {
-  const assignedCore = normalizeSlot(assignedPosition);
-  if (!assignedCore) return 0.65; // مركز غير معروف — افتراض متوسط آمن
-
-  if (assignedCore === natural) return 1.0;
-
-  // حارس مرمى يلعب في الملعب، أو العكس: عقوبة قصوى بغض النظر عن أي شيء آخر
-  if (natural === 'GK' || assignedCore === 'GK') return 0.15;
-
-  // مركز ثانوي مصرّح به للاعب: توافق قريب مضمون
-  if (secondaryPositions.includes(assignedCore)) return 0.85;
-
-  const naturalFamily = FAMILY_OF[natural];
-  const assignedFamily = FAMILY_OF[assignedCore];
-  if (!naturalFamily || !assignedFamily) return 0.65;
-
-  const distance = Math.abs(FAMILY_ORDER.indexOf(naturalFamily) - FAMILY_ORDER.indexOf(assignedFamily));
-  if (distance === 0) return 1.0;
-  if (distance === 1) return 0.85;
-  if (distance <= 3) return 0.65;
-  return 0.40;
+  return normalizeSlotImpl(assignedPosition);
 }
 
 /**
- * التقييم الفعّال للاعب في مركز معيّن على لوحة التكتيكات: يأخذ بالحسبان
- * توافق المركز، ثم يخصم للإرهاق ويكافئ/يعاقب حسب المعنويات.
- * يعتمد على player.overall المخزّن أصلاً (وليس إعادة حسابه) — إن رغب
- * المستخدم بإعادة الحساب من attributes عند كل استدعاء يمكن استبدالها
- * بـ calculateOverall(player.attributes, player.position) لاحقاً.
+ * التقييم الفعّال للاعب في مركز معيّن على لوحة التكتيكات: توافق المركز ثم
+ * خصم الإرهاق ومكافأة/عقوبة المعنويات. للحصول على تفصيل الأسباب استخدم
+ * computeEffectiveRating مباشرة.
  */
 export function getEffectivePlayerRating(player: Player, assignedPosition: string): number {
-  const compatibility = getPositionCompatibility(player.position, player.secondaryPositions, assignedPosition);
-
-  // خصم الإرهاق: حتى 30% عند إرهاق كامل (100)
-  const fatiguePenalty = 1 - (player.fatigue / 100) * 0.3;
-
-  // مكافأة/عقوبة المعنويات: من 0.9 عند أدنى معنويات حتى 1.1 عند أعلاها (المحور عند 50)
-  const moraleFactor = 0.9 + (player.morale / 100) * 0.2;
-
-  const effective = player.overall * compatibility * fatiguePenalty * moraleFactor;
-  return Math.max(1, Math.min(99, Math.round(effective)));
+  return computeEffectiveRating(player, assignedPosition).effective;
 }

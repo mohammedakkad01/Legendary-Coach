@@ -9,7 +9,12 @@
 
 import { Club, MatchEvent, MatchRecord, MatchStats, FootballTactics } from '../types/game';
 import { SeededRandom } from './prng';
-import { calcAttackPower, calcDefensePower } from './matchPrediction';
+import { calcAttackPower, calcDefensePower, buildSlotAssignments } from './matchPrediction';
+import { resolveTacticalState, toFootballTactics } from '../domain/tactics/tacticalState';
+import type { TacticalState } from '../domain/tactics/tacticalTypes';
+import { TACTICAL_ENGINE as T } from '../config/gameTuning';
+import { clamp } from '../domain/shared/math';
+import { describeTacticalChange } from '../i18n/liveTactics';
 
 export interface SimulationStepResult {
   currentMinute: number;
@@ -25,9 +30,16 @@ export class FootballMatchEngine {
   private prng: SeededRandom;
   private homeClub: Club;
   private awayClub: Club;
-  private homeTactics: FootballTactics;
-  private awayTactics: FootballTactics;
-  private seed: number;
+  /**
+   * Each side's resolved TacticalState — a private COPY, never the caller's
+   * club.footballTactics object. The old engine held a direct reference and
+   * mutated it in applyInteractiveDecision, which silently rewrote the
+   * player's saved tactics after every match. Live changes here only ever
+   * affect this match; getHomeTactics() is how the UI reads them back.
+   */
+  private homeTactics: TacticalState;
+  private awayTactics: TacticalState;
+  private readonly seed: number;
   private minute: number = 0;
   private homeScore: number = 0;
   private awayScore: number = 0;
@@ -50,8 +62,8 @@ export class FootballMatchEngine {
     this.prng = new SeededRandom(seed);
     this.homeClub = homeClub;
     this.awayClub = awayClub;
-    this.homeTactics = homeTactics || homeClub.footballTactics;
-    this.awayTactics = awayTactics || awayClub.footballTactics;
+    this.homeTactics = resolveTacticalState(homeTactics || homeClub.footballTactics);
+    this.awayTactics = resolveTacticalState(awayTactics || awayClub.footballTactics);
     this.homeVipAttackBoost = homeVipAttackBoost;
     this.homeVipDefenseBoost = homeVipDefenseBoost;
 
@@ -73,35 +85,56 @@ export class FootballMatchEngine {
     };
   }
 
-  /** Calculate team power based on lineup, position weighting and tactical style */
-  private calculateTeamPower(club: Club, tactics: FootballTactics, isHome: boolean) {
-    const lineupPlayers = club.footballSquad.filter(p => club.footballLineup.includes(p.id));
-    const effectiveLineup = lineupPlayers.length >= 7 ? lineupPlayers : club.footballSquad.slice(0, 11);
+  /**
+   * How many attack/defense points a resolved TacticalState is worth, as a
+   * continuous function of its sliders — see config/gameTuning.ts
+   * (TACTICAL_ENGINE) for the coefficients and why this replaced the old
+   * five-step mentality/pressing table.
+   */
+  private tacticalBonus(tactics: TacticalState): { attack: number; defense: number } {
+    const mid = 50;
+    let attack =
+      (tactics.attackingIntensity - mid) * T.attackingIntensityToAttack +
+      (tactics.defensiveIntensity - mid) * T.defensiveIntensityToAttack +
+      (tactics.possessionFocus - mid) * T.possessionFocusToAttack +
+      (tactics.directPlay - mid) * T.directPlayToAttack +
+      (tactics.counterAttacking - mid) * T.counterAttackingToAttack +
+      (tactics.defensiveLine - mid) * T.defensiveLineToAttack;
+    let defense =
+      (tactics.defensiveIntensity - mid) * T.defensiveIntensityToDefense -
+      (tactics.attackingIntensity - mid) * T.attackingIntensityToDefenseCost -
+      (tactics.defensiveLine - mid) * T.defensiveLineToDefenseCost;
 
-    // Position-aware base attack and defense ratings (identical to pre-match predictions)
-    const baseAtk = calcAttackPower(effectiveLineup);
-    const baseDef = calcDefensePower(effectiveLineup);
-
-    let attackBonus = 0;
-    let defenseBonus = 0;
-
-    if (tactics.mentality === 'all_out_attack') { attackBonus += 8; defenseBonus -= 6; }
-    else if (tactics.mentality === 'attacking') { attackBonus += 4; defenseBonus -= 2; }
-    else if (tactics.mentality === 'defensive') { attackBonus -= 3; defenseBonus += 5; }
-    else if (tactics.mentality === 'ultra_defensive') { attackBonus -= 7; defenseBonus += 8; }
-
-    if (tactics.pressing === 'high_press' || tactics.pressing === 'gegenpress') {
-      attackBonus += 3;
+    if (tactics.offsideTrap) {
+      defense += T.offsideTrapDefenseBonus;
+      attack -= T.offsideTrapAttackCost;
     }
 
-    const homeAdvantage = isHome ? 3.5 : 0;
+    return {
+      attack: clamp(attack, -T.maxAttackBonus, T.maxAttackBonus),
+      defense: clamp(defense, -T.maxDefenseBonus, T.maxDefenseBonus),
+    };
+  }
+
+  /** Calculate team power based on lineup, real slot assignment (position suitability) and tactical style. */
+  private calculateTeamPower(club: Club, tactics: TacticalState, isHome: boolean) {
+    const assignments = buildSlotAssignments(club);
+    const lineup = assignments.map((a) => a.player);
+
+    // Position-aware base attack and defense ratings (identical to pre-match predictions)
+    const baseAtk = calcAttackPower(assignments);
+    const baseDef = calcDefensePower(assignments);
+
+    const bonus = this.tacticalBonus(tactics);
+
+    const homeAdvantage = isHome ? T.homeAdvantage : 0;
     const vipAtk = isHome ? (baseAtk * (this.homeVipAttackBoost / 100)) : 0;
     const vipDef = isHome ? (baseDef * (this.homeVipDefenseBoost / 100)) : 0;
 
     return {
-      attack: Math.round(baseAtk + attackBonus + homeAdvantage + vipAtk),
-      defense: Math.round(baseDef + defenseBonus + homeAdvantage + vipDef),
-      lineup: effectiveLineup
+      attack: Math.round(baseAtk + bonus.attack + homeAdvantage + vipAtk),
+      defense: Math.round(baseDef + bonus.defense + homeAdvantage + vipDef),
+      lineup
     };
   }
 
@@ -273,46 +306,102 @@ export class FootballMatchEngine {
     };
   }
 
+  /**
+   * Merge `changes` into a resolved TacticalState, re-deriving every slider
+   * fresh from the (possibly just-changed) enums. The engine only ever
+   * receives enum-level edits from the UI (Formation/Mentality/Tempo/
+   * Pressing/Width, and the three interactive-moment presets below) — there
+   * is no slider-level control yet — so always re-deriving is correct: it's
+   * exactly what should happen when the coach picks a new Mentality. If a
+   * later phase adds direct slider editing, this needs to only strip the
+   * sliders whose OWN enum actually changed, not all of them.
+   */
+  private mergeTactics(current: TacticalState, changes: Partial<FootballTactics>): TacticalState {
+    const merged: FootballTactics = {
+      ...toFootballTactics(current),
+      ...changes,
+      defensiveLine: undefined,
+      defensiveIntensity: undefined,
+      attackingIntensity: undefined,
+      counterAttacking: undefined,
+      possessionFocus: undefined,
+      directPlay: undefined,
+      timeWasting: undefined,
+    };
+    return resolveTacticalState(merged);
+  }
+
+  /**
+   * Apply a live tactical change for the home side (formation, mentality,
+   * tempo, pressing, width, offside trap — any subset). Takes effect from the
+   * NEXT stepMinute() tick: calculateTeamPower() reads this.homeTactics fresh
+   * every minute, so nothing needs to pause. Pushes a 'tactical_change' event
+   * the UI can show as an "applied" confirmation. This only ever changes
+   * THIS match's tactics — never club.footballTactics itself.
+   */
+  public applyLiveTactics(changes: Partial<FootballTactics>): MatchEvent {
+    this.homeTactics = this.mergeTactics(this.homeTactics, changes);
+    const { textAr, textEn } = describeTacticalChange(changes);
+    const event: MatchEvent = {
+      minute: this.minute,
+      sport: 'football',
+      type: 'tactical_change',
+      team: 'home',
+      textAr,
+      textEn,
+      homeScore: this.homeScore,
+      awayScore: this.awayScore,
+      tacticalChange: changes,
+    };
+    this.events.push(event);
+    return event;
+  }
+
+  /** The home side's tactics as currently resolved for this match (never mutates the caller's club). */
+  public getHomeTactics(): FootballTactics {
+    return toFootballTactics(this.homeTactics);
+  }
+
+  /** The exact seed this match was simulated with — persist it so a saved MatchRecord can be replayed. */
+  public getSeed(): number {
+    return this.seed;
+  }
+
   /** Apply live tactical decision made by the coach */
   public applyInteractiveDecision(optionId: string) {
-    if (optionId === 'press_now') {
-      this.homeTactics.mentality = 'attacking';
-      this.homeTactics.pressing = 'high_press';
-      this.events.push({
-        minute: this.minute,
-        sport: 'football',
-        type: 'interactive_moment',
-        team: 'home',
-        textAr: `⚡ استجاب اللاعبون لتعليماتك بالضغط المكثف على الفور وبدأوا محاصرة الخصم!`,
-        textEn: `⚡ The squad responded to your high-press instructions immediately, suffocating the opponent!`,
-        homeScore: this.homeScore,
-        awayScore: this.awayScore,
-      });
-    } else if (optionId === 'counter_trap') {
-      this.homeTactics.mentality = 'balanced';
-      this.events.push({
-        minute: this.minute,
-        sport: 'football',
-        type: 'interactive_moment',
-        team: 'home',
-        textAr: `🛡️ انضباط تكتيكي ممتاز ومصيدة تسلل محكمة لإفشال محاولات المنافس!`,
-        textEn: `🛡️ Disciplined shape and crisp offside trap frustrating the opponent!`,
-        homeScore: this.homeScore,
-        awayScore: this.awayScore,
-      });
-    } else {
-      this.homeTactics.mentality = 'defensive';
-      this.events.push({
-        minute: this.minute,
-        sport: 'football',
-        type: 'interactive_moment',
-        team: 'home',
-        textAr: `⏱️ الفريق يتحكم في نسق اللعب ويهدئ رتم المباراة ببراعة عالية.`,
-        textEn: `⏱️ The team dictates the pace, calmly controlling possession.`,
-        homeScore: this.homeScore,
-        awayScore: this.awayScore,
-      });
-    }
+    const presets: Record<string, Partial<FootballTactics>> = {
+      press_now: { mentality: 'attacking', pressing: 'high_press' },
+      counter_trap: { mentality: 'balanced' },
+    };
+    const changes = presets[optionId] ?? { mentality: 'defensive' };
+    this.homeTactics = this.mergeTactics(this.homeTactics, changes);
+
+    const flavor: Record<string, { textAr: string; textEn: string }> = {
+      press_now: {
+        textAr: '⚡ استجاب اللاعبون لتعليماتك بالضغط المكثف على الفور وبدأوا محاصرة الخصم!',
+        textEn: '⚡ The squad responded to your high-press instructions immediately, suffocating the opponent!',
+      },
+      counter_trap: {
+        textAr: '🛡️ انضباط تكتيكي ممتاز ومصيدة تسلل محكمة لإفشال محاولات المنافس!',
+        textEn: '🛡️ Disciplined shape and crisp offside trap frustrating the opponent!',
+      },
+      lock_down: {
+        textAr: '⏱️ الفريق يتحكم في نسق اللعب ويهدئ رتم المباراة ببراعة عالية.',
+        textEn: '⏱️ The team dictates the pace, calmly controlling possession.',
+      },
+    };
+    const { textAr, textEn } = flavor[optionId] ?? flavor.lock_down;
+    this.events.push({
+      minute: this.minute,
+      sport: 'football',
+      type: 'interactive_moment',
+      team: 'home',
+      textAr,
+      textEn,
+      homeScore: this.homeScore,
+      awayScore: this.awayScore,
+      tacticalChange: changes,
+    });
     this.pendingInteractiveMoment = null;
   }
 

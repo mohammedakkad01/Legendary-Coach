@@ -115,6 +115,18 @@ export interface FootballTactics {
   tempo: TeamTempo;
   width: 'narrow' | 'standard' | 'wide';
   offsideTrap: boolean;
+  // Extended tactical sliders (0-100). OPTIONAL so old saves stay valid; when
+  // absent they are derived from the enums above — see
+  // domain/tactics/tacticalState.ts (resolveTacticalState).
+  defensiveLine?: number;
+  defensiveIntensity?: number;
+  attackingIntensity?: number;
+  counterAttacking?: number;
+  possessionFocus?: number;
+  directPlay?: number;
+  timeWasting?: number;
+  /** Schema version of the extended tactical fields (see TACTICAL_STATE_VERSION). */
+  tacticalStateVersion?: number;
   captainId: string;
   penaltyTakerId: string;
   freeKickTakerId: string;
@@ -230,7 +242,7 @@ export interface MatchEvent {
   minute: number;
   quarter?: number;
   sport: SportType;
-  type: 'goal' | 'shot' | 'save' | 'foul' | 'yellow_card' | 'red_card' | 'injury' | 'substitution' | 'three_pointer' | 'dunk' | 'timeout' | 'interactive_moment';
+  type: 'goal' | 'shot' | 'save' | 'foul' | 'yellow_card' | 'red_card' | 'injury' | 'substitution' | 'three_pointer' | 'dunk' | 'timeout' | 'interactive_moment' | 'tactical_change';
   team: 'home' | 'away';
   playerId?: string;
   playerName?: string;
@@ -241,6 +253,8 @@ export interface MatchEvent {
   homeScore: number;
   awayScore: number;
   interactiveOptions?: InteractiveDecisionOption[];
+  /** Present only on 'tactical_change' events — exactly what the coach just applied, for a clean UI chip instead of parsing textAr/textEn. */
+  tacticalChange?: Partial<Pick<FootballTactics, 'formation' | 'mentality' | 'tempo' | 'pressing' | 'width'>>;
 }
 
 export interface InteractiveDecisionOption {

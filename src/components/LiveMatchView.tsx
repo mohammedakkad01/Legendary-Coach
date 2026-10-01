@@ -6,7 +6,8 @@
  * Refactored modular view with separated domain hook and presentation components.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
+import { Sliders } from 'lucide-react';
 import { NextMatchCard } from './NextMatchCard';
 import { generatePostMatchCharacter } from '../data/matchAnalystData';
 import { useLiveMatch } from '../hooks/useLiveMatch';
@@ -14,11 +15,14 @@ import { MatchScoreboard } from './live-match/MatchScoreboard';
 import { MatchRadarAndStats } from './live-match/MatchRadarAndStats';
 import { MatchCommentaryFeed } from './live-match/MatchCommentaryFeed';
 import { InteractiveDecisionBanner, SpeedUpgradeModal } from './live-match/SpeedAndTacticalModals';
+import { LiveTacticsPanel } from './live-match/LiveTacticsPanel';
+import { LIVE_TACTICS_TEXT, pick } from '../i18n/liveTactics';
 
 export const LiveMatchView: React.FC = () => {
   const {
     club,
     record,
+    activeMatchHomeTactics,
     isMatchLive,
     isMatchPaused,
     matchSpeed,
@@ -30,6 +34,7 @@ export const LiveMatchView: React.FC = () => {
     unlockMatchSpeed2x,
     submitInteractiveDecision,
     instantSimulateMatch,
+    applyLiveTactics,
     startNewMatch,
     postMatchAnalyst,
     setPostMatchAnalyst,
@@ -43,6 +48,7 @@ export const LiveMatchView: React.FC = () => {
     setSpeedPurchaseNotice,
     currentVipTier,
   } = useLiveMatch();
+  const [tacticsPanelOpen, setTacticsPanelOpen] = useState(false);
 
   if (!record && !isMatchLive) {
     return <NextMatchCard />;
@@ -64,6 +70,30 @@ export const LiveMatchView: React.FC = () => {
         onSetSpeed={setMatchSpeed}
         onOpenSpeedModal={() => setSpeedModalOpen(true)}
         onInstantSimulate={instantSimulateMatch}
+      />
+
+      {/* Live Tactics Panel trigger — only while the match is actually in progress */}
+      {isMatchLive && !record!.isFinished && activeMatchHomeTactics && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setTacticsPanelOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-sky-500/60 text-xs font-bold text-sky-300"
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            {pick(LIVE_TACTICS_TEXT.panelTitle, isAr)}
+          </button>
+        </div>
+      )}
+      <LiveTacticsPanel
+        isOpen={tacticsPanelOpen}
+        onClose={() => setTacticsPanelOpen(false)}
+        tactics={activeMatchHomeTactics ?? club.footballTactics}
+        isAr={isAr}
+        onApply={(changes) => {
+          applyLiveTactics(changes);
+          setTimeout(() => setTacticsPanelOpen(false), 900);
+        }}
       />
 
       {/* Interactive Key Moment Modal Trigger */}

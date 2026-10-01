@@ -12,6 +12,8 @@
 import type { Player, FootballFormation, FootballTactics } from '../types/game';
 import { FORMATION_POSITIONS } from '../data/formationLayouts';
 import { normalizeSlot } from './playerCalculations';
+import { positionGroupOf } from '../domain/squad/positionTaxonomy';
+import type { PositionGroup } from '../domain/squad/positionTaxonomy';
 
 export type SynergyRating = 'ممتاز' | 'جيد' | 'مناسب' | 'سيئ';
 
@@ -23,14 +25,11 @@ export interface TeamSynergyResult {
   warnings: string[]; // ملاحظات عربية قصيرة عن مشاكل التوازن التكتيكي
 }
 
-type PositionFamily = 'GK' | 'DEF' | 'MID' | 'ATT';
+type PositionFamily = PositionGroup;
 
 function familyOf(core: ReturnType<typeof normalizeSlot>): PositionFamily | null {
   if (!core) return null;
-  if (core === 'GK') return 'GK';
-  if (core === 'CB' || core === 'LB' || core === 'RB') return 'DEF';
-  if (core === 'ST' || core === 'LW' || core === 'RW') return 'ATT';
-  return 'MID'; // CDM, CM, CAM
+  return positionGroupOf(core) ?? 'MID'; // مراكز غير كروية → وسط (السلوك القديم)
 }
 
 /**

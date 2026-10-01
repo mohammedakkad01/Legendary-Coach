@@ -35,6 +35,9 @@ import { FootballMatchEngine } from '../engine/footballEngine';
 import { TeamSynergyResult } from '../utils/teamSynergy';
 import { SaveStatus } from '../types/save';
 
+import type { MoveTarget } from '../domain/squad/squadTypes';
+import type { MoveResult } from '../domain/squad/moveEntity';
+
 export type GameTab = 
   | 'dashboard' 
   | 'tactics' 
@@ -116,6 +119,8 @@ export interface GameState {
   // Live Match Simulation
   activeEngine: FootballMatchEngine | null;
   activeMatchRecord: MatchRecord | null;
+  /** The home side's LIVE tactics for the match in progress — a match-only copy, kept in sync with the engine's own (never club.footballTactics). Null when no match is live. */
+  activeMatchHomeTactics: FootballTactics | null;
   isMatchLive: boolean;
   isMatchPaused: boolean;
   isLoadingMatch: boolean;
@@ -158,8 +163,8 @@ export interface GameState {
   // Tactics & Lineup
   updateFootballTactics: (newTactics: Partial<FootballTactics>) => void;
   updateBasketballTactics: (newTactics: Partial<BasketballTactics>) => void;
-  swapFootballLineup: (lineupIndex: number, benchPlayerId: string) => void;
-  moveToBench: (playerId: string) => { success: boolean; message: string };
+  /** Validated squad move (XI / substitutes / bench). Returns the typed Result; the store applies it only on success. */
+  moveSquadEntity: (playerId: string, target: MoveTarget) => MoveResult;
   setFootballRoles: (roles: { captainId?: string; penaltyTakerId?: string; freeKickTakerId?: string; cornerTakerId?: string }) => void;
 
   // Training & Facilities
@@ -191,6 +196,8 @@ export interface GameState {
   setMatchSpeed: (speed: number) => void;
   unlockMatchSpeed2x: (currency: 'coins' | 'diamonds') => { success: boolean; message: string };
   submitInteractiveDecision: (optionId: string) => void;
+  /** Live in-match tactics change (formation/mentality/tempo/pressing/width/offsideTrap subset). Returns the resulting 'tactical_change' MatchEvent, or null if no match is live. */
+  applyLiveTactics: (changes: Partial<FootballTactics>) => MatchEvent | null;
   instantSimulateMatch: () => void;
   skipAndSimulateNextMatch: () => Promise<void>;
   simulateMatchday: (matchday: number) => RoundSummary | null;

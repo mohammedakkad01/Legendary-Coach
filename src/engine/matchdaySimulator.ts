@@ -22,6 +22,8 @@ import {
   PlayerStats,
 } from '../types/game';
 import { SeededRandom } from './prng';
+import { positionGroupOf } from '../domain/squad/positionTaxonomy';
+import type { PositionGroup } from '../domain/squad/positionTaxonomy';
 
 // ---------------------------------------------------------------------------
 // Squad cache (in-memory, per session) — lets non-user clubs keep the same
@@ -51,17 +53,11 @@ export const withStableIds = (clubId: string, players: Player[]): Player[] => {
 // ---------------------------------------------------------------------------
 // Positions, starting XI, strength
 // ---------------------------------------------------------------------------
-type Group = 'GK' | 'DEF' | 'MID' | 'ATT';
+type Group = PositionGroup;
 
-export const positionGroup = (pos: PlayerPosition): Group => {
-  switch (pos) {
-    case 'GK': return 'GK';
-    case 'CB': case 'LB': case 'RB': return 'DEF';
-    case 'CDM': case 'CM': case 'CAM': return 'MID';
-    case 'LW': case 'RW': case 'ST': return 'ATT';
-    default: return 'MID';
-  }
-};
+// Single taxonomy lives in domain/squad/positionTaxonomy.ts. Non-football
+// positions keep this file's historical fallback (midfield).
+export const positionGroup = (pos: PlayerPosition): Group => positionGroupOf(pos) ?? 'MID';
 
 const byOverall = (a: Player, b: Player) => b.overall - a.overall;
 

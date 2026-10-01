@@ -55,7 +55,7 @@ import {
   ensureFixtureDates,
 } from '../data/realLeaguesData';
 import { hydrateLiveLeagues } from '../services/liveLeaguesService';
-import { predictMatch, calcAttackPower, calcDefensePower } from '../engine/matchPrediction';
+import { predictMatch, calcAttackPower, calcDefensePower, buildSlotAssignments } from '../engine/matchPrediction';
 import { fetchClubSquadCache } from '../services/realFootballDataService';
 import { convertCachedSquadPlayerToGamePlayer } from '../services/footballApi';
 import { STORY_CHAPTER_1_MISSIONS } from '../data/storyChapter1';
@@ -89,6 +89,11 @@ import { soundEffects } from '../audio/soundFX';
 import confetti from 'canvas-confetti';
 import { calculateTeamSynergy, TeamSynergyResult } from '../utils/teamSynergy';
 import { persistenceService } from '../services/persistenceService';
+import { moveEntity } from '../domain/squad/moveEntity';
+import type { MoveResult } from '../domain/squad/moveEntity';
+import type { MoveTarget } from '../domain/squad/squadTypes';
+import { applySquadState, createSquadState } from '../domain/squad/squadStateAdapter';
+import { EMPTY_SLOT } from '../domain/squad/squadTypes';
 import { SaveStatus } from '../types/save';
 
 export type GameTab = 
@@ -172,6 +177,8 @@ interface GameState {
   // Live Match Simulation
   activeEngine: FootballMatchEngine | null;
   activeMatchRecord: MatchRecord | null;
+  /** The home side's LIVE tactics for the match in progress — a match-only copy, kept in sync with the engine's own (never club.footballTactics). Null when no match is live. */
+  activeMatchHomeTactics: FootballTactics | null;
   isMatchLive: boolean;
   isMatchPaused: boolean;
   isLoadingMatch: boolean;
@@ -214,8 +221,8 @@ interface GameState {
   // Tactics & Lineup
   updateFootballTactics: (newTactics: Partial<FootballTactics>) => void;
   updateBasketballTactics: (newTactics: Partial<BasketballTactics>) => void;
-  swapFootballLineup: (lineupIndex: number, benchPlayerId: string) => void;
-  moveToBench: (playerId: string) => { success: boolean; message: string };
+  /** Validated squad move (XI / substitutes / bench). Returns the typed Result; the store applies it only on success. */
+  moveSquadEntity: (playerId: string, target: MoveTarget) => MoveResult;
   setFootballRoles: (roles: { captainId?: string; penaltyTakerId?: string; freeKickTakerId?: string; cornerTakerId?: string }) => void;
 
   // Training & Facilities
@@ -247,6 +254,8 @@ interface GameState {
   setMatchSpeed: (speed: number) => void;
   unlockMatchSpeed2x: (currency: 'coins' | 'diamonds') => { success: boolean; message: string };
   submitInteractiveDecision: (optionId: string) => void;
+  /** Live in-match tactics change (formation/mentality/tempo/pressing/width/offsideTrap subset). Returns the resulting 'tactical_change' MatchEvent, or null if no match is live. */
+  applyLiveTactics: (changes: Partial<FootballTactics>) => MatchEvent | null;
   instantSimulateMatch: () => void;
   skipAndSimulateNextMatch: () => Promise<void>;
   simulateMatchday: (matchday: number) => RoundSummary | null;
@@ -648,11 +657,11 @@ export const useGameStore = create<GameState>((set, get) => {
       footballLineup: opponentLineup,
     };
 
-    // Team power from the starting XIs
-    const userLineupPlayers = state.club.footballSquad.filter(p => state.club.footballLineup.includes(p.id));
-    const userEffectiveSquad = userLineupPlayers.length > 0 ? userLineupPlayers : state.club.footballSquad.slice(0, 11);
-    const oppLineupPlayers = opponent.footballSquad.filter(p => opponent.footballLineup.includes(p.id));
-    const oppEffectiveSquad = oppLineupPlayers.length > 0 ? oppLineupPlayers : opponent.footballSquad.slice(0, 11);
+    // Team power from the starting XIs — paired with the ACTUAL formation
+    // slot each player is in, so an out-of-position starter shows the same
+    // reduced power here as he will in the live match (single source of truth).
+    const userEffectiveSquad = buildSlotAssignments(state.club);
+    const oppEffectiveSquad = buildSlotAssignments(opponent);
 
     let activeVipTier = VIP_LEVELS[0];
     for (const tier of VIP_LEVELS) {
@@ -887,6 +896,7 @@ export const useGameStore = create<GameState>((set, get) => {
 
     activeEngine: null,
     activeMatchRecord: null,
+    activeMatchHomeTactics: null,
     isMatchLive: false,
     isMatchPaused: false,
     isLoadingMatch: false,
@@ -1211,50 +1221,19 @@ export const useGameStore = create<GameState>((set, get) => {
       saveToStorage();
     },
 
-    swapFootballLineup: (lineupIndex, benchPlayerId) => {
-      soundEffects.playTap();
-      const club = get().club;
-      const oldPlayerId = club.footballLineup[lineupIndex];
-      const newLineup = [...club.footballLineup];
-      newLineup[lineupIndex] = benchPlayerId;
-
-      const newBench = club.footballBench.map(id => id === benchPlayerId ? oldPlayerId : id);
-      set({
-        club: {
-          ...club,
-          footballLineup: newLineup,
-          footballBench: newBench,
-        },
-      });
-      saveToStorage();
-    },
-
-    moveToBench: (playerId: string) => {
-      const state = get();
-      const isAr = state.language === 'ar';
-      const { club } = state;
-
-      if (club.footballBench.includes(playerId)) {
-        return { success: false, message: isAr ? 'اللاعب موجود بالفعل في دكة البدلاء' : 'Player is already on the bench' };
+    // Validated squad move — the ONLY way squad placement changes. Replaced
+    // the old swapFootballLineup/moveToBench actions once the squad UI
+    // (Phase 2) moved onto it.
+    moveSquadEntity: (playerId, target) => {
+      const { club, vipPoints } = get();
+      const { state: squad } = createSquadState(club, { maxSubstitutes: getMaxBenchSlots(vipPoints) });
+      const result = moveEntity(squad, playerId, target);
+      if (result.ok && result.value.kind !== 'noop') {
+        soundEffects.playTap();
+        set({ club: applySquadState(club, result.value.state) });
+        saveToStorage();
       }
-      if (club.footballLineup.includes(playerId)) {
-        return { success: false, message: isAr ? 'اللاعب أساسي بالفعل' : 'Player is already a starter' };
-      }
-      const maxSlots = getMaxBenchSlots(state.vipPoints);
-      if (club.footballBench.length >= maxSlots) {
-        return {
-          success: false,
-          message: isAr
-            ? `دكة البدلاء ممتلئة (${maxSlots} خانات). ترقَّ إلى VIP 3 لفتح خانة إضافية.`
-            : `The bench is full (${maxSlots} slots). Reach VIP 3 to unlock an extra slot.`
-        };
-      }
-
-      soundEffects.playTap();
-      const updatedBench = [...club.footballBench, playerId];
-      set({ club: { ...club, footballBench: updatedBench } });
-      saveToStorage({ club: { ...club, footballBench: updatedBench } });
-      return { success: true, message: isAr ? '✅ تمت إضافة اللاعب إلى دكة البدلاء' : '✅ Player added to the bench' };
+      return result;
     },
 
     startNegotiation: (playerId: string, initialOfferAmount: number) => {
@@ -1666,7 +1645,12 @@ export const useGameStore = create<GameState>((set, get) => {
         club: {
           ...state.club,
           footballSquad: state.club.footballSquad.filter(p => p.id !== playerId),
-          footballLineup: state.club.footballLineup.filter(id => id !== playerId),
+          // A sold starter's slot becomes empty rather than shifting everyone
+          // after him left (that used to silently move every later slot's
+          // label — e.g. the real RB into what the UI still called the LB
+          // slot). The squad domain (createSquadState) already treats '' as
+          // an empty starting slot.
+          footballLineup: state.club.footballLineup.map(id => (id === playerId ? EMPTY_SLOT : id)),
           footballBench: state.club.footballBench.filter(id => id !== playerId),
           finances: {
             ...state.club.finances,
@@ -1889,10 +1873,15 @@ export const useGameStore = create<GameState>((set, get) => {
       soundEffects.playWhistle(false);
 
       if (state.currentSport === 'football') {
+        // ONE seed for this whole match — the engine, the saved MatchRecord's
+        // id and its seed field all use the exact same value, so a saved
+        // record can genuinely be re-simulated later (previously each of
+        // these called Date.now() separately and could disagree).
+        const matchSeed = Date.now();
         const engine = new FootballMatchEngine(
           state.club, 
           opponent, 
-          Date.now(), 
+          matchSeed, 
           state.club.footballTactics,
           undefined,
           vipAttackBoost,
@@ -1905,10 +1894,11 @@ export const useGameStore = create<GameState>((set, get) => {
           currentMatchMinute: 0,
           pendingInteractiveEvent: null,
           activeTab: 'match',
+          activeMatchHomeTactics: engine.getHomeTactics(),
           activeMatchRecord: {
-            id: `match_${Date.now()}`,
+            id: `match_${matchSeed}`,
             sport: 'football',
-            seed: Date.now(),
+            seed: matchSeed,
             homeClubId: state.club.id,
             homeClubName: state.club.name,
             awayClubId: opponent.id,
@@ -2057,10 +2047,14 @@ export const useGameStore = create<GameState>((set, get) => {
             : f
         );
 
+        // Reuse the exact seed this match was actually simulated with —
+        // state.activeEngine.getSeed() — instead of a fresh Date.now() that
+        // would not match the RNG sequence that produced `res`.
+        const finishedSeed = state.activeEngine!.getSeed();
         const finalRecord: MatchRecord = {
-          id: `match_${Date.now()}`,
+          id: `match_${finishedSeed}`,
           sport: 'football',
-          seed: Date.now(),
+          seed: finishedSeed,
           homeClubId: state.club.id,
           homeClubName: state.club.name,
           awayClubId: state.activeMatchRecord?.awayClubId || REAL_OPPONENT_CLUBS[0].id,
@@ -2141,6 +2135,7 @@ export const useGameStore = create<GameState>((set, get) => {
 
         set({
           isMatchLive: false,
+          activeMatchHomeTactics: null,
           activeMatchRecord: finalRecord,
           matchHistory: [finalRecord, ...state.matchHistory],
           leagueStandings: updatedStandings,
@@ -2327,7 +2322,20 @@ export const useGameStore = create<GameState>((set, get) => {
       set({
         pendingInteractiveEvent: null,
         isMatchPaused: false,
+        activeMatchHomeTactics: state.activeEngine.getHomeTactics(),
       });
+    },
+
+    // Live in-match tactics panel (Formation / Mentality / Tempo / Pressing /
+    // Width). Applied to the engine's own copy only — never club.footballTactics
+    // — and takes effect starting the next stepMinute() tick, no pause needed.
+    // Returns the 'tactical_change' event so the panel can show what changed.
+    applyLiveTactics: (changes) => {
+      const state = get();
+      if (!state.activeEngine || !state.isMatchLive) return null;
+      const event = state.activeEngine.applyLiveTactics(changes);
+      set({ activeMatchHomeTactics: state.activeEngine.getHomeTactics() });
+      return event;
     },
 
     instantSimulateMatch: () => {
@@ -2393,10 +2401,12 @@ export const useGameStore = create<GameState>((set, get) => {
           : f
       );
 
+      // Same fix as stepMatchMinute's finish branch — reuse the engine's own seed.
+      const finishedSeed = state.activeEngine!.getSeed();
       const finalRecord: MatchRecord = {
-        id: `match_${Date.now()}`,
+        id: `match_${finishedSeed}`,
         sport: 'football',
-        seed: Date.now(),
+        seed: finishedSeed,
         homeClubId: state.club.id,
         homeClubName: state.club.name,
         awayClubId: state.activeMatchRecord?.awayClubId || REAL_OPPONENT_CLUBS[0].id,
@@ -2479,6 +2489,7 @@ export const useGameStore = create<GameState>((set, get) => {
         isMatchPaused: false,
         pendingInteractiveEvent: null,
         currentMatchMinute: 90,
+        activeMatchHomeTactics: null,
         activeMatchRecord: finalRecord,
         matchHistory: [finalRecord, ...state.matchHistory],
         leagueStandings: updatedStandings,
@@ -2525,10 +2536,12 @@ export const useGameStore = create<GameState>((set, get) => {
       const vipAttackBoost = previewData.userVipAttackBoost;
       const vipDefenseBoost = previewData.userVipDefenseBoost;
 
+      // One seed for the engine AND the saved record (see confirmStartMatch).
+      const matchSeed = Date.now();
       const engine = new FootballMatchEngine(
         state.club,
         opponent,
-        Date.now(),
+        matchSeed,
         state.club.footballTactics,
         undefined,
         vipAttackBoost,
@@ -2590,9 +2603,9 @@ export const useGameStore = create<GameState>((set, get) => {
       );
 
       const finalRecord: MatchRecord = {
-        id: `match_${Date.now()}`,
+        id: `match_${matchSeed}`,
         sport: 'football',
-        seed: Date.now(),
+        seed: matchSeed,
         homeClubId: state.club.id,
         homeClubName: state.club.name,
         awayClubId: opponent.id,
@@ -2672,6 +2685,7 @@ export const useGameStore = create<GameState>((set, get) => {
         preMatchPreview: null,
         isMatchLive: false,
         activeEngine: null,
+        activeMatchHomeTactics: null,
         activeMatchRecord: finalRecord,
         matchHistory: [finalRecord, ...state.matchHistory],
         leagueStandings: updatedStandings,

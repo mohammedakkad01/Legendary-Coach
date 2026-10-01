@@ -1,0 +1,3 @@
+Add to package.json "scripts" and append to the existing "test" chain:
+  "testBestTactics": "tsx scripts/testBestTactics.ts"
+  ...  && npm run testBestTactics

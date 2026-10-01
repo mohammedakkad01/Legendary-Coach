@@ -6,6 +6,7 @@
  * Centralized schema definition for Local Save, Cloud Save, and Data Pack export/import.
  */
 
+import type { LivingWorldState } from '../domain/livingWorld/types';
 import {
   Club,
   Player,
@@ -30,7 +31,7 @@ import {
  * Increment this whenever a non-backward-compatible change is introduced
  * and provide a corresponding migration function in persistenceService.ts.
  */
-export const CURRENT_SAVE_VERSION = 2;
+export const CURRENT_SAVE_VERSION = 3;
 
 /**
  * Full Canonical Game Save Schema (Version 2)
@@ -88,6 +89,15 @@ export interface GameSaveData {
 
   // Feature Unlocks & Settings
   unlockedSpeed2x: boolean;
+
+  /** Phase A living world slice (relationships, memories, events, notifications). */
+  livingWorld?: LivingWorldState;
+
+  /**
+   * Unknown root-level JSON keys preserved across migrate/export/import.
+   * Persistence layer only — not used by gameplay systems.
+   */
+  savePassthrough?: Record<string, unknown>;
 }
 
 /**

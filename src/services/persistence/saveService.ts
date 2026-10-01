@@ -7,6 +7,7 @@
  */
 
 import { GameSaveData, CURRENT_SAVE_VERSION, SaveStatus } from '../../types/save';
+import { ensureLivingWorldV3 } from '../../domain/livingWorld/migrateLivingWorld';
 import { Club, ClubFinances, ClubFacilities, SportType } from '../../types/game';
 import { REAL_INITIAL_PLAYER_CLUB, REAL_INITIAL_STANDINGS, REAL_INITIAL_SCOUT_MARKET } from '../../data/realFootballData';
 import { STORY_CHAPTER_1_MISSIONS } from '../../data/storyChapter1';
@@ -105,19 +106,19 @@ export class SaveService {
    * Extracts ONLY persistent career data from a store state object.
    * Strips all transient UI fields and potential tokens.
    */
-  public extractSaveData(state: any): GameSaveData {
-    const club = state.club ? this.sanitizeClub(state.club) : REAL_INITIAL_PLAYER_CLUB;
+  public extractSaveData(state: Record<string, unknown>): GameSaveData {
+    const club = state.club ? this.sanitizeClub(state.club as Club) : REAL_INITIAL_PLAYER_CLUB;
     const nowIso = new Date().toISOString();
 
-    return {
+    const base: GameSaveData = {
       saveVersion: CURRENT_SAVE_VERSION,
-      saveId: state.saveId || `save_${Date.now()}`,
+      saveId: typeof state.saveId === 'string' ? state.saveId : `save_${Date.now()}`,
       savedAt: nowIso,
       appVersion: APP_VERSION,
 
       currentSport: (state.currentSport === 'basketball' ? 'basketball' : 'football') as SportType,
       language: state.language === 'en' ? 'en' : 'ar',
-      soundEnabled: state.soundEnabled ?? true,
+      soundEnabled: typeof state.soundEnabled === 'boolean' ? state.soundEnabled : true,
       hasSelectedInitialClub: Boolean(state.hasSelectedInitialClub),
       isGuest: Boolean(state.isGuest),
       hasClaimedLoginBonus: Boolean(state.hasClaimedLoginBonus),
@@ -127,11 +128,11 @@ export class SaveService {
       energy: typeof state.energy === 'number' ? state.energy : 100,
       lastEnergyUpdate: typeof state.lastEnergyUpdate === 'number' ? state.lastEnergyUpdate : Date.now(),
       vipPoints: typeof state.vipPoints === 'number' ? state.vipPoints : 0,
-      lastVipClaimDate: state.lastVipClaimDate || null,
+      lastVipClaimDate: typeof state.lastVipClaimDate === 'string' || state.lastVipClaimDate === null ? state.lastVipClaimDate : null,
       claimedVipUpgradeChests: Array.isArray(state.claimedVipUpgradeChests) ? [...state.claimedVipUpgradeChests] : [1],
-      missionSkipUsedDate: state.missionSkipUsedDate || null,
+      missionSkipUsedDate: typeof state.missionSkipUsedDate === 'string' || state.missionSkipUsedDate === null ? state.missionSkipUsedDate : null,
       checkInStreak: typeof state.checkInStreak === 'number' ? state.checkInStreak : 0,
-      lastCheckInDate: state.lastCheckInDate || null,
+      lastCheckInDate: typeof state.lastCheckInDate === 'string' || state.lastCheckInDate === null ? state.lastCheckInDate : null,
 
       savedTacticalPlans: Array.isArray(state.savedTacticalPlans) ? state.savedTacticalPlans : [],
       pendingFacilityUpgrades: Array.isArray(state.pendingFacilityUpgrades) ? state.pendingFacilityUpgrades : [],
@@ -145,15 +146,25 @@ export class SaveService {
 
       leagueStandings: Array.isArray(state.leagueStandings) && state.leagueStandings.length > 0 ? state.leagueStandings : REAL_INITIAL_STANDINGS,
       leagueFixtures: Array.isArray(state.leagueFixtures) && state.leagueFixtures.length > 0
-        ? ensureFixtureDates(state.leagueFixtures)
+        ? ensureFixtureDates(state.leagueFixtures as GameSaveData['leagueFixtures'])
         : ensureFixtureDates(generateFixturesForLeague(club.divisionId, club.id)),
-      matchHistory: Array.isArray(state.matchHistory) ? state.matchHistory : [],
-      tournamentStats: Array.isArray(state.tournamentStats) ? state.tournamentStats : [],
-      simulatedMatchdays: Array.isArray(state.simulatedMatchdays) ? state.simulatedMatchdays : [],
-      matchScoutReports: state.matchScoutReports && typeof state.matchScoutReports === 'object' ? state.matchScoutReports : {},
+      matchHistory: Array.isArray(state.matchHistory) ? (state.matchHistory as GameSaveData['matchHistory']) : [],
+      tournamentStats: Array.isArray(state.tournamentStats) ? (state.tournamentStats as GameSaveData['tournamentStats']) : [],
+      simulatedMatchdays: Array.isArray(state.simulatedMatchdays) ? (state.simulatedMatchdays as number[]) : [],
+      matchScoutReports:
+        state.matchScoutReports && typeof state.matchScoutReports === 'object'
+          ? (state.matchScoutReports as GameSaveData['matchScoutReports'])
+          : {},
 
       unlockedSpeed2x: Boolean(state.unlockedSpeed2x),
+      livingWorld: state.livingWorld as GameSaveData['livingWorld'],
+      savePassthrough:
+        state.savePassthrough && typeof state.savePassthrough === 'object'
+          ? (state.savePassthrough as Record<string, unknown>)
+          : undefined,
     };
+
+    return ensureLivingWorldV3(base);
   }
 
   public serialize(data: GameSaveData, pretty = false): string {

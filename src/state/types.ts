@@ -34,6 +34,8 @@ import { RealClubConfig } from '../data/realLeaguesData';
 import { FootballMatchEngine } from '../engine/footballEngine';
 import { TeamSynergyResult } from '../utils/teamSynergy';
 import { SaveStatus } from '../types/save';
+import type { DispatchResult } from '../domain/livingWorld/events/dispatch';
+import type { GameEvent, LivingWorldState } from '../domain/livingWorld/types';
 
 import type { MoveTarget } from '../domain/squad/squadTypes';
 import type { MoveResult } from '../domain/squad/moveEntity';
@@ -138,6 +140,11 @@ export interface GameState {
   // Market & Scouts
   scoutMarket: Player[];
 
+  /** Living world slice (persisted; gameplay wiring in later phases). */
+  livingWorld: LivingWorldState;
+  /** Persistence-only unknown root JSON keys (never read by gameplay). */
+  savePassthrough: Record<string, unknown>;
+
   // Actions
   setSport: (sport: SportType) => void;
   setLanguage: (lang: 'ar' | 'en') => void;
@@ -239,4 +246,7 @@ export interface GameState {
   // Centralized Persistence & Save Management
   saveStatus: SaveStatus;
   saveCareerImmediate: () => boolean;
+
+  /** Runs the living-world event pipeline (pure domain); not wired to match/story in Phase A. */
+  dispatchLivingWorldEvent: (event: GameEvent) => DispatchResult;
 }

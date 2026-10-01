@@ -101,6 +101,13 @@ import type { BestTacticsRecommendation } from '../domain/tactics/bestTactics/ty
 import type { Result } from '../domain/shared/result';
 import { deriveSyntheticOpponentTactics, opponentTacticsWithRoles } from '../domain/tactics/deriveSyntheticOpponentTactics';
 import { SaveStatus } from '../types/save';
+import { createEmptyLivingWorld } from '../domain/livingWorld/migrateLivingWorld';
+import {
+  dispatchGameEvent as runLivingWorldDispatch,
+  type DispatchResult,
+} from '../domain/livingWorld/events/dispatch';
+import { ensureDefaultHandlersRegistered } from '../domain/livingWorld/events/registry';
+import type { GameEvent, LivingWorldState } from '../domain/livingWorld/types';
 
 export type GameTab = 
   | 'dashboard' 
@@ -198,6 +205,9 @@ interface GameState {
 
   // Market & Scouts
   scoutMarket: Player[];
+
+  livingWorld: LivingWorldState;
+  savePassthrough: Record<string, unknown>;
 
   // Actions
   setSport: (sport: SportType) => void;
@@ -307,6 +317,7 @@ interface GameState {
   // Centralized Persistence & Save Management
   saveStatus: SaveStatus;
   saveCareerImmediate: () => boolean;
+  dispatchLivingWorldEvent: (event: GameEvent) => DispatchResult;
 }
 
 export const useGameStore = create<GameState>((set, get) => {
@@ -922,6 +933,13 @@ export const useGameStore = create<GameState>((set, get) => {
     pendingInteractiveEvent: null,
 
     scoutMarket: initialSave?.scoutMarket || REAL_INITIAL_SCOUT_MARKET,
+
+    livingWorld:
+      initialSave?.livingWorld ??
+      createEmptyLivingWorld(
+        (initialSave?.club ?? REAL_INITIAL_PLAYER_CLUB).finances.reputation
+      ),
+    savePassthrough: initialSave?.savePassthrough ?? {},
 
     setIsGuest: (val: boolean) => {
       set({ isGuest: val });
@@ -3528,6 +3546,23 @@ export const useGameStore = create<GameState>((set, get) => {
       });
     },
 
+    dispatchLivingWorldEvent: (event) => {
+      ensureDefaultHandlersRegistered();
+      const state = get();
+      const result = runLivingWorldDispatch(
+        { livingWorld: state.livingWorld, players: state.club.footballSquad },
+        event
+      );
+      if (result.applied) {
+        set({
+          livingWorld: result.result.livingWorld,
+          club: { ...state.club, footballSquad: result.result.players },
+        });
+        saveToStorage(undefined, false);
+      }
+      return result;
+    },
+
     exportGameData: () => {
       return persistenceService.exportJson(get(), true);
     },
@@ -3570,6 +3605,8 @@ export const useGameStore = create<GameState>((set, get) => {
         simulatedMatchdays: data.simulatedMatchdays,
         matchScoutReports: data.matchScoutReports,
         unlockedSpeed2x: data.unlockedSpeed2x,
+        livingWorld: data.livingWorld ?? createEmptyLivingWorld(data.club.finances.reputation),
+        savePassthrough: data.savePassthrough ?? {},
         activeTab: 'dashboard',
         clubSelectionModalOpen: false,
       });
@@ -3612,6 +3649,8 @@ export const useGameStore = create<GameState>((set, get) => {
         simulatedMatchdays: [],
         lastRoundSummary: null,
         matchScoutReports: {},
+        livingWorld: createEmptyLivingWorld(REAL_INITIAL_PLAYER_CLUB.finances.reputation),
+        savePassthrough: {},
         activeTab: 'dashboard',
         isMatchLive: false,
       });

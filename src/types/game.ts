@@ -6,6 +6,13 @@
  * Core Game Domain Types
  */
 
+import type {
+  ManagerRelationship,
+  PlayerCareerState,
+  PlayerMentalState,
+  PlayerPersonalityProfile,
+} from '../domain/livingWorld/types';
+
 export type SportType = 'football' | 'basketball';
 
 export type PlayerPosition = 
@@ -75,6 +82,12 @@ export interface Player {
   rarity: PlayerRarity;
   personality: PlayerPersonality;
   traits: string[];
+
+  /** Living world (optional; filled on save migration v3+). */
+  personalityProfile?: PlayerPersonalityProfile;
+  mentalState?: PlayerMentalState;
+  managerRelationship?: ManagerRelationship;
+  careerState?: PlayerCareerState;
   
   // Dynamic Condition
   morale: number;    // 0-100

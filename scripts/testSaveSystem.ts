@@ -328,7 +328,7 @@ async function runTests() {
   if (!loadedSave) throw new Error('Loaded save is null');
 
   // Step 12: Verify EVERY important state!
-  assert(loadedSave.saveVersion === 2, 'Loaded saveVersion is 2');
+  assert(loadedSave.saveVersion === CURRENT_SAVE_VERSION, `Loaded saveVersion is ${CURRENT_SAVE_VERSION}`);
   assert(loadedSave.club.id === clubId, `Club ID matches: ${loadedSave.club.id}`);
   assert(loadedSave.club.name === 'Arsenal Gunners', `Club name matches: ${loadedSave.club.name}`);
   assert(loadedSave.club.footballTactics.formation === '4-2-3-1', `Tactics formation preserved: ${loadedSave.club.footballTactics.formation}`);

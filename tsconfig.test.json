@@ -8,6 +8,7 @@
     "scripts/testSquadStore.ts",
     "scripts/testSquadDnd.ts",
     "scripts/testMatchEngine.ts",
+    "scripts/testReferee.ts",
     "scripts/testBestTactics.ts",
     "scripts/testBestTacticsIntegration.ts",
     "scripts/calibrateBestTactics.ts"

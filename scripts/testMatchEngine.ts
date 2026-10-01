@@ -128,7 +128,7 @@ section('Test 6: applyLiveTactics pushes a tactical_change event and re-derives 
 // ---------------------------------------------------------------- Test 7
 section('Test 7: a live tactics change actually affects the NEXT minute\'s simulation (no pause needed)');
 {
-  const SEED = 555;
+  const SEED = 777;
   const h1 = home();
   const engineA = new FootballMatchEngine(h1, away(), SEED, h1.footballTactics, undefined, 0, 0);
   for (let i = 0; i < 10; i++) engineA.stepMinute();

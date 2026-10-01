@@ -12,9 +12,12 @@ import { SeededRandom } from './prng';
 import { calcAttackPower, calcDefensePower, buildSlotAssignments } from './matchPrediction';
 import { resolveTacticalState, toFootballTactics } from '../domain/tactics/tacticalState';
 import type { TacticalState } from '../domain/tactics/tacticalTypes';
-import { TACTICAL_ENGINE as T } from '../config/gameTuning';
+import { TACTICAL_ENGINE as T, REFEREE as REF } from '../config/gameTuning';
 import { clamp } from '../domain/shared/math';
 import { describeTacticalChange } from '../i18n/liveTactics';
+import type { RefereeProfile } from '../domain/referee/refereeTypes';
+import { refereeMultipliers } from '../domain/referee/refereeMultipliers';
+import { resolveRefereeForMatch } from '../domain/referee/createRefereeFromSeed';
 
 export interface SimulationStepResult {
   currentMinute: number;
@@ -48,6 +51,8 @@ export class FootballMatchEngine {
   private pendingInteractiveMoment: MatchEvent | null = null;
   private homeVipAttackBoost: number = 0;
   private homeVipDefenseBoost: number = 0;
+  private readonly referee: RefereeProfile;
+  private readonly yellowByPlayer = new Map<string, number>();
 
   constructor(
     homeClub: Club,
@@ -56,7 +61,8 @@ export class FootballMatchEngine {
     homeTactics?: FootballTactics,
     awayTactics?: FootballTactics,
     homeVipAttackBoost: number = 0,
-    homeVipDefenseBoost: number = 0
+    homeVipDefenseBoost: number = 0,
+    referee?: RefereeProfile,
   ) {
     this.seed = seed;
     this.prng = new SeededRandom(seed);
@@ -66,6 +72,7 @@ export class FootballMatchEngine {
     this.awayTactics = resolveTacticalState(awayTactics || awayClub.footballTactics);
     this.homeVipAttackBoost = homeVipAttackBoost;
     this.homeVipDefenseBoost = homeVipDefenseBoost;
+    this.referee = resolveRefereeForMatch(referee, seed);
 
     this.stats = {
       homePossession: 50,
@@ -80,6 +87,8 @@ export class FootballMatchEngine {
       awayFouls: 0,
       homeYellowCards: 0,
       awayYellowCards: 0,
+      homeRedCards: 0,
+      awayRedCards: 0,
       homeXg: 0.0,
       awayXg: 0.0,
     };
@@ -275,25 +284,8 @@ export class FootballMatchEngine {
           }
         }
       }
-    } else if (actionRoll > 0.94) {
-      // Foul or card event
-      const isHomeFoul = this.prng.nextChance(0.5);
-      if (isHomeFoul) this.stats.homeFouls++; else this.stats.awayFouls++;
-
-      if (this.prng.nextChance(0.18)) {
-        if (isHomeFoul) this.stats.homeYellowCards++; else this.stats.awayYellowCards++;
-        const cardEvent: MatchEvent = {
-          minute: this.minute,
-          sport: 'football',
-          type: 'yellow_card',
-          team: isHomeFoul ? 'home' : 'away',
-          textAr: `🟨 بطاقة صفراء إثر تدخل خشن في منتصف الملعب (الدقيقة ${this.minute})`,
-          textEn: `🟨 Yellow card issued for a reckless tackle in midfield (Min ${this.minute})`,
-          homeScore: this.homeScore,
-          awayScore: this.awayScore,
-        };
-        this.events.push(cardEvent);
-      }
+    } else if (this.prng.nextChance(refereeMultipliers(this.referee).foulMinute)) {
+      this.processDisciplineIncident();
     }
 
     return {
@@ -367,6 +359,130 @@ export class FootballMatchEngine {
     return this.seed;
   }
 
+  public getReferee(): RefereeProfile {
+    return this.referee;
+  }
+
+  private pickDisciplinePlayer(isHomeFoul: boolean) {
+    const club = isHomeFoul ? this.homeClub : this.awayClub;
+    const starters = club.footballLineup
+      .map((id) => club.footballSquad.find((p) => p.id === id))
+      .filter((p): p is NonNullable<typeof p> => !!p && p.position !== 'GK');
+    const pool = starters.length > 0 ? starters : club.footballSquad.filter((p) => p.position !== 'GK');
+    return pool.length > 0 ? this.prng.pick(pool) : this.prng.pick(club.footballSquad);
+  }
+
+  private pushDisciplineEvent(
+    type: 'foul' | 'yellow_card' | 'red_card',
+    team: 'home' | 'away',
+    player: { id: string; name: string; nameEn: string },
+    textAr: string,
+    textEn: string,
+  ): void {
+    this.events.push({
+      minute: this.minute,
+      sport: 'football',
+      type,
+      team,
+      playerId: player.id,
+      playerName: player.name,
+      textAr,
+      textEn,
+      homeScore: this.homeScore,
+      awayScore: this.awayScore,
+    });
+  }
+
+  private processDisciplineIncident(): void {
+    const mul = refereeMultipliers(this.referee);
+    const isHomeFoul = this.prng.nextChance(0.5);
+    if (isHomeFoul) this.stats.homeFouls++;
+    else this.stats.awayFouls++;
+
+    if (this.prng.nextChance(mul.advantagePlay)) return;
+
+    if (this.prng.nextChance(mul.penaltyGivenFoul)) {
+      this.resolvePenalty(isHomeFoul);
+      return;
+    }
+
+    if (this.prng.nextChance(mul.redGivenFoul)) {
+      const player = this.pickDisciplinePlayer(isHomeFoul);
+      this.issueDirectRed(isHomeFoul, player);
+      return;
+    }
+
+    if (this.prng.nextChance(mul.yellowGivenFoul)) {
+      const player = this.pickDisciplinePlayer(isHomeFoul);
+      this.issueYellow(isHomeFoul, player);
+    }
+  }
+
+  private issueYellow(isHomeFoul: boolean, player: { id: string; name: string; nameEn: string }): void {
+    const prev = this.yellowByPlayer.get(player.id) ?? 0;
+    if (prev >= 1) {
+      this.issueDirectRed(isHomeFoul, player, true);
+      return;
+    }
+    this.yellowByPlayer.set(player.id, prev + 1);
+    if (isHomeFoul) this.stats.homeYellowCards++;
+    else this.stats.awayYellowCards++;
+    this.pushDisciplineEvent(
+      'yellow_card',
+      isHomeFoul ? 'home' : 'away',
+      player,
+      `🟨 بطاقة صفراء لـ ${player.name} (الدقيقة ${this.minute})`,
+      `🟨 Yellow card for ${player.nameEn} (min ${this.minute})`,
+    );
+  }
+
+  private issueDirectRed(
+    isHomeFoul: boolean,
+    player: { id: string; name: string; nameEn: string },
+    secondYellow = false,
+  ): void {
+    if (isHomeFoul) this.stats.homeRedCards++;
+    else this.stats.awayRedCards++;
+    const ar = secondYellow
+      ? `🟥 بطاقة حمراء (صفراء ثانية) لـ ${player.name} (الدقيقة ${this.minute})`
+      : `🟥 بطاقة حمراء مباشرة لـ ${player.name} (الدقيقة ${this.minute})`;
+    const en = secondYellow
+      ? `🟥 Red card (second yellow) for ${player.nameEn} (min ${this.minute})`
+      : `🟥 Straight red for ${player.nameEn} (min ${this.minute})`;
+    this.pushDisciplineEvent('red_card', isHomeFoul ? 'home' : 'away', player, ar, en);
+  }
+
+  private resolvePenalty(isHomeFoul: boolean): void {
+    const benefitingHome = !isHomeFoul;
+    const takerClub = benefitingHome ? this.homeClub : this.awayClub;
+    const taker = this.prng.pick(
+      takerClub.footballSquad.filter((p) => p.position !== 'GK').slice(0, 11) || takerClub.footballSquad,
+    );
+    const scored = this.prng.nextChance(REF.penaltyGoalChance);
+    if (scored) {
+      if (benefitingHome) this.homeScore++;
+      else this.awayScore++;
+    }
+    const textAr = scored
+      ? `⚽ ركلة جزاء! ${taker.name} يسجل (الدقيقة ${this.minute}) (${this.homeScore}-${this.awayScore})`
+      : `❌ ركلة جزاء ضائعة — ${taker.name} (الدقيقة ${this.minute})`;
+    const textEn = scored
+      ? `⚽ Penalty scored by ${taker.nameEn} (min ${this.minute}) (${this.homeScore}-${this.awayScore})`
+      : `❌ Penalty missed by ${taker.nameEn} (min ${this.minute})`;
+    this.events.push({
+      minute: this.minute,
+      sport: 'football',
+      type: scored ? 'goal' : 'foul',
+      team: benefitingHome ? 'home' : 'away',
+      playerId: taker.id,
+      playerName: taker.name,
+      textAr,
+      textEn,
+      homeScore: this.homeScore,
+      awayScore: this.awayScore,
+    });
+  }
+
   /** Apply live tactical decision made by the coach */
   public applyInteractiveDecision(optionId: string) {
     const presets: Record<string, Partial<FootballTactics>> = {
@@ -431,6 +547,7 @@ export class FootballMatchEngine {
       id: `match_${this.seed}`,
       sport: 'football',
       seed: this.seed,
+      referee: this.referee,
       homeClubId: this.homeClub.id,
       homeClubName: this.homeClub.name,
       awayClubId: this.awayClub.id,

@@ -71,6 +71,8 @@ export class BasketballMatchEngine {
         awayFouls: this.prng.nextRange(12, 19),
         homeYellowCards: 0,
         awayYellowCards: 0,
+        homeRedCards: 0,
+        awayRedCards: 0,
         homeXg: 0,
         awayXg: 0,
       },

@@ -285,6 +285,8 @@ export interface MatchStats {
   awayFouls: number;
   homeYellowCards: number;
   awayYellowCards: number;
+  homeRedCards: number;
+  awayRedCards: number;
   homeXg: number;
   awayXg: number;
 }
@@ -293,6 +295,8 @@ export interface MatchRecord {
   id: string;
   sport: SportType;
   seed: number;
+  /** Assigned at kickoff from the match seed; omitted on old saves (re-derived on replay). */
+  referee?: import('../domain/referee/refereeTypes').RefereeProfile;
   homeClubId: string;
   homeClubName: string;
   awayClubId: string;

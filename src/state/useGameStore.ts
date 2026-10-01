@@ -69,6 +69,7 @@ import {
   DUEL_PIECES_CATALOG 
 } from '../data/tacticalDuelData';
 import { FootballMatchEngine } from '../engine/footballEngine';
+import { createRefereeFromSeed } from '../domain/referee/createRefereeFromSeed';
 import { SeededRandom } from '../engine/prng';
 import {
   SimTeam,
@@ -1901,6 +1902,7 @@ export const useGameStore = create<GameState>((set, get) => {
         // record can genuinely be re-simulated later (previously each of
         // these called Date.now() separately and could disagree).
         const matchSeed = Date.now();
+        const matchReferee = createRefereeFromSeed(matchSeed);
         const engine = new FootballMatchEngine(
           state.club, 
           opponent, 
@@ -1908,7 +1910,8 @@ export const useGameStore = create<GameState>((set, get) => {
           state.club.footballTactics,
           undefined,
           vipAttackBoost,
-          vipDefenseBoost
+          vipDefenseBoost,
+          matchReferee,
         );
         set({
           activeEngine: engine,
@@ -1922,6 +1925,7 @@ export const useGameStore = create<GameState>((set, get) => {
             id: `match_${matchSeed}`,
             sport: 'football',
             seed: matchSeed,
+            referee: matchReferee,
             homeClubId: state.club.id,
             homeClubName: state.club.name,
             awayClubId: opponent.id,
@@ -1942,6 +1946,8 @@ export const useGameStore = create<GameState>((set, get) => {
               awayFouls: 0,
               homeYellowCards: 0,
               awayYellowCards: 0,
+              homeRedCards: 0,
+              awayRedCards: 0,
               homeXg: 0,
               awayXg: 0,
             },
@@ -2078,6 +2084,7 @@ export const useGameStore = create<GameState>((set, get) => {
           id: `match_${finishedSeed}`,
           sport: 'football',
           seed: finishedSeed,
+          referee: state.activeMatchRecord?.referee ?? state.activeEngine!.getReferee(),
           homeClubId: state.club.id,
           homeClubName: state.club.name,
           awayClubId: state.activeMatchRecord?.awayClubId || REAL_OPPONENT_CLUBS[0].id,
@@ -2430,6 +2437,7 @@ export const useGameStore = create<GameState>((set, get) => {
         id: `match_${finishedSeed}`,
         sport: 'football',
         seed: finishedSeed,
+        referee: state.activeMatchRecord?.referee ?? state.activeEngine!.getReferee(),
         homeClubId: state.club.id,
         homeClubName: state.club.name,
         awayClubId: state.activeMatchRecord?.awayClubId || REAL_OPPONENT_CLUBS[0].id,
@@ -2561,6 +2569,7 @@ export const useGameStore = create<GameState>((set, get) => {
 
       // One seed for the engine AND the saved record (see confirmStartMatch).
       const matchSeed = Date.now();
+      const matchReferee = createRefereeFromSeed(matchSeed);
       const engine = new FootballMatchEngine(
         state.club,
         opponent,
@@ -2568,7 +2577,8 @@ export const useGameStore = create<GameState>((set, get) => {
         state.club.footballTactics,
         undefined,
         vipAttackBoost,
-        vipDefenseBoost
+        vipDefenseBoost,
+        matchReferee,
       );
 
       const res = engine.simulateToCompletion();
@@ -2629,6 +2639,7 @@ export const useGameStore = create<GameState>((set, get) => {
         id: `match_${matchSeed}`,
         sport: 'football',
         seed: matchSeed,
+        referee: engine.getReferee(),
         homeClubId: state.club.id,
         homeClubName: state.club.name,
         awayClubId: opponent.id,

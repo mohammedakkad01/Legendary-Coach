@@ -149,7 +149,46 @@ export const TACTICAL_ENGINE = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// 5) BEST TACTICS  (Phase 4 — NEW; consumed only by domain/tactics/bestTactics/*)
+// 5) REFEREE  (Phase 5 — user-match engine only; NOT matchdaySimulator)
+// ---------------------------------------------------------------------------
+/**
+ * Discipline rates per simulated minute. Neutral traits (50) with the bases
+ * below reproduce the pre-Phase-5 foul band (~6% of minutes) and ~18% yellow
+ * given a foul. Traits scale each rate via refereeMultipliers.ts.
+ */
+export const REFEREE = {
+  traitMin: 0,
+  traitMax: 100,
+  traitMultiplierMin: bounded(0.55, 0.2, 1),
+  traitMultiplierMax: bounded(1.55, 1, 2.5),
+  /** Chance a minute enters the discipline branch (was actionRoll > 0.94). */
+  baseFoulMinuteChance: bounded(0.06, 0.02, 0.14),
+  minFoulMinuteChance: bounded(0.02, 0.005, 0.08),
+  maxFoulMinuteChance: bounded(0.14, 0.06, 0.25),
+  foulSensitivityScale: bounded(0.45, 0, 1),
+  strictnessScale: bounded(0.5, 0, 1),
+  cardTendencyScale: bounded(0.55, 0, 1),
+  penaltyTendencyScale: bounded(0.5, 0, 1),
+  advantageTendencyScale: bounded(0.45, 0, 1),
+  baseYellowGivenFoul: bounded(0.18, 0.05, 0.5),
+  minYellowGivenFoul: bounded(0.04, 0, 0.2),
+  maxYellowGivenFoul: bounded(0.55, 0.2, 0.85),
+  baseRedGivenFoul: bounded(0.012, 0, 0.08),
+  minRedGivenFoul: bounded(0.002, 0, 0.02),
+  maxRedGivenFoul: bounded(0.08, 0.02, 0.2),
+  basePenaltyGivenFoul: bounded(0.07, 0.01, 0.2),
+  minPenaltyGivenFoul: bounded(0.01, 0, 0.05),
+  maxPenaltyGivenFoul: bounded(0.22, 0.05, 0.4),
+  /** Share of fouls where advantage is played (no card). */
+  baseAdvantageRate: bounded(0.12, 0, 0.35),
+  minAdvantageRate: bounded(0.02, 0, 0.15),
+  maxAdvantageRate: bounded(0.4, 0.1, 0.6),
+  /** Penalty conversion (neutral). */
+  penaltyGoalChance: bounded(0.78, 0.5, 0.95),
+} as const;
+
+// ---------------------------------------------------------------------------
+// 6) BEST TACTICS  (Phase 4 — NEW; consumed only by domain/tactics/bestTactics/*)
 // All values are heuristics, clamped at load, and only affect the RECOMMENDATION
 // — never the match engine.
 // ---------------------------------------------------------------------------
@@ -252,4 +291,5 @@ deepFreeze(POSITION_SUITABILITY);
 deepFreeze(SQUAD_LIMITS);
 deepFreeze(TACTICAL_DEFAULTS);
 deepFreeze(TACTICAL_ENGINE);
+deepFreeze(REFEREE);
 deepFreeze(BEST_TACTICS);

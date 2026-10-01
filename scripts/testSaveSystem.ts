@@ -226,6 +226,8 @@ async function runTests() {
       awayFouls: 9,
       homeYellowCards: 1,
       awayYellowCards: 2,
+      homeRedCards: 0,
+      awayRedCards: 0,
       homeXg: 2.4,
       awayXg: 0.9,
     },

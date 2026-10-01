@@ -12,6 +12,7 @@ import { useFeedback } from '../context/FeedbackContext';
 import { FootballFormation, MatchMentality, PressingStyle, PassingStyle, TeamTempo } from '../types/game';
 import { Shield, Sparkles, UserCheck, Flame, Crown, Lock } from 'lucide-react';
 import { VIP_LEVELS } from '../data/vipData';
+import { FORMATION_MIN_VIP_LEVEL } from '../domain/vip/vipCalculations';
 import { getFormation } from '../domain/squad/formations';
 import { createSquadState } from '../domain/squad/squadStateAdapter';
 import { getAssignments, getBenchIds } from '../domain/squad/squadQueries';
@@ -25,6 +26,10 @@ import { DragGhost } from './squad/DragGhost';
 import { SquadAriaLive } from './squad/SquadAriaLive';
 import { PlayerInfoPanel } from './squad/PlayerInfoPanel';
 import { SQUAD_DND_TEXT, moveErrorText, pick } from '../i18n/squad';
+import { useBestTactics } from '../hooks/useBestTactics';
+import { BestTacticsButton } from './tactics/BestTacticsButton';
+import { BestTacticsPreviewSheet } from './tactics/BestTacticsPreviewSheet';
+import { bestTacticsErrorText, bestTacticsLabel } from '../i18n/bestTactics';
 import { simulateMatchRound, MatchRoundResult } from '../engine/tacticalMatchEngine';
 import type { Player } from '../types/game';
 
@@ -35,13 +40,13 @@ interface FormationItem {
 }
 
 const ALL_FORMATIONS: FormationItem[] = [
-  { id: '4-3-3', label: '4-3-3', minVipLevel: 1 },
-  { id: '4-4-2', label: '4-4-2', minVipLevel: 1 },
-  { id: '4-2-3-1', label: '4-2-3-1', minVipLevel: 1 },
-  { id: '3-5-2', label: '3-5-2', minVipLevel: 1 },
-  { id: '5-3-2', label: '5-3-2', minVipLevel: 1 },
-  { id: '4-1-4-1', label: '4-1-4-1 (VIP 2+)', minVipLevel: 2 },
-  { id: '3-4-3', label: '3-4-3 (VIP 3+)', minVipLevel: 3 },
+  { id: '4-3-3', label: '4-3-3', minVipLevel: FORMATION_MIN_VIP_LEVEL['4-3-3'] },
+  { id: '4-4-2', label: '4-4-2', minVipLevel: FORMATION_MIN_VIP_LEVEL['4-4-2'] },
+  { id: '4-2-3-1', label: '4-2-3-1', minVipLevel: FORMATION_MIN_VIP_LEVEL['4-2-3-1'] },
+  { id: '3-5-2', label: '3-5-2', minVipLevel: FORMATION_MIN_VIP_LEVEL['3-5-2'] },
+  { id: '5-3-2', label: '5-3-2', minVipLevel: FORMATION_MIN_VIP_LEVEL['5-3-2'] },
+  { id: '4-1-4-1', label: '4-1-4-1 (VIP 2+)', minVipLevel: FORMATION_MIN_VIP_LEVEL['4-1-4-1'] },
+  { id: '3-4-3', label: '3-4-3 (VIP 3+)', minVipLevel: FORMATION_MIN_VIP_LEVEL['3-4-3'] },
 ];
 
 export const TacticalBoardView: React.FC = () => {
@@ -67,6 +72,11 @@ export const TacticalBoardView: React.FC = () => {
   const [roundPreview, setRoundPreview] = useState<MatchRoundResult | null>(null);
   const [roundPreviewError, setRoundPreviewError] = useState<string | null>(null);
   const [infoPlayerId, setInfoPlayerId] = useState<string | null>(null);
+  const bestTactics = useBestTactics();
+  const handleApplyBestTactics = () => {
+    const result = bestTactics.apply();
+    if (result?.ok) toast.success(bestTacticsLabel('applied', isAr));
+  };
 
   // Squad domain state, derived fresh from the club each render (see
   // domain/squad/squadStateAdapter.ts — tolerant of a short/legacy lineup).
@@ -209,6 +219,20 @@ export const TacticalBoardView: React.FC = () => {
         );
       })()}
 
+      {bestTactics.recommendation && (
+        <BestTacticsPreviewSheet
+          isAr={isAr}
+          club={club}
+          recommendation={bestTactics.recommendation}
+          error={bestTactics.error}
+          isStale={bestTactics.isStale}
+          busy={bestTactics.status === 'computing'}
+          onApply={handleApplyBestTactics}
+          onClose={bestTactics.dismiss}
+          onRecompute={() => void bestTactics.compute()}
+        />
+      )}
+
       {infoPlayer && infoAssignment && (
         <PlayerInfoPanel player={infoPlayer} assignment={infoAssignment} isAr={isAr} onClose={() => setInfoPlayerId(null)} />
       )}
@@ -256,6 +280,11 @@ export const TacticalBoardView: React.FC = () => {
             <span className={`text-lg font-black ${synergyColor}`}>{teamSynergy.score}%</span>
             <span className={`text-[9px] font-bold block ${synergyColor}`}>{isAr ? teamSynergy.rating : teamSynergy.ratingEn}</span>
           </div>
+          <BestTacticsButton
+            isAr={isAr}
+            busy={bestTactics.status === 'computing'}
+            onPress={() => void bestTactics.compute()}
+          />
           <button
             id="btn_play_match_from_tactics"
             onClick={() => startNewMatch()}
@@ -266,6 +295,19 @@ export const TacticalBoardView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {bestTactics.status === 'error' && bestTactics.error && (
+        <div role="alert" className="bg-rose-950/60 border border-rose-500/40 p-3 rounded-2xl flex items-center justify-between gap-2 text-xs text-rose-200">
+          <span>{bestTacticsErrorText(bestTactics.error, isAr)}</span>
+          <button
+            onClick={bestTactics.dismiss}
+            aria-label={bestTacticsLabel('close', isAr)}
+            className="text-rose-300 hover:text-white text-xs px-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* VIP Formation Lock Warning Toast */}
       {formationLockWarning && (

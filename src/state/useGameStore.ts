@@ -97,9 +97,8 @@ import { EMPTY_SLOT } from '../domain/squad/squadTypes';
 import { applyRecommendation } from '../domain/tactics/bestTactics/applyRecommendation';
 import type { ApplyBestTacticsError } from '../domain/tactics/bestTactics/applyRecommendation';
 import type { BestTacticsRecommendation } from '../domain/tactics/bestTactics/types';
-import { FORMATION_MIN_VIP_LEVEL, getVipLevel } from '../domain/vip/vipCalculations';
-import { err } from '../domain/shared/result';
 import type { Result } from '../domain/shared/result';
+import { deriveSyntheticOpponentTactics, opponentTacticsWithRoles } from '../domain/tactics/deriveSyntheticOpponentTactics';
 import { SaveStatus } from '../types/save';
 
 export type GameTab = 
@@ -653,6 +652,10 @@ export const useGameStore = create<GameState>((set, get) => {
     const oOutfield = finalSquad.filter(p => p.position !== 'GK').slice(0, 10);
     const opponentLineup = [oGk, ...oOutfield].filter((p): p is Player => !!p).map(p => p.id);
 
+    const opponentTacticsCore = deriveSyntheticOpponentTactics(
+      nextFixture.opponentClubId,
+      opponentConfig.starRating,
+    );
     const opponent: Club = {
       ...REAL_INITIAL_PLAYER_CLUB,
       id: nextFixture.opponentClubId,
@@ -663,6 +666,7 @@ export const useGameStore = create<GameState>((set, get) => {
       logoUrl: nextFixture.opponentBadge,
       footballSquad: finalSquad,
       footballLineup: opponentLineup,
+      footballTactics: opponentTacticsWithRoles(opponentTacticsCore, opponentLineup),
     };
 
     // Team power from the starting XIs — paired with the ACTUAL formation
@@ -1246,10 +1250,6 @@ export const useGameStore = create<GameState>((set, get) => {
 
     applyBestTactics: (rec) => {
       const { club, vipPoints } = get();
-      const requiredVipLevel = FORMATION_MIN_VIP_LEVEL[rec.formation] ?? 1;
-      if (getVipLevel(vipPoints) < requiredVipLevel) {
-        return err({ code: 'FORMATION_LOCKED', formation: rec.formation, requiredVipLevel });
-      }
       const result = applyRecommendation(club, rec, { maxSubstitutes: getMaxBenchSlots(vipPoints) });
       if (result.ok) {
         soundEffects.playTap();

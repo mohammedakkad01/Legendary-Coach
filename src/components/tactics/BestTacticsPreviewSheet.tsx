@@ -113,8 +113,8 @@ export const BestTacticsPreviewSheet: React.FC<BestTacticsPreviewSheetProps> = (
     .map((l) => ({ slot: l.assignedPosition, inId: l.playerId, outId: club.footballLineup[l.slotIndex] || undefined }));
   const formationChanged = current.formation !== rec.formation;
 
-  const settings: { label: string; value: string; changed: boolean }[] = [
-    { label: bestTacticsLabel('formation', isAr), value: rec.formation, changed: formationChanged },
+  const settings: { label: string; value: string; changed: boolean; ltr?: boolean }[] = [
+    { label: bestTacticsLabel('formation', isAr), value: rec.formation, changed: formationChanged, ltr: true },
     { label: bestTacticsLabel('mentality', isAr), value: pick(MENTALITY_TEXT[rec.tactics.mentality], isAr), changed: rec.tactics.mentality !== current.mentality },
     { label: bestTacticsLabel('pressing', isAr), value: pick(PRESSING_TEXT[rec.tactics.pressing], isAr), changed: rec.tactics.pressing !== current.pressing },
     { label: bestTacticsLabel('passing', isAr), value: pick(PASSING_TEXT[rec.tactics.passing], isAr), changed: rec.tactics.passing !== current.passing },
@@ -151,7 +151,7 @@ export const BestTacticsPreviewSheet: React.FC<BestTacticsPreviewSheetProps> = (
       >
         <div className="flex items-center justify-between gap-2 p-4 pb-2">
           <h3 id="best-tactics-title" className="text-base font-black font-heading text-white truncate">
-            {bestTacticsLabel('title', isAr)} · <span className="text-amber-400">{rec.formation}</span>
+            {bestTacticsLabel('title', isAr)} · <bdi dir="ltr" className="text-amber-400">{rec.formation}</bdi>
           </h3>
           <button
             type="button"
@@ -259,7 +259,7 @@ export const BestTacticsPreviewSheet: React.FC<BestTacticsPreviewSheetProps> = (
               {settings.map((s) => (
                 <div key={s.label} className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 border ${s.changed ? 'border-amber-500/40 bg-amber-950/30' : 'border-slate-800 bg-slate-950/50'}`}>
                   <dt className="text-slate-400 truncate">{s.label}</dt>
-                  <dd className={`font-black truncate ${s.changed ? 'text-amber-300' : 'text-white'}`}>{s.value}</dd>
+                  <dd dir={s.ltr ? 'ltr' : undefined} className={`font-black truncate ${s.changed ? 'text-amber-300' : 'text-white'}`}>{s.value}</dd>
                 </div>
               ))}
             </dl>
@@ -284,7 +284,7 @@ export const BestTacticsPreviewSheet: React.FC<BestTacticsPreviewSheetProps> = (
               <div className="flex flex-wrap gap-1.5">
                 {rec.alternatives.map((a) => (
                   <span key={a.formation} className="text-[11px] font-bold text-slate-300 bg-slate-950/60 border border-slate-800 rounded-lg px-2 py-1">
-                    {a.formation} · <span className="text-amber-300">{a.score}</span>
+                    <bdi dir="ltr">{a.formation}</bdi> · <span className="text-amber-300">{a.score}</span>
                   </span>
                 ))}
               </div>

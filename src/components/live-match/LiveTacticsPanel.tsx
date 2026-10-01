@@ -8,16 +8,19 @@
  * and takes effect from the next simulated minute; never pauses the match.
  */
 
-import React, { useEffect, useState } from 'react';
-import { Sliders, X, Check } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Sliders, X, Check, Lock } from 'lucide-react';
 import type { FootballFormation, FootballTactics, MatchMentality, PressingStyle, TeamTempo } from '../../types/game';
 import { FORMATION_LIST, MENTALITY_TEXT, PRESSING_TEXT, TEMPO_TEXT, WIDTH_TEXT, LIVE_TACTICS_TEXT, pick } from '../../i18n/liveTactics';
+import { FORMATION_MIN_VIP_LEVEL, getUnlockedFormations, getVipLevel } from '../../domain/vip/vipCalculations';
+import { useFeedback } from '../../context/FeedbackContext';
 
 export interface LiveTacticsPanelProps {
   readonly isOpen: boolean;
   readonly onClose: () => void;
   readonly tactics: FootballTactics;
   readonly isAr: boolean;
+  readonly vipPoints: number;
   readonly onApply: (changes: Partial<FootballTactics>) => void;
 }
 
@@ -51,9 +54,12 @@ function Segmented<T extends string>({
   );
 }
 
-export const LiveTacticsPanel: React.FC<LiveTacticsPanelProps> = ({ isOpen, onClose, tactics, isAr, onApply }) => {
+export const LiveTacticsPanel: React.FC<LiveTacticsPanelProps> = ({ isOpen, onClose, tactics, isAr, vipPoints, onApply }) => {
   const [draft, setDraft] = useState(tactics);
   const [justApplied, setJustApplied] = useState(false);
+  const { toast } = useFeedback();
+  const vipLevel = getVipLevel(vipPoints);
+  const unlocked = useMemo(() => new Set(getUnlockedFormations(vipLevel)), [vipLevel]);
 
   // Re-sync the draft whenever the panel (re)opens or the live tactics actually change elsewhere.
   useEffect(() => {
@@ -99,18 +105,40 @@ export const LiveTacticsPanel: React.FC<LiveTacticsPanelProps> = ({ isOpen, onCl
         <div className="space-y-1.5">
           <span className="text-[11px] font-bold text-slate-400">{pick(T.formation, isAr)}</span>
           <div className="flex flex-wrap gap-1.5">
-            {FORMATION_LIST.map((f: FootballFormation) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setDraft((d) => ({ ...d, formation: f }))}
-                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black border transition-all ${
-                  f === draft.formation ? 'bg-amber-500 border-amber-400 text-slate-950' : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-600'
-                }`}
-              >
-                {f}
-              </button>
-            ))}
+            {FORMATION_LIST.map((f: FootballFormation) => {
+              const isLocked = !unlocked.has(f);
+              const isSelected = f === draft.formation;
+              const show = !isLocked || isSelected;
+              if (!show) return null;
+              return (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => {
+                    if (isLocked) {
+                      const need = FORMATION_MIN_VIP_LEVEL[f] ?? 1;
+                      toast.error(
+                        isAr
+                          ? `تشكيل ${f} متاح من VIP ${need} فما فوق`
+                          : `Formation ${f} unlocks at VIP ${need}+`,
+                      );
+                      return;
+                    }
+                    setDraft((d) => ({ ...d, formation: f }));
+                  }}
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-black border transition-all flex items-center gap-1 ${
+                    isSelected
+                      ? 'bg-amber-500 border-amber-400 text-slate-950'
+                      : isLocked
+                        ? 'bg-slate-900/80 border-slate-800 text-slate-500'
+                        : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-600'
+                  }`}
+                >
+                  {isLocked && <Lock className="w-3 h-3 shrink-0" aria-hidden="true" />}
+                  <bdi dir="ltr">{f}</bdi>
+                </button>
+              );
+            })}
           </div>
         </div>
 

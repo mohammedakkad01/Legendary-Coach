@@ -20,6 +20,7 @@ import { applyRecommendation, deriveOpponentProfile, recommendBestTactics } from
 import { getFormation } from '../src/domain/squad/formations';
 import { normalizeSlot } from '../src/domain/squad/positionTaxonomy';
 import { buildBestTacticsInput } from '../src/hooks/bestTactics/bestTacticsInput';
+import { deriveSyntheticOpponentTactics, opponentTacticsWithRoles } from '../src/domain/tactics/deriveSyntheticOpponentTactics';
 import type { Club, Player } from '../src/types/game';
 
 const MATCHES = Math.max(10, Number(process.argv[2]) || 200);
@@ -87,6 +88,7 @@ function syntheticClub(configIndex: number): Club {
   const gk = squad.find((p) => p.position === 'GK');
   const outfield = squad.filter((p) => p.position !== 'GK');
   const lineup = [gk, ...outfield.slice(0, 10)].filter((p): p is Player => !!p).map((p) => p.id);
+  const tacticsCore = deriveSyntheticOpponentTactics(config.id, config.starRating);
   return {
     ...clone(REAL_INITIAL_PLAYER_CLUB),
     id: config.id,
@@ -95,6 +97,7 @@ function syntheticClub(configIndex: number): Club {
     footballSquad: squad,
     footballLineup: lineup,
     footballBench: outfield.slice(10, 10 + 5).map((p) => p.id),
+    footballTactics: opponentTacticsWithRoles(tacticsCore, lineup),
   };
 }
 
@@ -120,10 +123,39 @@ const scenarios: { name: string; user: Club; opponent: Club }[] = [
   { name: `${label(weak)} as user vs ${label(mid)}`, user: weak, opponent: mid },
 ];
 
+const BLOCKS = 10;
+const BLOCK_SIZE = Math.floor(MATCHES / BLOCKS);
+
 const ppg = (t: Tally) => (t.points / MATCHES).toFixed(3);
 const gdpg = (t: Tally) => (t.gd / MATCHES >= 0 ? '+' : '') + (t.gd / MATCHES).toFixed(2);
 
-console.log(`Best Tactics calibration — ${MATCHES} seeded matches per setup, user = home side\n`);
+const meanStd = (xs: readonly number[]): { mean: number; std: number } => {
+  const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const std = Math.sqrt(xs.reduce((s, x) => s + (x - mean) ** 2, 0) / Math.max(1, xs.length - 1));
+  return { mean, std };
+};
+
+function blockPpgs(user: Club, opponent: Club): { mean: number; std: number } {
+  const blocks: number[] = [];
+  for (let b = 0; b < BLOCKS; b++) {
+    let pts = 0;
+    for (let j = 0; j < BLOCK_SIZE; j++) {
+      const seed = seeds[b * BLOCK_SIZE + j]!;
+      const res = new FootballMatchEngine(clone(user), clone(opponent), seed, undefined, undefined, 0, 0).simulateFullMatch();
+      const diff = res.homeScore - res.awayScore;
+      pts += diff > 0 ? 3 : diff === 0 ? 1 : 0;
+    }
+    blocks.push(pts / BLOCK_SIZE);
+  }
+  return meanStd(blocks);
+}
+
+const oppStyle = (c: Club) =>
+  `${c.footballTactics.formation}/${c.footballTactics.mentality}/${c.footballTactics.pressing}`;
+
+console.log(
+  `Best Tactics calibration — ${MATCHES} matches/setup (${BLOCKS}×${BLOCK_SIZE} blocks), identical seeds for (a)(b)(c) per scenario, user = home\n`,
+);
 let gainsVsCurrent = 0;
 let gainsVsTop11 = 0;
 for (const s of scenarios) {
@@ -132,14 +164,19 @@ for (const s of scenarios) {
   const a = play(bt.club, s.opponent, seeds);
   const b = play(s.user, s.opponent, seeds);
   const c = play(topElevenByOverall(s.user), s.opponent, seeds);
-  // Decomposition: where does the gain come from?
   const d = play({ ...bt.club, footballTactics: { ...s.user.footballTactics, formation: bt.club.footballTactics.formation } }, s.opponent, seeds);
   const e = play({ ...s.user, footballTactics: { ...bt.club.footballTactics, formation: s.user.footballTactics.formation } }, s.opponent, seeds);
+  const statA = blockPpgs(bt.club, s.opponent);
+  const statB = blockPpgs(s.user, s.opponent);
+  const delta = statA.mean - statB.mean;
+  const deltaSe = Math.sqrt(statA.std ** 2 + statB.std ** 2);
   if (a.points > b.points) gainsVsCurrent += 1;
   if (a.points > c.points) gainsVsTop11 += 1;
   console.log(`- ${s.name}`);
-  console.log(`    (a) Best Tactics [${bt.formation}, ${bt.mentality}${bt.alreadyOptimal ? ', alreadyOptimal' : ''}]: PPG ${ppg(a)}  GD/g ${gdpg(a)}  W-D-L ${a.w}-${a.d}-${a.l}`);
-  console.log(`    (b) current setup                : PPG ${ppg(b)}  GD/g ${gdpg(b)}  W-D-L ${b.w}-${b.d}-${b.l}`);
+  console.log(`    opponent style: ${oppStyle(s.opponent)}`);
+  console.log(`    (a) Best Tactics [${bt.formation}, ${bt.mentality}${bt.alreadyOptimal ? ', alreadyOptimal' : ''}]: PPG ${ppg(a)} ± ${statA.std.toFixed(3)} (blocks)  GD/g ${gdpg(a)}  W-D-L ${a.w}-${a.d}-${a.l}`);
+  console.log(`    (b) current setup                : PPG ${ppg(b)} ± ${statB.std.toFixed(3)} (blocks)  GD/g ${gdpg(b)}  W-D-L ${b.w}-${b.d}-${b.l}`);
+  console.log(`    Δ(a−b) block means: ${delta >= 0 ? '+' : ''}${delta.toFixed(3)} ± ${deltaSe.toFixed(3)} PPG`);
   console.log(`    (c) top 11 by overall            : PPG ${ppg(c)}  GD/g ${gdpg(c)}  W-D-L ${c.w}-${c.d}-${c.l}`);
   console.log(`    (d) BT XI+formation, current settings : PPG ${ppg(d)}  GD/g ${gdpg(d)}`);
   console.log(`    (e) current XI, BT settings           : PPG ${ppg(e)}  GD/g ${gdpg(e)}`);

@@ -69,13 +69,16 @@ const R = (ar: (p: Params, n: (id: unknown) => string) => string, en: (p: Params
     return isAr ? ar(p, n) : en(p, n);
   };
 
+/** Left-to-right isolate, so "3-5-2" or "+1.6" keep their order inside Arabic (RTL) sentences. */
+const ltr = (v: unknown): string => `\u2066${String(v)}\u2069`;
+
 const effect = (p: Params): string => {
   const v = Number(p.effect ?? 0);
-  return v > 0 ? `+${v}` : `${v}`;
+  return ltr(v > 0 ? `+${v}` : `${v}`);
 };
 
 const RENDERERS: Record<string, Renderer> = {
-  formation_chosen: R((p) => `التشكيل ${p.formation} يعطي أفضل توازن بين لاعبيك المتاحين.`, (p) => `${p.formation} gives the best balance for your available players.`),
+  formation_chosen: R((p) => `التشكيل ${ltr(p.formation)} يعطي أفضل توازن بين لاعبيك المتاحين.`, (p) => `${p.formation} gives the best balance for your available players.`),
   excluded_unavailable: R((p) => `استُبعد ${p.count} لاعب (${p.injured} مصاب، ${p.suspended} موقوف).`, (p) => `${p.count} player(s) excluded (${p.injured} injured, ${p.suspended} suspended).`),
   current_xi_has_unavailable: R((p) => `تشكيلتك الحالية فيها ${p.count} لاعب غير متاح.`, (p) => `Your current XI includes ${p.count} unavailable player(s).`),
   opponent_unknown: R(() => 'لا توجد معلومات عن الخصم، تم التقييم ضد خصم متوسط.', () => 'No opponent info — evaluated against an average opponent.'),
@@ -89,7 +92,7 @@ const RENDERERS: Record<string, Renderer> = {
   in_form_player: R((p, n) => `${n(p.playerId)} في حالة فنية ممتازة (${p.form}/10).`, (p, n) => `${n(p.playerId)} is in great form (${p.form}/10).`),
   tactic_mentality_fit: R((p) => `العقلية مضبوطة حسب فارق القوة مع الخصم (${effect(p)}).`, (p) => `Mentality is matched to the strength gap with the opponent (${effect(p)}).`),
   tactic_midfield_control: R((p) => `${p.mine} لاعبي وسط مقابل ${p.theirs} للخصم (${effect(p)}).`, (p) => `${p.mine} midfielders vs ${p.theirs} for the opponent (${effect(p)}).`),
-  tactic_wide_vs_back_three: R((p) => `اللعب العريض يستغل أطراف خصم يلعب ${p.opponentFormation} (${effect(p)}).`, (p) => `Wide play exploits the flanks of a ${p.opponentFormation} (${effect(p)}).`),
+  tactic_wide_vs_back_three: R((p) => `اللعب العريض يستغل أطراف خصم يلعب ${ltr(p.opponentFormation)} (${effect(p)}).`, (p) => `Wide play exploits the flanks of a ${p.opponentFormation} (${effect(p)}).`),
   tactic_press_resistance: R((p) => `أسلوب التمرير مناسب لمواجهة ضغط الخصم (${effect(p)}).`, (p) => `Passing style suits facing the opponent's press (${effect(p)}).`),
   tactic_counter_vs_attacking: R((p) => `سرعة المهاجمين تناسب المرتدات ضد خصم هجومي (${effect(p)}).`, (p) => `Attacker pace suits counters against an attacking opponent (${effect(p)}).`),
   tactic_offside_trap: R((p) => `مصيدة التسلل ${Number(p.effect) >= 0 ? 'مناسبة' : 'مخاطرة'} لمدافعيك (${effect(p)}).`, (p) => `Offside trap ${Number(p.effect) >= 0 ? 'suits' : 'is a risk for'} your defenders (${effect(p)}).`),
@@ -112,8 +115,6 @@ export function bestTacticsErrorText(error: BestTacticsError | ApplyBestTacticsE
       return pick(t(`لا يوجد ${error.required} لاعباً متاحاً (المتاح ${error.available}).`, `Not enough available players (${error.available}/${error.required}).`), isAr);
     case 'UNAVAILABLE_PLAYER':
       return pick(BEST_TACTICS_TEXT.staleWarning, isAr);
-    case 'FORMATION_LOCKED':
-      return pick(t(`تشكيل ${error.formation} يتطلب VIP ${error.requiredVipLevel}.`, `Formation ${error.formation} requires VIP ${error.requiredVipLevel}.`), isAr);
     case 'INVALID_RESULT':
       return pick(t('التشكيلة المقترحة لا تجتاز قواعد الفريق.', 'The recommended squad failed the squad rules.'), isAr);
     default:

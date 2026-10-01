@@ -7,7 +7,7 @@
  * the explicit "Apply" button; nothing in this module runs silently.
  */
 
-import type { FootballFormation, FootballTactics } from '../../../types/game';
+import type { FootballTactics } from '../../../types/game';
 import { err, ok } from '../../shared/result';
 import type { Result } from '../../shared/result';
 import { createSquadState } from '../../squad/squadStateAdapter';
@@ -21,14 +21,7 @@ export type ApplyError =
   | { readonly code: 'INVALID_RESULT'; readonly violations: readonly SquadViolation[] }
   | { readonly code: 'UNAVAILABLE_PLAYER'; readonly playerId: string };
 
-/** Store-level refusal: the recommended formation is above the coach's VIP level. */
-export type FormationLockedError = {
-  readonly code: 'FORMATION_LOCKED';
-  readonly formation: FootballFormation;
-  readonly requiredVipLevel: number;
-};
-
-export type ApplyBestTacticsError = ApplyError | FormationLockedError;
+export type ApplyBestTacticsError = ApplyError;
 
 type ClubLike = Omit<ClubSquadSlice, 'footballTactics'> & { footballTactics: FootballTactics };
 

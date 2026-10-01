@@ -40,6 +40,7 @@ export const LiveMatchView: React.FC = () => {
     setPostMatchAnalyst,
     setActiveTab,
     lastRoundSummary,
+    vipPoints,
     isAr,
     commentaryEndRef,
     speedModalOpen,
@@ -90,6 +91,7 @@ export const LiveMatchView: React.FC = () => {
         onClose={() => setTacticsPanelOpen(false)}
         tactics={activeMatchHomeTactics ?? club.footballTactics}
         isAr={isAr}
+        vipPoints={vipPoints}
         onApply={(changes) => {
           applyLiveTactics(changes);
           setTimeout(() => setTacticsPanelOpen(false), 900);

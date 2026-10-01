@@ -32,7 +32,7 @@ async function run() {
   const { deriveOpponentProfile, recommendBestTactics } = await import('../src/domain/tactics/bestTactics');
   const { createSquadState } = await import('../src/domain/squad/squadStateAdapter');
   const { validateForKickoff } = await import('../src/domain/squad/squadRules');
-  const { getUnlockedFormations, getMaxBenchSlots, FORMATION_MIN_VIP_LEVEL } = await import('../src/domain/vip/vipCalculations');
+  const { getUnlockedFormations, getMaxBenchSlots } = await import('../src/domain/vip/vipCalculations');
   const { VIP_LEVELS } = await import('../src/data/vipData');
   const { buildBestTacticsInput, bestTacticsInputKey, isInsightCurrent, toBestTacticsPlayer } = await import('../src/hooks/bestTactics/bestTacticsInput');
   const { bestTacticsErrorText } = await import('../src/i18n/bestTactics');
@@ -134,7 +134,7 @@ async function run() {
     }
   }
 
-  section('4) VIP-locked formations: never recommended at VIP 1, refused by the store');
+  section('4) VIP-locked formations: recommender respects allowedFormations; Apply does not block saves');
   {
     const club0: Club = clone(REAL_INITIAL_PLAYER_CLUB);
     const allowed = getUnlockedFormations(1);
@@ -144,15 +144,28 @@ async function run() {
     assert(rec.ok && allowed.includes(rec.value.formation), 'recommended formation is unlocked at VIP 1');
     if (rec.ok) assert(rec.value.alternatives.every((a) => allowed.includes(a.formation)), 'alternatives are unlocked at VIP 1 too');
 
-    const full = recommendBestTactics(buildBestTacticsInput(club0, undefined, 5));
-    if (full.ok) {
-      const locked = { ...full.value, formation: '3-4-3' as const };
-      useGameStore.setState({ club: club0, vipPoints: 0 });
-      const ref = useGameStore.getState().club;
-      const res = useGameStore.getState().applyBestTactics(locked);
-      assert(!res.ok && res.error.code === 'FORMATION_LOCKED' && res.error.requiredVipLevel === FORMATION_MIN_VIP_LEVEL['3-4-3'], '3-4-3 at VIP 1 → FORMATION_LOCKED');
-      assert(useGameStore.getState().club === ref, 'club untouched after FORMATION_LOCKED');
-    }
+    const clubOn343: Club = {
+      ...club0,
+      footballTactics: { ...club0.footballTactics, formation: '3-4-3' },
+    };
+    useGameStore.setState({ club: clubOn343, vipPoints: 0 });
+    assertEqual(useGameStore.getState().club.footballTactics.formation, '3-4-3', 'grandfathered 3-4-3 on a save at VIP 1 is kept (no save/match block)');
+    const recV1 = recommendBestTactics(buildBestTacticsInput(clubOn343, undefined, 5, allowed));
+    assert(recV1.ok && !allowed.includes('3-4-3') && recV1.value.formation !== '3-4-3', 'new Best Tactics suggestions respect VIP formation cap');
+  }
+
+  section('4b) synthetic opponent tactics vary by club id (pre-match / Best Tactics adapter)');
+  {
+    const { deriveSyntheticOpponentTactics, opponentTacticsWithRoles } = await import('../src/domain/tactics/deriveSyntheticOpponentTactics');
+    const a = deriveSyntheticOpponentTactics('club_a', 4);
+    const b = deriveSyntheticOpponentTactics('club_b', 4);
+    assertEqual(deriveSyntheticOpponentTactics('club_a', 4), a, 'deterministic per club id');
+    assert(
+      a.formation !== b.formation || a.pressing !== b.pressing || a.mentality !== b.mentality,
+      'different club ids produce different tactical profiles (sample pair)',
+    );
+    const roles = opponentTacticsWithRoles(a, ['gk', 'd1', 'd2']);
+    assertEqual(roles.captainId, 'd1', 'role ids come from the opponent XI, not REAL_INITIAL_PLAYER_CLUB');
   }
 
   // ---------------------------------------------------------------- 5. hook (pure part)

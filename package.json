@@ -10,7 +10,10 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit && tsc -p tsconfig.test.json",
-    "test": "tsx scripts/testRedeemCodes.ts && tsx scripts/testCacheArchitecture.ts && tsx scripts/testSaveSystem.ts && tsx scripts/testSquadDomain.ts && tsx scripts/testSquadStore.ts && tsx scripts/testSquadDnd.ts && tsx scripts/testMatchEngine.ts"
+    "test": "tsx scripts/testRedeemCodes.ts && tsx scripts/testCacheArchitecture.ts && tsx scripts/testSaveSystem.ts && tsx scripts/testSquadDomain.ts && tsx scripts/testSquadStore.ts && tsx scripts/testSquadDnd.ts && tsx scripts/testMatchEngine.ts && npm run testBestTactics && npm run testBestTacticsIntegration",
+    "testBestTactics": "tsx scripts/testBestTactics.ts",
+    "testBestTacticsIntegration": "tsx scripts/testBestTacticsIntegration.ts",
+    "calibrateBestTactics": "tsx scripts/calibrateBestTactics.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

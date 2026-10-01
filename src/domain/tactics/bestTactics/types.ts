@@ -34,6 +34,8 @@ export interface BestTacticsInput {
   readonly opponent?: OpponentProfile;
   /** VIP-tiered substitutes cap, injected by the caller. */
   readonly maxSubstitutes: number;
+  /** Formations the coach may use (VIP-gated). Omitted → every formation is considered. */
+  readonly allowedFormations?: readonly FootballFormation[];
 }
 
 export type UnavailableReason = 'injured' | 'suspended';

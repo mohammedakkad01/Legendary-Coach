@@ -76,8 +76,10 @@ export function recommendBestTactics(input: BestTacticsInput): Result<BestTactic
       return err({ code: 'NOT_ENOUGH_AVAILABLE_PLAYERS', available: available.length, required });
     }
 
+    const allowed = input.allowedFormations ? new Set(input.allowedFormations) : null;
     const candidates: Candidate[] = [];
     for (const formation of FORMATION_IDS) {
+      if (allowed && !allowed.has(formation)) continue;
       const xi = optimizeLineup(formation, available);
       if (xi.length === 0) continue;
       const profile = buildLineupProfile(formation, xi);

@@ -255,6 +255,16 @@ export interface MatchEvent {
   interactiveOptions?: InteractiveDecisionOption[];
   /** Present only on 'tactical_change' events — exactly what the coach just applied, for a clean UI chip instead of parsing textAr/textEn. */
   tacticalChange?: Partial<Pick<FootballTactics, 'formation' | 'mentality' | 'tempo' | 'pressing' | 'width'>>;
+  /**
+   * Transient VAR classification. Decision code may read it while building a
+   * review. It is stripped before the event is stored once the review resolves,
+   * and the UI must not render it.
+   */
+  incidentTruth?: 'goal' | 'no_goal' | 'penalty' | 'no_penalty' | 'red' | 'no_red';
+  /** Set when a user-match VAR review is opened. Absent when VAR is off. */
+  eventId?: string;
+  /** The incident stays in the log after VAR disallows it. Score and stats ignore it. */
+  annulled?: boolean;
 }
 
 export interface InteractiveDecisionOption {
@@ -305,6 +315,8 @@ export interface MatchRecord {
   awayScore: number;
   events: MatchEvent[];
   stats: MatchStats;
+  /** User-match VAR reviews. Omitted on old saves and when the engine ran with VAR off. */
+  varReviews?: import('../domain/var/varTypes').VARReview[];
   isFinished: boolean;
   competition: string;
   matchDay: number;

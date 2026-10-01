@@ -313,6 +313,9 @@ export const deltasFromUserMatch = (
   const carded = { home: new Set<string>(), away: new Set<string>() };
 
   for (const ev of record.events) {
+    // Annulled goals and cards were disallowed by VAR. This does not run VAR;
+    // it only refuses to credit a decision the review already reversed.
+    if (ev.annulled) continue;
     const side = ev.team === 'home' ? 'home' : 'away';
     const team = side === 'home' ? user : opponent;
     const deltas = side === 'home' ? ud : od;

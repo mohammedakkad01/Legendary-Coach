@@ -65,7 +65,7 @@ export function resolveRefereeForMatch(referee: RefereeProfile | undefined | nul
 /** Test / calibration override without touching the PRNG stream. */
 export function refereeProfileWithTraits(
   base: RefereeProfile,
-  traits: Partial<Pick<RefereeProfile, 'strictness' | 'foulSensitivity' | 'cardTendency' | 'penaltyTendency' | 'advantageTendency'>>,
+  traits: Partial<Pick<RefereeProfile, 'strictness' | 'foulSensitivity' | 'cardTendency' | 'penaltyTendency' | 'advantageTendency' | 'varTendency'>>,
 ): RefereeProfile {
   const clampTrait = (n: number) => clamp(n, R.traitMin, R.traitMax);
   return {
@@ -76,5 +76,6 @@ export function refereeProfileWithTraits(
     cardTendency: traits.cardTendency !== undefined ? clampTrait(traits.cardTendency) : base.cardTendency,
     penaltyTendency: traits.penaltyTendency !== undefined ? clampTrait(traits.penaltyTendency) : base.penaltyTendency,
     advantageTendency: traits.advantageTendency !== undefined ? clampTrait(traits.advantageTendency) : base.advantageTendency,
+    varTendency: traits.varTendency !== undefined ? clampTrait(traits.varTendency) : base.varTendency,
   };
 }

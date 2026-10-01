@@ -16,6 +16,7 @@ import { MatchRadarAndStats } from './live-match/MatchRadarAndStats';
 import { MatchCommentaryFeed } from './live-match/MatchCommentaryFeed';
 import { InteractiveDecisionBanner, SpeedUpgradeModal } from './live-match/SpeedAndTacticalModals';
 import { LiveTacticsPanel } from './live-match/LiveTacticsPanel';
+import { VarOverlay } from './live-match/VarOverlay';
 import { LIVE_TACTICS_TEXT, pick } from '../i18n/liveTactics';
 
 export const LiveMatchView: React.FC = () => {
@@ -71,6 +72,13 @@ export const LiveMatchView: React.FC = () => {
         onSetSpeed={setMatchSpeed}
         onOpenSpeedModal={() => setSpeedModalOpen(true)}
         onInstantSimulate={instantSimulateMatch}
+      />
+
+      <VarOverlay
+        reviews={record?.varReviews}
+        isAr={isAr}
+        isMatchLive={isMatchLive && !record?.isFinished}
+        matchSpeed={matchSpeed}
       />
 
       {/* Live Tactics Panel trigger — only while the match is actually in progress */}

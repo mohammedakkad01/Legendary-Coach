@@ -10,7 +10,8 @@
 
 import type { RecommendationReason } from '../domain/tactics/tacticalTypes';
 import type { BestTacticsError } from '../domain/tactics/bestTactics/types';
-import type { ApplyError } from '../domain/tactics/bestTactics/applyRecommendation';
+import type { ApplyBestTacticsError } from '../domain/tactics/bestTactics/applyRecommendation';
+import type { PassingStyle } from '../types/game';
 
 type Bilingual = { readonly ar: string; readonly en: string };
 const t = (ar: string, en: string): Bilingual => ({ ar, en });
@@ -32,7 +33,31 @@ export const BEST_TACTICS_TEXT = {
   changes: t('التغييرات', 'Changes'),
   noChanges: t('تشكيلتك الحالية قريبة جداً من الأفضل.', 'Your current setup is already close to the best.'),
   staleWarning: t('تغيّرت حالة الفريق بعد التحليل، أعد التحليل.', 'The squad changed after the analysis — run it again.'),
+  recompute: t('إعادة التحليل', 'Re-analyze'),
+  close: t('إغلاق', 'Close'),
+  substitutes: t('البدلاء', 'Substitutes'),
+  tacticalSettings: t('الإعدادات التكتيكية', 'Tactical settings'),
+  proposedXi: t('التشكيلة المقترحة', 'Proposed XI'),
+  mentality: t('العقلية', 'Mentality'),
+  pressing: t('الضغط', 'Pressing'),
+  passing: t('التمرير', 'Passing'),
+  tempo: t('الإيقاع', 'Tempo'),
+  width: t('اتساع الخط', 'Width'),
+  offsideTrap: t('مصيدة التسلل', 'Offside trap'),
+  on: t('مفعّلة', 'On'),
+  off: t('متوقفة', 'Off'),
+  replaces: t('بدلاً من', 'replaces'),
+  emptySlot: t('خانة فارغة', 'empty slot'),
+  noOpponent: t('بيانات الخصم القادم غير متاحة — التقييم ضد خصم متوسط.', 'Next opponent data unavailable — evaluated against an average opponent.'),
+  vsOpponent: t('ضد', 'vs'),
 } as const;
+
+export const PASSING_TEXT: Record<PassingStyle, Bilingual> = {
+  short_tiki_taka: t('تيكي تاكا قصيرة', 'Short Tiki-Taka'),
+  mixed: t('لعب مختلط', 'Mixed Style'),
+  direct_counter: t('مرتدات مباشرة', 'Direct Counters'),
+  long_ball: t('كرات طولية', 'Long Balls'),
+};
 
 const NAME = (names: ReadonlyMap<string, string>, id: unknown): string => names.get(String(id)) ?? String(id);
 
@@ -81,12 +106,14 @@ export function reasonText(reason: RecommendationReason, names: ReadonlyMap<stri
   return render ? render(reason.params ?? {}, names, isAr) : reason.code; // unknown code → visible, never a crash
 }
 
-export function bestTacticsErrorText(error: BestTacticsError | ApplyError, isAr: boolean): string {
+export function bestTacticsErrorText(error: BestTacticsError | ApplyBestTacticsError, isAr: boolean): string {
   switch (error.code) {
     case 'NOT_ENOUGH_AVAILABLE_PLAYERS':
       return pick(t(`لا يوجد ${error.required} لاعباً متاحاً (المتاح ${error.available}).`, `Not enough available players (${error.available}/${error.required}).`), isAr);
     case 'UNAVAILABLE_PLAYER':
       return pick(BEST_TACTICS_TEXT.staleWarning, isAr);
+    case 'FORMATION_LOCKED':
+      return pick(t(`تشكيل ${error.formation} يتطلب VIP ${error.requiredVipLevel}.`, `Formation ${error.formation} requires VIP ${error.requiredVipLevel}.`), isAr);
     case 'INVALID_RESULT':
       return pick(t('التشكيلة المقترحة لا تجتاز قواعد الفريق.', 'The recommended squad failed the squad rules.'), isAr);
     default:

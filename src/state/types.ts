@@ -37,6 +37,9 @@ import { SaveStatus } from '../types/save';
 
 import type { MoveTarget } from '../domain/squad/squadTypes';
 import type { MoveResult } from '../domain/squad/moveEntity';
+import type { ApplyBestTacticsError } from '../domain/tactics/bestTactics/applyRecommendation';
+import type { BestTacticsRecommendation } from '../domain/tactics/bestTactics/types';
+import type { Result } from '../domain/shared/result';
 
 export type GameTab = 
   | 'dashboard' 
@@ -165,6 +168,8 @@ export interface GameState {
   updateBasketballTactics: (newTactics: Partial<BasketballTactics>) => void;
   /** Validated squad move (XI / substitutes / bench). Returns the typed Result; the store applies it only on success. */
   moveSquadEntity: (playerId: string, target: MoveTarget) => MoveResult;
+  /** Applies a Best Tactics recommendation (XI + substitutes + tactics) in ONE update — only from an explicit user "Apply". The store is untouched on Err. */
+  applyBestTactics: (rec: BestTacticsRecommendation) => Result<Club, ApplyBestTacticsError>;
   setFootballRoles: (roles: { captainId?: string; penaltyTakerId?: string; freeKickTakerId?: string; cornerTakerId?: string }) => void;
 
   // Training & Facilities

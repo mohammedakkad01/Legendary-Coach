@@ -94,6 +94,12 @@ import type { MoveResult } from '../domain/squad/moveEntity';
 import type { MoveTarget } from '../domain/squad/squadTypes';
 import { applySquadState, createSquadState } from '../domain/squad/squadStateAdapter';
 import { EMPTY_SLOT } from '../domain/squad/squadTypes';
+import { applyRecommendation } from '../domain/tactics/bestTactics/applyRecommendation';
+import type { ApplyBestTacticsError } from '../domain/tactics/bestTactics/applyRecommendation';
+import type { BestTacticsRecommendation } from '../domain/tactics/bestTactics/types';
+import { FORMATION_MIN_VIP_LEVEL, getVipLevel } from '../domain/vip/vipCalculations';
+import { err } from '../domain/shared/result';
+import type { Result } from '../domain/shared/result';
 import { SaveStatus } from '../types/save';
 
 export type GameTab = 
@@ -223,6 +229,8 @@ interface GameState {
   updateBasketballTactics: (newTactics: Partial<BasketballTactics>) => void;
   /** Validated squad move (XI / substitutes / bench). Returns the typed Result; the store applies it only on success. */
   moveSquadEntity: (playerId: string, target: MoveTarget) => MoveResult;
+  /** Applies a Best Tactics recommendation (XI + substitutes + tactics) in ONE update — only from an explicit user "Apply". The store is untouched on Err. */
+  applyBestTactics: (rec: BestTacticsRecommendation) => Result<Club, ApplyBestTacticsError>;
   setFootballRoles: (roles: { captainId?: string; penaltyTakerId?: string; freeKickTakerId?: string; cornerTakerId?: string }) => void;
 
   // Training & Facilities
@@ -1231,6 +1239,21 @@ export const useGameStore = create<GameState>((set, get) => {
       if (result.ok && result.value.kind !== 'noop') {
         soundEffects.playTap();
         set({ club: applySquadState(club, result.value.state) });
+        saveToStorage();
+      }
+      return result;
+    },
+
+    applyBestTactics: (rec) => {
+      const { club, vipPoints } = get();
+      const requiredVipLevel = FORMATION_MIN_VIP_LEVEL[rec.formation] ?? 1;
+      if (getVipLevel(vipPoints) < requiredVipLevel) {
+        return err({ code: 'FORMATION_LOCKED', formation: rec.formation, requiredVipLevel });
+      }
+      const result = applyRecommendation(club, rec, { maxSubstitutes: getMaxBenchSlots(vipPoints) });
+      if (result.ok) {
+        soundEffects.playTap();
+        set({ club: result.value });
         saveToStorage();
       }
       return result;

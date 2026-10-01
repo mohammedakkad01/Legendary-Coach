@@ -18,6 +18,10 @@ import { describeTacticalChange } from '../i18n/liveTactics';
 import type { RefereeProfile } from '../domain/referee/refereeTypes';
 import { refereeMultipliers } from '../domain/referee/refereeMultipliers';
 import { resolveRefereeForMatch } from '../domain/referee/createRefereeFromSeed';
+import { commitIncident } from '../domain/var/applyVarDecision';
+import { prepareGoalReview, preparePenaltyReview, prepareRedReview } from '../domain/var/prepareIncident';
+import type { VARReview, VarMatchState, VarPlayerRef } from '../domain/var/varTypes';
+import { varStreamSeed } from '../domain/var/varStream';
 
 export interface SimulationStepResult {
   currentMinute: number;
@@ -53,6 +57,14 @@ export class FootballMatchEngine {
   private homeVipDefenseBoost: number = 0;
   private readonly referee: RefereeProfile;
   private readonly yellowByPlayer = new Map<string, number>();
+  /**
+   * User matches pass true. Default false keeps pre-VAR results byte-identical.
+   * This is a constructor argument, not a gameTuning constant.
+   */
+  private readonly varEnabled: boolean;
+  /** VAR stream. Null while VAR is off so this match cannot draw from it. */
+  private readonly varRng: SeededRandom | null;
+  private varReviews: VARReview[] = [];
 
   constructor(
     homeClub: Club,
@@ -63,6 +75,7 @@ export class FootballMatchEngine {
     homeVipAttackBoost: number = 0,
     homeVipDefenseBoost: number = 0,
     referee?: RefereeProfile,
+    varEnabled: boolean = false,
   ) {
     this.seed = seed;
     this.prng = new SeededRandom(seed);
@@ -73,6 +86,8 @@ export class FootballMatchEngine {
     this.homeVipAttackBoost = homeVipAttackBoost;
     this.homeVipDefenseBoost = homeVipDefenseBoost;
     this.referee = resolveRefereeForMatch(referee, seed);
+    this.varEnabled = varEnabled;
+    this.varRng = varEnabled ? new SeededRandom(varStreamSeed(seed)) : null;
 
     this.stats = {
       homePossession: 50,
@@ -266,6 +281,7 @@ export class FootballMatchEngine {
             awayScore: this.awayScore,
           };
           this.events.push(goalEvent);
+          if (this.varEnabled) this.reviewOpenPlayGoal();
         } else {
           // Great save by GK
           const saveEvent: MatchEvent = {
@@ -363,6 +379,65 @@ export class FootballMatchEngine {
     return this.referee;
   }
 
+  /** Reviews opened for this match. Empty when VAR was not enabled. */
+  public getVarReviews(): VARReview[] {
+    return this.varReviews.map((review) => ({ ...review }));
+  }
+
+  private varState(): VarMatchState {
+    return {
+      matchId: `match_${this.seed}`,
+      minute: this.minute,
+      homeScore: this.homeScore,
+      awayScore: this.awayScore,
+      events: this.events.map((event) => ({ ...event })),
+      stats: { ...this.stats },
+      varReviews: this.varReviews.map((review) => ({ ...review })),
+    };
+  }
+
+  private adoptVar(state: VarMatchState): void {
+    this.homeScore = state.homeScore;
+    this.awayScore = state.awayScore;
+    this.events = state.events.map((event) => ({ ...event }));
+    this.stats = { ...state.stats };
+    this.varReviews = state.varReviews.map((review) => ({ ...review }));
+  }
+
+  /**
+   * Run one VAR decision. A throw rolls the minute back to the snapshot taken
+   * after the referee's call and before this review, so the match continues.
+   */
+  private runVar(
+    prepare: (before: VarMatchState, rng: SeededRandom) => { prepared: VarMatchState; review: VARReview | null },
+  ): void {
+    const rng = this.varRng;
+    if (!this.varEnabled || !rng) return;
+    const before = this.varState();
+    try {
+      const { prepared, review } = prepare(before, rng);
+      this.adoptVar(commitIncident(before, prepared, review));
+    } catch (err) {
+      console.error('[VAR] review failed; match continues unchanged', err);
+      this.adoptVar(before);
+    }
+  }
+
+  private reviewOpenPlayGoal(): void {
+    const index = this.events.length - 1;
+    this.runVar((before, rng) => prepareGoalReview(before, index, rng, this.referee));
+  }
+
+  private reviewPenalty(taker: VarPlayerRef): void {
+    const index = this.events.length - 1;
+    this.runVar((before, rng) => preparePenaltyReview(before, index, rng, this.referee, taker));
+  }
+
+  private reviewRed(): void {
+    const index = this.events.length - 1;
+    this.runVar((before, rng) => prepareRedReview(before, index, rng, this.referee));
+  }
+
   private pickDisciplinePlayer(isHomeFoul: boolean) {
     const club = isHomeFoul ? this.homeClub : this.awayClub;
     const starters = club.footballLineup
@@ -450,6 +525,7 @@ export class FootballMatchEngine {
       ? `🟥 Red card (second yellow) for ${player.nameEn} (min ${this.minute})`
       : `🟥 Straight red for ${player.nameEn} (min ${this.minute})`;
     this.pushDisciplineEvent('red_card', isHomeFoul ? 'home' : 'away', player, ar, en);
+    if (this.varEnabled) this.reviewRed();
   }
 
   private resolvePenalty(isHomeFoul: boolean): void {
@@ -481,6 +557,9 @@ export class FootballMatchEngine {
       homeScore: this.homeScore,
       awayScore: this.awayScore,
     });
+    if (this.varEnabled && taker) {
+      this.reviewPenalty({ id: taker.id, name: taker.name, nameEn: taker.nameEn });
+    }
   }
 
   /** Apply live tactical decision made by the coach */
@@ -556,6 +635,7 @@ export class FootballMatchEngine {
       awayScore: this.awayScore,
       events: this.events,
       stats: this.stats,
+      ...(this.varEnabled ? { varReviews: this.getVarReviews() } : {}),
       isFinished: true,
       competition: 'دوري التحدي للدرجة الثانية',
       matchDay: 1,

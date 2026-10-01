@@ -8,6 +8,7 @@
 import React from 'react';
 import { FileText, MessageSquare, RotateCcw } from 'lucide-react';
 import { MatchRecord } from '../../types/game';
+import { pickVar, VAR_TEXT } from '../../i18n/var';
 
 interface MatchCommentaryFeedProps {
   record: MatchRecord;
@@ -47,11 +48,15 @@ export const MatchCommentaryFeed: React.FC<MatchCommentaryFeedProps> = ({
             {isAr ? 'صافرة البداية تنطلق، سنوافيكم بأبرز لقطات اللقاء أولاً بأول...' : 'Kick off underway, match updates will stream here...'}
           </div>
         ) : (
-          record.events.map((ev, i) => (
+          record.events.map((ev, i) => {
+            const linked = ev.eventId ? (record.varReviews ?? []).filter((review) => review.eventId === ev.eventId) : [];
+            return (
             <div 
-              key={i}
+              key={ev.eventId ?? i}
               className={`p-2.5 rounded-xl text-xs border transition-all ${
-                ev.type === 'goal'
+                ev.annulled
+                  ? 'bg-slate-950/60 border-slate-700/80 text-slate-500'
+                  : ev.type === 'goal'
                   ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-200 font-black'
                   : ev.type === 'yellow_card'
                   ? 'bg-amber-950/40 border-amber-500/40 text-amber-200'
@@ -66,11 +71,20 @@ export const MatchCommentaryFeed: React.FC<MatchCommentaryFeedProps> = ({
                 <span className="font-black text-amber-400">{ev.minute}'</span>
                 <span>{ev.team === 'home' ? record.homeClubName : record.awayClubName}</span>
               </div>
-              <p className="leading-relaxed font-semibold">
+              <p className={`leading-relaxed font-semibold ${ev.annulled ? 'line-through decoration-slate-500' : ''}`}>
                 {isAr ? ev.textAr : ev.textEn}
               </p>
+              {ev.annulled && (
+                <p className="mt-1 text-[10px] font-bold text-sky-300 no-underline">{pickVar(VAR_TEXT.disallowed, isAr)}</p>
+              )}
+              {linked.map((review) => (
+                <p key={review.reviewId} className="mt-1 text-[11px] font-bold leading-snug text-sky-200 no-underline">
+                  {pickVar(VAR_TEXT.badge, isAr)}: {isAr ? review.explanationAr : review.explanationEn}
+                </p>
+              ))}
             </div>
-          ))
+            );
+          })
         )}
         <div ref={commentaryEndRef} />
       </div>

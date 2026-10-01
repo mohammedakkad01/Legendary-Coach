@@ -11,7 +11,8 @@
     "scripts/testReferee.ts",
     "scripts/testBestTactics.ts",
     "scripts/testBestTacticsIntegration.ts",
-    "scripts/calibrateBestTactics.ts"
+    "scripts/calibrateBestTactics.ts",
+    "scripts/testVar.ts"
   ],
   "exclude": ["src/data/auditClubData.ts"]
 }

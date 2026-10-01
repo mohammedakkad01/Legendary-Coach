@@ -4,7 +4,10 @@
  *
  * المدرب الأسطورة — The Legendary Coach
  * GAME TUNING — the ONE place for every tunable number of the squad /
- * tactics / (later) referee / VAR systems.
+ * tactics / referee / VAR systems.
+ * The VAR on/off switch is NOT here: it is the varEnabled argument of
+ * FootballMatchEngine (default false). Rates below apply only when that
+ * flag is true.
  *
  * Rules for this file:
  *  - Every value is documented (what it does + where it is consumed).
@@ -278,6 +281,54 @@ export const BEST_TACTICS = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// 7) VAR  (Phase 6 — user-match engine only, and only when the engine is
+// constructed with varEnabled: true. NOT matchdaySimulator. There is no
+// enabled flag in this object.)
+// ---------------------------------------------------------------------------
+/**
+ * Mistake and intervention rates for VAR reviews.
+ *
+ * KNOWN LIMITATION — offside:
+ * The engine does not simulate offside. `offsideLabelRate` is the chance that
+ * the VAR stream labels an already-scored open-play goal as offside. It is
+ * not an offside incident the engine generated. Handballs are not modeled
+ * and are not reviewed.
+ *
+ * Neutral referee traits (50) leave each base rate unchanged. Strictness
+ * above 50 lowers mistake rates; foul sensitivity above 50 raises them.
+ * Every scaled rate is then clamped to [rateMin, rateMax].
+ */
+export const VAR = {
+  /** Share of open-play goals labeled offside. Known limitation — see the comment above. */
+  offsideLabelRate: bounded(0.18, 0, 0.45),
+  /** Share of penalty incidents where the referee's initial call is wrong. */
+  penaltyErrorRate: bounded(0.16, 0, 0.5),
+  /**
+   * Among those penalty mistakes, the share that withhold the kick
+   * (VAR can award it). The rest are a kick the referee gave wrongly
+   * (VAR can cancel it).
+   */
+  penaltyWithholdShare: bounded(0.5, 0, 1),
+  /** Share of red cards where the referee's initial call is wrong. */
+  redErrorRate: bounded(0.14, 0, 0.5),
+  strictnessErrorScale: bounded(0.35, 0, 1),
+  foulSensitivityErrorScale: bounded(0.25, 0, 1),
+  errorScaleMin: bounded(0.45, 0.2, 1),
+  errorScaleMax: bounded(1.55, 1, 2),
+  rateMin: bounded(0.02, 0, 0.15),
+  rateMax: bounded(0.45, 0.2, 0.7),
+  /** Intervention probability at varTendency 50, then scaled by that trait. */
+  baseInterventionRate: bounded(0.7, 0.05, 0.95),
+  interventionScale: bounded(0.45, 0, 1),
+  minInterventionRate: bounded(0.12, 0, 0.4),
+  maxInterventionRate: bounded(0.95, 0.5, 1),
+  /** Hard cap on reviews stored for one match. */
+  maxReviewsPerMatch: bounded(3, 1, 8),
+  confidenceBase: bounded(0.74, 0.5, 0.95),
+  confidenceSpan: bounded(0.16, 0, 0.4),
+} as const;
+
+// ---------------------------------------------------------------------------
 // Deep freeze so no consumer can mutate tuning at runtime.
 // ---------------------------------------------------------------------------
 const deepFreeze = <T>(obj: T): T => {
@@ -293,3 +344,4 @@ deepFreeze(TACTICAL_DEFAULTS);
 deepFreeze(TACTICAL_ENGINE);
 deepFreeze(REFEREE);
 deepFreeze(BEST_TACTICS);
+deepFreeze(VAR);

@@ -1912,6 +1912,7 @@ export const useGameStore = create<GameState>((set, get) => {
           vipAttackBoost,
           vipDefenseBoost,
           matchReferee,
+          true,
         );
         set({
           activeEngine: engine,
@@ -1933,6 +1934,7 @@ export const useGameStore = create<GameState>((set, get) => {
             homeScore: 0,
             awayScore: 0,
             events: [],
+            varReviews: [],
             stats: {
               homePossession: 50,
               awayPossession: 50,
@@ -2093,6 +2095,7 @@ export const useGameStore = create<GameState>((set, get) => {
           awayScore: res.awayScore,
           events: res.events,
           stats: res.stats,
+          varReviews: state.activeEngine!.getVarReviews(),
           isFinished: true,
           competition: state.activeMatchRecord?.competition || 'الدوري',
           matchDay: state.activeMatchRecord?.matchDay || state.matchHistory.length + 1,
@@ -2209,6 +2212,7 @@ export const useGameStore = create<GameState>((set, get) => {
           awayScore: res.awayScore,
           events: res.events,
           stats: res.stats,
+          varReviews: state.activeEngine.getVarReviews(),
           isFinished: false,
         },
       });
@@ -2446,6 +2450,7 @@ export const useGameStore = create<GameState>((set, get) => {
         awayScore: res.awayScore,
         events: res.events,
         stats: res.stats,
+        varReviews: state.activeEngine!.getVarReviews(),
         isFinished: true,
         competition: state.activeMatchRecord?.competition || 'الدوري',
         matchDay: state.activeMatchRecord?.matchDay || state.matchHistory.length + 1,
@@ -2579,6 +2584,7 @@ export const useGameStore = create<GameState>((set, get) => {
         vipAttackBoost,
         vipDefenseBoost,
         matchReferee,
+        true,
       );
 
       const res = engine.simulateToCompletion();
@@ -2648,6 +2654,7 @@ export const useGameStore = create<GameState>((set, get) => {
         awayScore: res.awayScore,
         events: res.events,
         stats: res.stats,
+        varReviews: engine.getVarReviews(),
         isFinished: true,
         competition: state.club.divisionName || 'الدوري',
         matchDay: nextFixture.matchday,

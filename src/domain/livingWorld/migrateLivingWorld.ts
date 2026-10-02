@@ -41,26 +41,33 @@ function clubSnapshotFromClub(club: Club): {
   };
 }
 
-export function ensureLivingWorldV3(save: GameSaveData): GameSaveData {
-  const club = save.club;
+/**
+ * Ensures player overlays and a relationship graph when the squad supports it.
+ * Does not replace a non-empty `relationships` array (deterministic one-time generation).
+ */
+export function hydrateLivingWorldFromClub(
+  club: Club,
+  livingWorld?: LivingWorldState
+): { livingWorld: LivingWorldState; club: Club } {
   const squad = club.footballSquad.map(ensurePlayerLivingWorldFields);
   const updatedClub = { ...club, footballSquad: squad };
 
-  let livingWorld = save.livingWorld;
-  if (!livingWorld || livingWorld.schemaVersion !== LIVING_WORLD_SCHEMA_VERSION) {
-    livingWorld = createEmptyLivingWorld(club.finances.reputation);
-  }
+  let world =
+    livingWorld && livingWorld.schemaVersion === LIVING_WORLD_SCHEMA_VERSION
+      ? livingWorld
+      : createEmptyLivingWorld(updatedClub.finances.reputation);
 
-  if (livingWorld.relationships.length === 0 && squad.length >= 2) {
-    livingWorld = {
-      ...livingWorld,
+  if (world.relationships.length === 0 && squad.length >= 2) {
+    world = {
+      ...world,
       relationships: generateSquadRelationships(clubSnapshotFromClub(updatedClub)),
     };
   }
 
-  return {
-    ...save,
-    club: updatedClub,
-    livingWorld,
-  };
+  return { livingWorld: world, club: updatedClub };
+}
+
+export function ensureLivingWorldV3(save: GameSaveData): GameSaveData {
+  const { livingWorld, club } = hydrateLivingWorldFromClub(save.club, save.livingWorld);
+  return { ...save, club, livingWorld };
 }

@@ -3,9 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { GameEvent, ReducerInput, StateChange } from '../types';
-import { applyMentalDeltas } from '../playerPsychology';
-
+import type { GameEvent, ReducerInput, StateChange, PlayerMentalStateDelta } from '../types';
 export type GameEventHandler = (event: GameEvent, input: ReducerInput) => StateChange[];
 
 const handlers = new Map<string, GameEventHandler>();
@@ -42,23 +40,21 @@ export function registerDefaultHandlers(): void {
     return [{ kind: 'changePlayerMorale', playerId, delta, reason: String(event.context.reason ?? '') }];
   });
 
-  registerHandler('player.mental_shift', (event, input) => {
+  registerHandler('player.mental_shift', (event) => {
     const playerId = event.playerId;
     if (!playerId) return [];
-    const player = input.players.find((p) => p.id === playerId);
-    const current = player?.mentalState ?? {
-      confidence: 50,
-      happiness: 50,
-      frustration: 40,
-      pressure: 45,
+    const mentalDelta: PlayerMentalStateDelta = {};
+    const deltaChange: StateChange = {
+      kind: 'changePlayerMentalStateDelta',
+      playerId,
+      delta: mentalDelta,
     };
-    const deltas: Partial<typeof current> = {};
-    if (typeof event.context.confidenceDelta === 'number') deltas.confidence = event.context.confidenceDelta;
-    if (typeof event.context.happinessDelta === 'number') deltas.happiness = event.context.happinessDelta;
-    if (typeof event.context.frustrationDelta === 'number') deltas.frustration = event.context.frustrationDelta;
-    if (typeof event.context.pressureDelta === 'number') deltas.pressure = event.context.pressureDelta;
-    const next = applyMentalDeltas(current, deltas);
-    return [{ kind: 'changePlayerMentalState', playerId, patch: next }];
+    if (typeof event.context.confidenceDelta === 'number') mentalDelta.confidence = event.context.confidenceDelta;
+    if (typeof event.context.happinessDelta === 'number') mentalDelta.happiness = event.context.happinessDelta;
+    if (typeof event.context.frustrationDelta === 'number') mentalDelta.frustration = event.context.frustrationDelta;
+    if (typeof event.context.pressureDelta === 'number') mentalDelta.pressure = event.context.pressureDelta;
+    if (Object.keys(mentalDelta).length === 0) return [];
+    return [deltaChange];
   });
 
   registerHandler('manager.reputation_shift', (event) => {

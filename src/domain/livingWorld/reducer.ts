@@ -13,7 +13,7 @@ import { findRelationship } from './relationships';
 import { appendToEventLog } from './events/eventLog';
 import type { Player } from '../../types/game';
 import type { ReducerInput, ReducerResult, StateChange, SquadRelationship } from './types';
-import { clampMentalState } from './playerPsychology';
+import { applyMentalDeltas, clampMentalState } from './playerPsychology';
 
 function updatePlayer(players: Player[], playerId: string, updater: (p: Player) => Player): Player[] {
   return players.map((p) => (p.id === playerId ? updater(p) : p));
@@ -39,6 +39,19 @@ function applyOne(input: ReducerInput, change: StateChange): ReducerInput {
           pressure: 45,
         };
         const merged = clampMentalState({ ...current, ...change.patch });
+        return { ...p, mentalState: merged };
+      });
+      return { livingWorld, players: nextPlayers };
+    }
+    case 'changePlayerMentalStateDelta': {
+      const nextPlayers = updatePlayer(players, change.playerId, (p) => {
+        const current = p.mentalState ?? {
+          confidence: 50,
+          happiness: 50,
+          frustration: 40,
+          pressure: 45,
+        };
+        const merged = applyMentalDeltas(current, change.delta);
         return { ...p, mentalState: merged };
       });
       return { livingWorld, players: nextPlayers };

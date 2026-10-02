@@ -11,7 +11,7 @@ export * from './clubMemory';
 export * from './relationships';
 export * from './managerCareer';
 export * from './reducer';
-export * from './migrateLivingWorld';
+export { createEmptyLivingWorld, ensureLivingWorldV3, hydrateLivingWorldFromClub } from './migrateLivingWorld';
 export * from './events/eventLog';
 export * from './events/registry';
 export * from './events/dispatch';

@@ -11,6 +11,7 @@ import {
   clampMorale,
   createDefaultPersonalityProfile,
   createEmptyLivingWorld,
+  hydrateLivingWorldFromClub,
   decayPlayerMemories,
   addPlayerMemory,
   generateSquadRelationships,
@@ -70,6 +71,18 @@ section('Player memory cap & decay');
   assertEqual(entries.length, MAX_PLAYER_MEMORIES, 'memory cap enforced');
   const decayed = decayPlayerMemories(entries, 10);
   assert(decayed.length <= entries.length, 'decay removes or shrinks entries');
+}
+
+section('Fresh livingWorld hydrate has relationships immediately');
+{
+  const { livingWorld } = hydrateLivingWorldFromClub(REAL_INITIAL_PLAYER_CLUB);
+  assert(livingWorld.relationships.length > 0, 'hydrated livingWorld has relationships without save extract');
+  const again = hydrateLivingWorldFromClub(REAL_INITIAL_PLAYER_CLUB, livingWorld);
+  assertEqual(
+    JSON.stringify(again.livingWorld.relationships),
+    JSON.stringify(livingWorld.relationships),
+    'non-empty graph is not regenerated on re-hydrate'
+  );
 }
 
 section('Relationship generation is deterministic (no RNG)');
@@ -293,6 +306,27 @@ section('Reducer typed ops (no generic path setter)');
     [{ kind: 'changePlayerMorale', playerId: player.id, delta: -10 }]
   );
   assertEqual(result.players[0].morale, 60, 'changePlayerMorale works via reducer');
+}
+
+section('Mental state absolute patch vs delta semantics');
+{
+  const player = samplePlayer({
+    id: 'mental_sem',
+    mentalState: { confidence: 50, happiness: 50, frustration: 40, pressure: 45 },
+  });
+  const livingWorld = createEmptyLivingWorld(900);
+
+  const absolute = applyStateChanges(
+    { livingWorld, players: [player] },
+    [{ kind: 'changePlayerMentalState', playerId: player.id, patch: { confidence: 80 } }]
+  );
+  assertEqual(absolute.players[0].mentalState?.confidence, 80, 'absolute patch sets confidence to 80');
+  assertEqual(absolute.players[0].mentalState?.happiness, 50, 'absolute patch leaves other fields unchanged');
+
+  const delta = applyStateChanges(absolute, [
+    { kind: 'changePlayerMentalStateDelta', playerId: player.id, delta: { confidence: 5 } },
+  ]);
+  assertEqual(delta.players[0].mentalState?.confidence, 85, 'delta adds to current confidence');
 }
 
 finish('Living World Foundation Tests');

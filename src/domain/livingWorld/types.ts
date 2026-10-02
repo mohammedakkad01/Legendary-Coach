@@ -26,6 +26,17 @@ export interface PlayerMentalState {
   pressure: number;
 }
 
+/**
+ * Absolute target values (0–100) for `changePlayerMentalState`.
+ * Only keys present in the patch are written; omitted keys keep their current value.
+ */
+export type PlayerMentalStateAbsolutePatch = Partial<PlayerMentalState>;
+
+/**
+ * Additive deltas for `changePlayerMentalStateDelta` (clamped after apply).
+ */
+export type PlayerMentalStateDelta = Partial<PlayerMentalState>;
+
 export interface ManagerRelationship {
   trust: number;
   respect: number;
@@ -175,13 +186,17 @@ export interface LivingWorldClubSnapshot {
   captainId?: string;
 }
 
-export type PlayerMentalPatch = Partial<PlayerMentalState>;
+/** @deprecated alias — use PlayerMentalStateAbsolutePatch */
+export type PlayerMentalPatch = PlayerMentalStateAbsolutePatch;
 export type ManagerRelationshipPatch = Partial<ManagerRelationship>;
 export type PlayerCareerPatch = Partial<PlayerCareerState>;
 
 export type StateChange =
   | { kind: 'changePlayerMorale'; playerId: string; delta: number; reason?: string }
-  | { kind: 'changePlayerMentalState'; playerId: string; patch: PlayerMentalPatch }
+  /** Sets mental fields to absolute clamped values (partial patch). Not a delta. */
+  | { kind: 'changePlayerMentalState'; playerId: string; patch: PlayerMentalStateAbsolutePatch }
+  /** Adds clamped deltas to the current mental state. */
+  | { kind: 'changePlayerMentalStateDelta'; playerId: string; delta: PlayerMentalStateDelta }
   | { kind: 'changeManagerRelationship'; playerId: string; patch: ManagerRelationshipPatch }
   | { kind: 'changePlayerCareerState'; playerId: string; patch: PlayerCareerPatch }
   | { kind: 'addPlayerMemory'; playerId: string; entry: PlayerMemoryEntry }

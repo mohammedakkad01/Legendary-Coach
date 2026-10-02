@@ -21,7 +21,7 @@ type LegacyRecruitmentWorld = Omit<
   RecruitmentWorldState,
   'schemaVersion' | 'negotiations'
 > & {
-  schemaVersion: 1 | 2 | 3;
+  schemaVersion: 1 | 2 | 3 | 4;
   negotiations?: RecruitmentWorldState['negotiations'];
 };
 

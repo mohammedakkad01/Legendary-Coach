@@ -10,7 +10,7 @@ import type { ScoutStaff } from './scouts/scoutTypes';
 import type { ScoutingAssignment, ScoutingReport } from './scouting/types';
 import type { TransferNegotiation } from './negotiation/offerTypes';
 
-export const RECRUITMENT_WORLD_SCHEMA_VERSION = 3 as const;
+export const RECRUITMENT_WORLD_SCHEMA_VERSION = 4 as const;
 
 export type TransferWindowPhase = 'closed' | 'summer' | 'winter';
 

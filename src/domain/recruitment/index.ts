@@ -131,4 +131,20 @@ export {
 } from './integration';
 export type { RecruitmentIntegrationResult } from './integration';
 
+export type {
+  TransferMotivationSignalContext,
+  TransferMotivationResult,
+  TransferMotiveKind,
+  PreOfferWillingnessBand,
+  PreOfferWillingnessResult,
+  AgentDemandContext,
+  AgentDemandResult,
+} from './motivation/motivationTypes';
+
+export { computeTransferMotivation } from './motivation/transferMotivation';
+export type { ComputeTransferMotivationInput } from './motivation/transferMotivation';
+export { computePreOfferWillingness } from './motivation/preOfferWillingness';
+export { computeAgentDemands } from './motivation/agentDemands';
+export { withMotivationForNegotiation } from './motivation/negotiationBridge';
+
 export { ensureRecruitmentV5 } from './migration/migrateRecruitmentV5';

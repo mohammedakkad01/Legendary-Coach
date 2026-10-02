@@ -10,7 +10,8 @@ export type RecruitmentRngOperation =
   | 'knowledge_init'
   | 'knowledge_error'
   | 'confidence_adjust'
-  | 'negotiation_eval';
+  | 'negotiation_eval'
+  | 'motivation_eval';
 
 export function recruitmentRng(
   worldSeed: number,

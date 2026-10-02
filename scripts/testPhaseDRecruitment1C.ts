@@ -618,7 +618,7 @@ section('v2 recruitmentWorld migrates to schema v3 with negotiations initialized
   };
 
   const once = ensureRecruitmentV5(saveV2);
-  assertEqual(once.recruitmentWorld!.schemaVersion, 3, 'schema v3');
+  assertEqual(once.recruitmentWorld!.schemaVersion, 4, 'schema v4');
   assert(Array.isArray(once.recruitmentWorld!.negotiations), 'negotiations array');
   assertEqual(once.recruitmentWorld!.scoutNetwork.length, scoutCount, 'scouts intact');
   assertEqual(once.recruitmentWorld!.scoutingAssignments.length, assignmentCount, 'assignments intact');

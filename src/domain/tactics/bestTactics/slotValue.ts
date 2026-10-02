@@ -8,11 +8,14 @@
  */
 
 import { BEST_TACTICS as B } from '../../../config/gameTuning';
-import type { PlayerPosition } from '../../../types/game';
+import type { FootballTactics, PlayerPosition } from '../../../types/game';
 import { clamp } from '../../shared/math';
 import { computeEffectiveRating } from '../../squad/positionSuitability';
 import type { EffectiveRatingBreakdown } from '../../squad/positionSuitability';
 import { normalizeSlot } from '../../squad/positionTaxonomy';
+import { computeRoleCompatibility, roleCompatibilityMultiplier } from '../functionalRoles/roleCompatibility';
+import { defaultRoleForSlot } from '../functionalRoles/roleCatalog';
+import type { PlayerRoleAssignment } from '../../../types/game';
 import type { BestTacticsPlayer } from './types';
 
 export type AttrKey = 'pace' | 'shooting' | 'passing' | 'dribbling' | 'defending' | 'physical' | 'goalkeeping';
@@ -31,7 +34,11 @@ export interface SlotValue {
   readonly breakdown: EffectiveRatingBreakdown;
 }
 
-export function slotValue(player: BestTacticsPlayer, slotLabel: string): SlotValue {
+export function slotValue(
+  player: BestTacticsPlayer,
+  slotLabel: string,
+  tactics?: Pick<FootballTactics, 'playerRoles'>,
+): SlotValue {
   const breakdown = computeEffectiveRating(player, slotLabel);
   const core = slotCore(slotLabel);
   const weights = B.slotAttributes[core as keyof typeof B.slotAttributes] ?? B.slotAttributes.CM;
@@ -46,6 +53,12 @@ export function slotValue(player: BestTacticsPlayer, slotLabel: string): SlotVal
   const stamina = clamp(player.stamina ?? 70, 0, 100);
   const staminaPenalty = (1 - stamina / 100) * B.staminaPenaltyMax;
 
-  const value = (1 - B.attributeBlend) * breakdown.effective + B.attributeBlend * attrComponent + formBonus - staminaPenalty;
+  let value = (1 - B.attributeBlend) * breakdown.effective + B.attributeBlend * attrComponent + formBonus - staminaPenalty;
+  if (B.useRoleCompatibilityInSlotValue && tactics?.playerRoles) {
+    const roleByPlayer = new Map(tactics.playerRoles.map((r: PlayerRoleAssignment) => [r.playerId, r.roleId] as const));
+    const roleId = roleByPlayer.get(player.id) ?? defaultRoleForSlot(slotLabel);
+    const compat = computeRoleCompatibility(player, roleId, slotLabel);
+    value *= roleCompatibilityMultiplier(compat);
+  }
   return { value, breakdown };
 }

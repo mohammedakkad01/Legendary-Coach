@@ -8,6 +8,8 @@
 import { assert, assertEqual, finish, section } from './lib/testHarness';
 import { solveAssignment } from '../src/domain/tactics/bestTactics/hungarian';
 import { recommendBestTactics, applyRecommendation } from '../src/domain/tactics/bestTactics';
+import { slotValue } from '../src/domain/tactics/bestTactics/slotValue';
+import { BEST_TACTICS as B } from '../src/config/gameTuning';
 import type { BestTacticsInput, BestTacticsPlayer, BestTacticsRecommendation } from '../src/domain/tactics/bestTactics';
 import { createSquadState } from '../src/domain/squad/squadStateAdapter';
 import { validateForKickoff } from '../src/domain/squad/squadRules';
@@ -256,6 +258,17 @@ section('10) Applying (explicit, atomic, validated)');
   const stale = { ...club, footballSquad: players.map((p) => (p.id === rec.lineup[3].playerId ? { ...p, injuredWeeks: 2 } : p)) as unknown as Player[] };
   const blocked = applyRecommendation(stale, rec, { maxSubstitutes: 7 });
   assert(!blocked.ok && blocked.error.code === 'UNAVAILABLE_PLAYER', 'stale recommendation containing a newly injured player is rejected');
+}
+
+// ------------------------------------------------------------------ 10b. slotValue role hook (opt-in flag)
+section('10b) slotValue accepts playerRoles when flag off (default)');
+{
+  const p = P('cm1', 'CM', 79);
+  const withRoles = slotValue(p, 'CM', { playerRoles: [{ playerId: 'cm1', roleId: 'mf_box_to_box' }] });
+  const plain = slotValue(p, 'CM');
+  if (!B.useRoleCompatibilityInSlotValue) {
+    assertEqual(withRoles.value, plain.value, 'role blend disabled → identical slot value');
+  }
 }
 
 // ------------------------------------------------------------------ 11. i18n

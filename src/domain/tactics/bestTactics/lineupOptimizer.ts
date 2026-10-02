@@ -7,7 +7,7 @@
  * a natural GK is not replaced by a higher-rated outfielder.
  */
 
-import type { FootballFormation } from '../../../types/game';
+import type { FootballFormation, FootballTactics } from '../../../types/game';
 import { getFormation } from '../../squad/formations';
 import { solveAssignment } from './hungarian';
 import { slotValue } from './slotValue';
@@ -22,11 +22,15 @@ export interface OptimizedPlacement {
 }
 
 /** `available` MUST already be filtered and id-sorted (see availability.ts). */
-export function optimizeLineup(formation: FootballFormation, available: readonly BestTacticsPlayer[]): OptimizedPlacement[] {
+export function optimizeLineup(
+  formation: FootballFormation,
+  available: readonly BestTacticsPlayer[],
+  tactics?: Pick<FootballTactics, 'playerRoles'>,
+): OptimizedPlacement[] {
   const slots = getFormation(formation).slots;
   if (available.length < slots.length) return [];
 
-  const values: SlotValue[][] = slots.map((s) => available.map((p) => slotValue(p, s.label)));
+  const values: SlotValue[][] = slots.map((s) => available.map((p) => slotValue(p, s.label, tactics)));
   const cost = values.map((row) => row.map((v) => -v.value));
   const assignment = solveAssignment(cost);
 

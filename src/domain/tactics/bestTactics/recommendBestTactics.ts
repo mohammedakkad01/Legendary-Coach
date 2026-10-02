@@ -80,7 +80,7 @@ export function recommendBestTactics(input: BestTacticsInput): Result<BestTactic
     const candidates: Candidate[] = [];
     for (const formation of FORMATION_IDS) {
       if (allowed && !allowed.has(formation)) continue;
-      const xi = optimizeLineup(formation, available);
+      const xi = optimizeLineup(formation, available, { playerRoles: input.currentTactics.playerRoles });
       if (xi.length === 0) continue;
       const profile = buildLineupProfile(formation, xi);
       const choice = selectTactics(profile, formation, input.currentTactics, input.opponent);

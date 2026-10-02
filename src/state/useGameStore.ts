@@ -101,6 +101,13 @@ import type { BestTacticsRecommendation } from '../domain/tactics/bestTactics/ty
 import type { Result } from '../domain/shared/result';
 import { deriveSyntheticOpponentTactics, opponentTacticsWithRoles } from '../domain/tactics/deriveSyntheticOpponentTactics';
 import { SaveStatus } from '../types/save';
+import { hydrateLivingWorldFromClub } from '../domain/livingWorld/migrateLivingWorld';
+import {
+  dispatchGameEvent as runLivingWorldDispatch,
+  type DispatchResult,
+} from '../domain/livingWorld/events/dispatch';
+import { ensureDefaultHandlersRegistered } from '../domain/livingWorld/events/registry';
+import type { GameEvent, LivingWorldState } from '../domain/livingWorld/types';
 
 export type GameTab = 
   | 'dashboard' 
@@ -198,6 +205,9 @@ interface GameState {
 
   // Market & Scouts
   scoutMarket: Player[];
+
+  livingWorld: LivingWorldState;
+  savePassthrough: Record<string, unknown>;
 
   // Actions
   setSport: (sport: SportType) => void;
@@ -307,6 +317,7 @@ interface GameState {
   // Centralized Persistence & Save Management
   saveStatus: SaveStatus;
   saveCareerImmediate: () => boolean;
+  dispatchLivingWorldEvent: (event: GameEvent) => DispatchResult;
 }
 
 export const useGameStore = create<GameState>((set, get) => {
@@ -835,6 +846,10 @@ export const useGameStore = create<GameState>((set, get) => {
 
   const initialSave = loadSavedState();
   const initialClubSelected = initialSave?.hasSelectedInitialClub ?? false;
+  const initialHydrated = hydrateLivingWorldFromClub(
+    initialSave?.club ?? REAL_INITIAL_PLAYER_CLUB,
+    initialSave?.livingWorld
+  );
 
   return {
     saveStatus: 'idle',
@@ -854,7 +869,7 @@ export const useGameStore = create<GameState>((set, get) => {
     clubSelectionModalOpen: !initialClubSelected,
     
     // Club & Career Starts from ZERO
-    club: initialSave?.club || REAL_INITIAL_PLAYER_CLUB,
+    club: initialHydrated.club,
     energy: initialSave?.energy || 100,
     lastEnergyUpdate: Date.now(),
     vipPoints: initialSave?.vipPoints || 0, // Starts from ZERO!
@@ -922,6 +937,9 @@ export const useGameStore = create<GameState>((set, get) => {
     pendingInteractiveEvent: null,
 
     scoutMarket: initialSave?.scoutMarket || REAL_INITIAL_SCOUT_MARKET,
+
+    livingWorld: initialHydrated.livingWorld,
+    savePassthrough: initialSave?.savePassthrough ?? {},
 
     setIsGuest: (val: boolean) => {
       set({ isGuest: val });
@@ -3528,6 +3546,23 @@ export const useGameStore = create<GameState>((set, get) => {
       });
     },
 
+    dispatchLivingWorldEvent: (event) => {
+      ensureDefaultHandlersRegistered();
+      const state = get();
+      const result = runLivingWorldDispatch(
+        { livingWorld: state.livingWorld, players: state.club.footballSquad },
+        event
+      );
+      if (result.applied) {
+        set({
+          livingWorld: result.result.livingWorld,
+          club: { ...state.club, footballSquad: result.result.players },
+        });
+        saveToStorage(undefined, false);
+      }
+      return result;
+    },
+
     exportGameData: () => {
       return persistenceService.exportJson(get(), true);
     },
@@ -3538,8 +3573,9 @@ export const useGameStore = create<GameState>((set, get) => {
         return { success: false, message: res.message };
       }
       const data = res.data;
+      const importedHydrated = hydrateLivingWorldFromClub(data.club, data.livingWorld);
       set({
-        club: data.club,
+        club: importedHydrated.club,
         currentSport: data.currentSport,
         language: data.language,
         soundEnabled: data.soundEnabled,
@@ -3570,6 +3606,8 @@ export const useGameStore = create<GameState>((set, get) => {
         simulatedMatchdays: data.simulatedMatchdays,
         matchScoutReports: data.matchScoutReports,
         unlockedSpeed2x: data.unlockedSpeed2x,
+        livingWorld: importedHydrated.livingWorld,
+        savePassthrough: data.savePassthrough ?? {},
         activeTab: 'dashboard',
         clubSelectionModalOpen: false,
       });
@@ -3586,8 +3624,9 @@ export const useGameStore = create<GameState>((set, get) => {
 
     resetCareer: () => {
       persistenceService.clearStorage();
+      const resetHydrated = hydrateLivingWorldFromClub(REAL_INITIAL_PLAYER_CLUB);
       set({
-        club: REAL_INITIAL_PLAYER_CLUB,
+        club: resetHydrated.club,
         vipPoints: 0,
         energy: 100,
         checkInStreak: 0,
@@ -3612,6 +3651,8 @@ export const useGameStore = create<GameState>((set, get) => {
         simulatedMatchdays: [],
         lastRoundSummary: null,
         matchScoutReports: {},
+        livingWorld: resetHydrated.livingWorld,
+        savePassthrough: {},
         activeTab: 'dashboard',
         isMatchLive: false,
       });

@@ -12,7 +12,9 @@
     "scripts/testBestTactics.ts",
     "scripts/testBestTacticsIntegration.ts",
     "scripts/calibrateBestTactics.ts",
-    "scripts/testVar.ts"
+    "scripts/testVar.ts",
+    "scripts/testLivingWorldFoundation.ts",
+    "scripts/testSaveSystem.ts"
   ],
   "exclude": ["src/data/auditClubData.ts"]
 }

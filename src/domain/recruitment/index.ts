@@ -24,6 +24,33 @@ export type {
   ScoutingAssignmentStatus,
 } from './scouting/types';
 
+export type {
+  TransferOffer,
+  TransferOfferClause,
+  TransferNegotiation,
+  RichNegotiationStatus,
+} from './negotiation/offerTypes';
+export { computeUpfrontCash, isLoanOffer } from './negotiation/offerTypes';
+
+export type {
+  ClubNegotiationContext,
+  PlayerNegotiationContext,
+  OfferValidationCode,
+  OfferValidationResult,
+  EvaluateOfferResult,
+  EvaluateResponseCode,
+} from './negotiation/contextTypes';
+
+export { validateOffer } from './negotiation/validateOffer';
+export { evaluateOffer } from './negotiation/evaluateOffer';
+export {
+  submitNegotiationOffer,
+  withdrawNegotiation,
+  acceptCounterOffer,
+  createDraftNegotiation,
+} from './negotiation/negotiationMachine';
+export type { SubmitOfferInput, NegotiationFlowResult } from './negotiation/negotiationMachine';
+
 export {
   createDefaultScoutNetwork,
   scoutQualityScore,

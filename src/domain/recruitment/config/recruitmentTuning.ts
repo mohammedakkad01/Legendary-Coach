@@ -81,6 +81,24 @@ export const RECRUITMENT_TUNING = {
     reportOverallErrorMax: bounded(9, 4, 15),
     poorScoutReliabilityThreshold: bounded(42, 25, 55),
   },
+
+  negotiation: {
+    maxRoundsDefault: bounded(4, 2, 8),
+    minCounterIncrement: bounded(5000, 1000, 25000),
+    insultGap: bounded(0.28, 0.15, 0.4),
+    temperamentalRejectChance: bounded(0.18, 0.05, 0.35),
+    minTransferDesireToLeave: bounded(35, 20, 55),
+    allowLoanWhenWindowClosed: false as boolean,
+    maxSquadSizeDefault: bounded(30, 22, 40),
+    minAcceptRatio: {
+      leader: bounded(1.08, 1, 1.2),
+      ambitious: bounded(1.03, 1, 1.15),
+      temperamental: bounded(0.98, 0.9, 1.05),
+      professional: bounded(0.95, 0.88, 1.02),
+      loyal: bounded(0.9, 0.82, 0.98),
+      nervous: bounded(0.88, 0.8, 0.96),
+    },
+  },
 } as const;
 
 export type KnowledgeRevealStage = (typeof RECRUITMENT_TUNING.reveal.stageOrder)[number];

@@ -55,6 +55,14 @@ function applyOne(state: RecruitmentWorldState, patch: RecruitmentPatch): Recrui
         scoutingReports: scoutingReports.length > max ? scoutingReports.slice(-max) : scoutingReports,
       };
     }
+    case 'upsertNegotiation': {
+      const idx = state.negotiations.findIndex((n) => n.id === patch.negotiation.id);
+      const negotiations =
+        idx >= 0
+          ? state.negotiations.map((n, i) => (i === idx ? patch.negotiation : n))
+          : [...state.negotiations, patch.negotiation];
+      return { ...state, negotiations };
+    }
     default: {
       const _exhaustive: never = patch;
       return _exhaustive;

@@ -9,7 +9,8 @@ import { hashStringToSeed } from '../../shared/seed';
 export type RecruitmentRngOperation =
   | 'knowledge_init'
   | 'knowledge_error'
-  | 'confidence_adjust';
+  | 'confidence_adjust'
+  | 'negotiation_eval';
 
 export function recruitmentRng(
   worldSeed: number,

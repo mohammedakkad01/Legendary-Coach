@@ -8,8 +8,9 @@
 import type { KnowledgeRevealStage } from './config/recruitmentTuning';
 import type { ScoutStaff } from './scouts/scoutTypes';
 import type { ScoutingAssignment, ScoutingReport } from './scouting/types';
+import type { TransferNegotiation } from './negotiation/offerTypes';
 
-export const RECRUITMENT_WORLD_SCHEMA_VERSION = 2 as const;
+export const RECRUITMENT_WORLD_SCHEMA_VERSION = 3 as const;
 
 export type TransferWindowPhase = 'closed' | 'summer' | 'winter';
 
@@ -67,6 +68,7 @@ export interface RecruitmentWorldState {
   scoutNetwork: ScoutStaff[];
   scoutingAssignments: ScoutingAssignment[];
   scoutingReports: ScoutingReport[];
+  negotiations: TransferNegotiation[];
 }
 
 export interface RecruitmentTickContext {
@@ -82,4 +84,5 @@ export type RecruitmentPatch =
   | { kind: 'mergeWorldPlayer'; playerId: string; patch: Partial<import('./trueProfile/types').TrueWorldPlayer> }
   | { kind: 'setScoutNetwork'; scouts: ScoutStaff[] }
   | { kind: 'upsertScoutingAssignment'; assignment: ScoutingAssignment }
-  | { kind: 'appendScoutingReport'; report: ScoutingReport };
+  | { kind: 'appendScoutingReport'; report: ScoutingReport }
+  | { kind: 'upsertNegotiation'; negotiation: TransferNegotiation };

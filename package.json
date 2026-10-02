@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit && tsc -p tsconfig.test.json",
-    "test": "tsx scripts/testRedeemCodes.ts && tsx scripts/testCacheArchitecture.ts && tsx scripts/testLivingWorldFoundation.ts && tsx scripts/testPlayerLife.ts && tsx scripts/testPhaseDRecruitment1A.ts && tsx scripts/testPhaseDRecruitment1B.ts && tsx scripts/testSaveSystem.ts && tsx scripts/testSquadDomain.ts && tsx scripts/testSquadStore.ts && tsx scripts/testSquadDnd.ts && tsx scripts/testMatchEngine.ts && tsx scripts/testReferee.ts && tsx scripts/testPhaseBFootballSim.ts && tsx scripts/testPhaseB5GoldenRebaseline.ts && npm run testBestTactics && npm run testBestTacticsIntegration && tsx scripts/testVar.ts",
+    "test": "tsx scripts/testRedeemCodes.ts && tsx scripts/testCacheArchitecture.ts && tsx scripts/testLivingWorldFoundation.ts && tsx scripts/testPlayerLife.ts && tsx scripts/testPhaseDRecruitment1A.ts && tsx scripts/testPhaseDRecruitment1B.ts && tsx scripts/testPhaseDRecruitment1C.ts && tsx scripts/testSaveSystem.ts && tsx scripts/testSquadDomain.ts && tsx scripts/testSquadStore.ts && tsx scripts/testSquadDnd.ts && tsx scripts/testMatchEngine.ts && tsx scripts/testReferee.ts && tsx scripts/testPhaseBFootballSim.ts && tsx scripts/testPhaseB5GoldenRebaseline.ts && npm run testBestTactics && npm run testBestTacticsIntegration && tsx scripts/testVar.ts",
     "testVar": "tsx scripts/testVar.ts",
     "testReferee": "tsx scripts/testReferee.ts",
     "testBestTactics": "tsx scripts/testBestTactics.ts",

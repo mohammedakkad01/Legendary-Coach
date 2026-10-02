@@ -71,6 +71,22 @@ export function registerDefaultHandlers(): void {
     ];
   });
 
+  registerHandler('manager.tactical_identity_shift', (event) => {
+    const tags = String(event.context.tags ?? '');
+    const sampleSize = typeof event.context.sampleSize === 'number' ? event.context.sampleSize : 0;
+    if (!tags) return [];
+    return [
+      {
+        kind: 'setManagerTacticalIdentity',
+        identity: {
+          tags: tags.split(',').filter(Boolean),
+          sampleSize,
+          updatedAt: event.timestamp,
+        },
+      },
+    ];
+  });
+
   registerHandler('memory.player', (event, _input) => {
     const playerId = event.playerId;
     if (!playerId) return [];

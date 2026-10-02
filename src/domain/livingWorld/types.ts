@@ -108,9 +108,37 @@ export interface ManagerReputationLedgerEntry {
   season: number;
 }
 
+export interface TacticalIdentitySnapshot {
+  tags: readonly string[];
+  sampleSize: number;
+  updatedAt: string;
+}
+
+export interface OpponentTacticalScoutingCompact {
+  opponentClubId: string;
+  samples: number;
+  attackLeftShare: number;
+  attackRightShare: number;
+  avgPossession: number;
+  pressSuccessRate: number;
+}
+
+export interface TacticalUsageSample {
+  formation: string;
+  mentality: string;
+  pressing: string;
+  passing: string;
+  won: boolean;
+  drew: boolean;
+  goalsFor: number;
+  goalsAgainst: number;
+}
+
 export interface ManagerCareerState {
   reputation: number;
   reputationLedger: ManagerReputationLedgerEntry[];
+  tacticalIdentity?: TacticalIdentitySnapshot;
+  tacticalUsageHistory?: TacticalUsageSample[];
 }
 
 export type EventSeverity = 'low' | 'medium' | 'high' | 'critical';
@@ -160,6 +188,8 @@ export interface LivingWorldState {
   eventLog: GameEvent[];
   notifications: GameNotification[];
   notificationThrottle: NotificationThrottleState;
+  /** Opponent → compact scouting tendencies (Phase B). */
+  opponentTacticalScouting?: Record<string, OpponentTacticalScoutingCompact>;
 }
 
 export const LIVING_WORLD_SCHEMA_VERSION = 1 as const;
@@ -208,7 +238,10 @@ export type StateChange =
   | { kind: 'appendGameEvent'; event: GameEvent }
   | { kind: 'addNotification'; notification: GameNotification }
   | { kind: 'mergeNotifications'; notifications: GameNotification[] }
-  | { kind: 'setLivingWorldSeason'; season: number };
+  | { kind: 'setLivingWorldSeason'; season: number }
+  | { kind: 'setManagerTacticalIdentity'; identity: TacticalIdentitySnapshot }
+  | { kind: 'appendTacticalUsage'; sample: TacticalUsageSample }
+  | { kind: 'mergeOpponentScouting'; entry: OpponentTacticalScoutingCompact };
 
 export interface ReducerInput {
   livingWorld: LivingWorldState;

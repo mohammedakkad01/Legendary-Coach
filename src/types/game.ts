@@ -12,6 +12,11 @@ import type {
   PlayerMentalState,
   PlayerPersonalityProfile,
 } from '../domain/livingWorld/types';
+import type { TacticalInstructions } from '../domain/tactics/instructionTypes';
+import type { SetPiecePlans } from '../domain/tactics/setPieces/setPieceTypes';
+import type { FunctionalRoleId } from '../domain/tactics/functionalRoles/roleCatalog';
+import type { MatchAnalyticsSummary } from '../domain/match/matchAnalytics';
+import type { AnalyticsConclusion } from '../domain/match/analyticsConclusions';
 
 export type SportType = 'football' | 'basketball';
 
@@ -120,6 +125,11 @@ export type PressingStyle = 'low_block' | 'mid_press' | 'high_press' | 'gegenpre
 export type PassingStyle = 'short_tiki_taka' | 'mixed' | 'direct_counter' | 'long_ball';
 export type TeamTempo = 'slow_patient' | 'normal' | 'fast_electric';
 
+export interface PlayerRoleAssignment {
+  readonly playerId: string;
+  readonly roleId: FunctionalRoleId;
+}
+
 export interface FootballTactics {
   formation: FootballFormation;
   mentality: MatchMentality;
@@ -144,6 +154,12 @@ export interface FootballTactics {
   penaltyTakerId: string;
   freeKickTakerId: string;
   cornerTakerId: string;
+  /** Phase B split instructions (optional — migrated from enums). */
+  tacticalInstructions?: TacticalInstructions;
+  /** Functional roles per player in the XI. */
+  playerRoles?: readonly PlayerRoleAssignment[];
+  /** Set-piece plans (corners, free kicks, throw-ins). */
+  setPiecePlans?: SetPiecePlans;
 }
 
 // VIP 12+ exclusive: up to 5 saved tactical presets, instantly swappable.
@@ -314,6 +330,8 @@ export interface MatchStats {
   awayXg: number;
 }
 
+export type { MatchAnalyticsSummary, AnalyticsConclusion };
+
 export interface MatchRecord {
   id: string;
   sport: SportType;
@@ -330,6 +348,9 @@ export interface MatchRecord {
   stats: MatchStats;
   /** User-match VAR reviews. Omitted on old saves and when the engine ran with VAR off. */
   varReviews?: import('../domain/var/varTypes').VARReview[];
+  /** Phase B compact analytics from the simulation stream. */
+  analytics?: MatchAnalyticsSummary;
+  analyticsConclusions?: readonly AnalyticsConclusion[];
   isFinished: boolean;
   competition: string;
   matchDay: number;

@@ -100,6 +100,10 @@ import type { ApplyBestTacticsError } from '../domain/tactics/bestTactics/applyR
 import type { BestTacticsRecommendation } from '../domain/tactics/bestTactics/types';
 import type { Result } from '../domain/shared/result';
 import { deriveSyntheticOpponentTactics, opponentTacticsWithRoles } from '../domain/tactics/deriveSyntheticOpponentTactics';
+import { assignLineupToFormation } from '../domain/squad/assignFormationLineup';
+import { migrateClubFootballTactics } from '../domain/tactics/migrateFootballSimulation';
+import { buildPostMatchLivingWorldResult } from '../domain/tactics/postMatchLivingWorld';
+import { applyStateChanges } from '../domain/livingWorld/reducer';
 import { SaveStatus } from '../types/save';
 import { hydrateLivingWorldFromClub } from '../domain/livingWorld/migrateLivingWorld';
 import {
@@ -660,15 +664,13 @@ export const useGameStore = create<GameState>((set, get) => {
     const finalSquad = withStableIds(nextFixture.opponentClubId, opponentSquad);
     registerClubSquad(nextFixture.opponentClubId, finalSquad);
     prefetchLeagueSquads(); // load the rest of the league's squads in the background
-    const oGk = finalSquad.find(p => p.position === 'GK');
-    const oOutfield = finalSquad.filter(p => p.position !== 'GK').slice(0, 10);
-    const opponentLineup = [oGk, ...oOutfield].filter((p): p is Player => !!p).map(p => p.id);
-
     const opponentTacticsCore = deriveSyntheticOpponentTactics(
       nextFixture.opponentClubId,
       opponentConfig.starRating,
     );
-    const opponent: Club = {
+    const opponentLineup = assignLineupToFormation(finalSquad, opponentTacticsCore.formation);
+    const opponentTactics = opponentTacticsWithRoles(opponentTacticsCore, opponentLineup);
+    const opponentBase: Club = {
       ...REAL_INITIAL_PLAYER_CLUB,
       id: nextFixture.opponentClubId,
       name: nextFixture.opponentClubName,
@@ -678,8 +680,9 @@ export const useGameStore = create<GameState>((set, get) => {
       logoUrl: nextFixture.opponentBadge,
       footballSquad: finalSquad,
       footballLineup: opponentLineup,
-      footballTactics: opponentTacticsWithRoles(opponentTacticsCore, opponentLineup),
+      footballTactics: opponentTactics,
     };
+    const opponent = migrateClubFootballTactics(opponentBase);
 
     // Team power from the starting XIs — paired with the ACTUAL formation
     // slot each player is in, so an out-of-position starter shows the same
@@ -2100,6 +2103,7 @@ export const useGameStore = create<GameState>((set, get) => {
         // state.activeEngine.getSeed() — instead of a fresh Date.now() that
         // would not match the RNG sequence that produced `res`.
         const finishedSeed = state.activeEngine!.getSeed();
+        const matchAnalytics = state.activeEngine!.getMatchAnalytics();
         const finalRecord: MatchRecord = {
           id: `match_${finishedSeed}`,
           sport: 'football',
@@ -2113,6 +2117,8 @@ export const useGameStore = create<GameState>((set, get) => {
           awayScore: res.awayScore,
           events: res.events,
           stats: res.stats,
+          analytics: matchAnalytics.analytics,
+          analyticsConclusions: matchAnalytics.analyticsConclusions,
           varReviews: state.activeEngine!.getVarReviews(),
           isFinished: true,
           competition: state.activeMatchRecord?.competition || 'الدوري',
@@ -2169,7 +2175,7 @@ export const useGameStore = create<GameState>((set, get) => {
         const boardPenalty = Math.round(3 * mitigationFactor);
         const fanPenalty = Math.round(4 * mitigationFactor);
 
-        const updatedClub = {
+        let updatedClub = {
           ...state.club,
           footballSquad: updatedSquad,
           boardTrust: Math.min(100, Math.max(0, state.club.boardTrust + (won ? 4 : (drawn ? 0 : -boardPenalty)))),
@@ -2180,6 +2186,34 @@ export const useGameStore = create<GameState>((set, get) => {
             reputation: state.club.finances.reputation + (won ? 35 : 10),
           },
         };
+
+        ensureDefaultHandlersRegistered();
+        const postLw = buildPostMatchLivingWorldResult(
+          state.livingWorld,
+          updatedClub,
+          finalRecord,
+          finalRecord.awayClubId,
+          finalRecord.date,
+        );
+        let livingWorldNext = state.livingWorld;
+        let squadNext = updatedSquad;
+        const lwApplied = applyStateChanges(
+          { livingWorld: livingWorldNext, players: squadNext },
+          [...postLw.changes],
+        );
+        livingWorldNext = lwApplied.livingWorld;
+        squadNext = lwApplied.players;
+        for (const evt of postLw.events) {
+          const dispatched = runLivingWorldDispatch(
+            { livingWorld: livingWorldNext, players: squadNext },
+            evt,
+          );
+          if (dispatched.applied) {
+            livingWorldNext = dispatched.result.livingWorld;
+            squadNext = dispatched.result.players;
+          }
+        }
+        updatedClub = { ...updatedClub, footballSquad: squadNext };
 
         // Generate Post Match Character Analyst Feedback
         const analystFeedback = generatePostMatchCharacter(finalRecord, updatedClub, state.language === 'ar');
@@ -2195,9 +2229,11 @@ export const useGameStore = create<GameState>((set, get) => {
           dailyMissions: updatedMissions,
           postMatchAnalyst: analystFeedback,
           club: updatedClub,
+          livingWorld: livingWorldNext,
         });
         saveToStorage({
           club: updatedClub,
+          livingWorld: livingWorldNext,
           dailyMissions: updatedMissions,
           leagueStandings: updatedStandings,
           leagueFixtures: updatedFixtures,

@@ -22,6 +22,19 @@ import { commitIncident } from '../domain/var/applyVarDecision';
 import { prepareGoalReview, preparePenaltyReview, prepareRedReview } from '../domain/var/prepareIncident';
 import type { VARReview, VarMatchState, VarPlayerRef } from '../domain/var/varTypes';
 import { varStreamSeed } from '../domain/var/varStream';
+import { deriveTacticalInstructionsFromLegacy, ensureTacticalInstructions } from '../domain/tactics/migrateTacticsPhaseB';
+import type { TacticalInstructions } from '../domain/tactics/instructionTypes';
+import { averageRoleCompatibility } from '../domain/match/teamSimProfile';
+import { modifiersFromInstructions, pickPhaseForMinute, phasePowerMultiplier } from '../domain/match/simWeights';
+import { MatchAnalyticsAccumulator, type AttackZone } from '../domain/match/matchAnalytics';
+import { generateAnalyticsConclusions } from '../domain/match/analyticsConclusions';
+import { resolveSetPiece } from '../domain/tactics/setPieces/resolveSetPiece';
+import {
+  applyInMatchAdaptation,
+  createAdaptationState,
+  observeSignals,
+  type InMatchAdaptationState,
+} from '../domain/tactics/opponentAdaptation/types';
 
 export interface SimulationStepResult {
   currentMinute: number;
@@ -65,6 +78,14 @@ export class FootballMatchEngine {
   /** VAR stream. Null while VAR is off so this match cannot draw from it. */
   private readonly varRng: SeededRandom | null;
   private varReviews: VARReview[] = [];
+  private homeInstructions: TacticalInstructions;
+  private awayInstructions: TacticalInstructions;
+  private readonly analytics = new MatchAnalyticsAccumulator();
+  private awayAdaptation: InMatchAdaptationState = createAdaptationState();
+  private homePressAttempts = 0;
+  private homePressSuccess = 0;
+  private awayPressAttempts = 0;
+  private awayPressSuccess = 0;
 
   constructor(
     homeClub: Club,
@@ -81,8 +102,16 @@ export class FootballMatchEngine {
     this.prng = new SeededRandom(seed);
     this.homeClub = homeClub;
     this.awayClub = awayClub;
-    this.homeTactics = resolveTacticalState(homeTactics || homeClub.footballTactics);
-    this.awayTactics = resolveTacticalState(awayTactics || awayClub.footballTactics);
+    const homeTacticsResolved = homeTactics || homeClub.footballTactics;
+    const awayTacticsResolved = awayTactics || awayClub.footballTactics;
+    this.homeTactics = resolveTacticalState(homeTacticsResolved);
+    this.awayTactics = resolveTacticalState(awayTacticsResolved);
+    this.homeInstructions =
+      ensureTacticalInstructions(homeTacticsResolved).tacticalInstructions ??
+      deriveTacticalInstructionsFromLegacy(homeTacticsResolved);
+    this.awayInstructions =
+      ensureTacticalInstructions(awayTacticsResolved).tacticalInstructions ??
+      deriveTacticalInstructionsFromLegacy(awayTacticsResolved);
     this.homeVipAttackBoost = homeVipAttackBoost;
     this.homeVipDefenseBoost = homeVipDefenseBoost;
     this.referee = resolveRefereeForMatch(referee, seed);
@@ -140,12 +169,11 @@ export class FootballMatchEngine {
     };
   }
 
-  /** Calculate team power based on lineup, real slot assignment (position suitability) and tactical style. */
+  /** Calculate team power (legacy Phase 3 path — keeps RNG sequence stable for regression). */
   private calculateTeamPower(club: Club, tactics: TacticalState, isHome: boolean) {
     const assignments = buildSlotAssignments(club);
     const lineup = assignments.map((a) => a.player);
 
-    // Position-aware base attack and defense ratings (identical to pre-match predictions)
     const baseAtk = calcAttackPower(assignments);
     const baseDef = calcDefensePower(assignments);
 
@@ -158,8 +186,108 @@ export class FootballMatchEngine {
     return {
       attack: Math.round(baseAtk + bonus.attack + homeAdvantage + vipAtk),
       defense: Math.round(baseDef + bonus.defense + homeAdvantage + vipDef),
-      lineup
+      lineup,
     };
+  }
+
+  private instructionsDeviate(instructions: TacticalInstructions, tactics: TacticalState): boolean {
+    const derived = deriveTacticalInstructionsFromLegacy(toFootballTactics(tactics));
+    return (
+      Math.abs(instructions.inPossession.tempo - derived.inPossession.tempo) > 8 ||
+      Math.abs(instructions.inPossession.width - derived.inPossession.width) > 8 ||
+      Math.abs(instructions.outOfPossession.lineHeight - derived.outOfPossession.lineHeight) > 8 ||
+      Math.abs(instructions.outOfPossession.pressingIntensity - derived.outOfPossession.pressingIntensity) > 8 ||
+      instructions.transition.attack !== derived.transition.attack ||
+      instructions.transition.defence !== derived.transition.defence
+    );
+  }
+
+  private sideInstructionContext(club: Club, instructions: TacticalInstructions) {
+    const instr = modifiersFromInstructions(instructions);
+    const roleMul = averageRoleCompatibility(club, club.footballTactics.playerRoles);
+    const phase = pickPhaseForMinute(this.minute, this.stats.homePossession);
+    const phaseMul = phasePowerMultiplier(phase);
+    return { instr, roleMul, phase, phaseMul };
+  }
+
+  private attackZoneForShooter(club: Club, shooterId: string | undefined, flankBias: number): AttackZone {
+    if (!shooterId) return flankBias > 0.05 ? 'left' : flankBias < -0.05 ? 'right' : 'center';
+    const slot = buildSlotAssignments(club).find((a) => a.player.id === shooterId);
+    const label = slot?.assignedPosition.toUpperCase() ?? '';
+    if (label.includes('L')) return 'left';
+    if (label.includes('R')) return 'right';
+    if (flankBias > 0.08) return 'left';
+    if (flankBias < -0.08) return 'right';
+    return 'center';
+  }
+
+  private refreshAwayAdaptation(): void {
+    const summary = this.analytics.finalize();
+    this.awayAdaptation = observeSignals(
+      this.awayAdaptation,
+      {
+        homeAttLeft: summary.homeAttLeft,
+        homeAttRight: summary.homeAttRight,
+        homeAttCenter: summary.homeAttCenter,
+        awayAttLeft: summary.awayAttLeft,
+        awayAttRight: summary.awayAttRight,
+        awayAttCenter: summary.awayAttCenter,
+        homePressSuccess: this.homePressSuccess,
+        homePressAttempts: this.homePressAttempts,
+        awayPressSuccess: this.awayPressSuccess,
+        awayPressAttempts: this.awayPressAttempts,
+        homePossessionPct: this.stats.homePossession,
+      },
+      true,
+    );
+    this.awayInstructions = applyInMatchAdaptation(this.awayInstructions, this.awayAdaptation, true);
+  }
+
+  private resolveCorner(isHomeAttacking: boolean): void {
+    const attackClub = isHomeAttacking ? this.homeClub : this.awayClub;
+    const defendClub = isHomeAttacking ? this.awayClub : this.homeClub;
+    const plans = attackClub.footballTactics.setPiecePlans;
+    const cornerRngSeed = ((this.seed >>> 0) ^ Math.imul(this.minute, 4099)) % 10000;
+    const cornerRng = new SeededRandom(cornerRngSeed);
+    const outcome = resolveSetPiece(
+      'corner_attack',
+      attackClub,
+      defendClub,
+      plans?.cornerAttack,
+      plans?.cornerDefence,
+      cornerRng,
+    );
+    const zone: AttackZone = 'center';
+    if (outcome.isGoal) {
+      if (isHomeAttacking) {
+        this.stats.homeShots++;
+        this.stats.homeShotsOnTarget++;
+        this.stats.homeXg = +(this.stats.homeXg + outcome.xg).toFixed(2);
+      } else {
+        this.stats.awayShots++;
+        this.stats.awayShotsOnTarget++;
+        this.stats.awayXg = +(this.stats.awayXg + outcome.xg).toFixed(2);
+      }
+      this.analytics.onShot(isHomeAttacking, zone, outcome.xg, true);
+    }
+    if (outcome.isGoal) {
+      if (isHomeAttacking) this.homeScore++;
+      else this.awayScore++;
+      const scorer = attackClub.footballSquad.find((p) => p.id === outcome.scorerId);
+      this.events.push({
+        minute: this.minute,
+        sport: 'football',
+        type: 'goal',
+        team: isHomeAttacking ? 'home' : 'away',
+        playerId: scorer?.id,
+        playerName: scorer?.name ?? 'Player',
+        textAr: `⚽ هدف من ركلة ركنية! ${scorer?.name ?? ''} (${this.homeScore}-${this.awayScore})`,
+        textEn: `⚽ Goal from a corner! ${scorer?.nameEn ?? 'Player'} (${this.homeScore}-${this.awayScore})`,
+        homeScore: this.homeScore,
+        awayScore: this.awayScore,
+      });
+      if (this.varEnabled) this.reviewOpenPlayGoal();
+    }
   }
 
   /** Simulate single minute of action */
@@ -178,11 +306,23 @@ export class FootballMatchEngine {
     this.minute++;
     const homePower = this.calculateTeamPower(this.homeClub, this.homeTactics, true);
     const awayPower = this.calculateTeamPower(this.awayClub, this.awayTactics, false);
+    const homeCtx = this.sideInstructionContext(this.homeClub, this.homeInstructions);
+    const awayCtx = this.sideInstructionContext(this.awayClub, this.awayInstructions);
 
     // Possession dynamic shift
     const possessionDelta = (homePower.attack - awayPower.attack) * 0.2 + (this.prng.nextFloat() * 4 - 2);
     this.stats.homePossession = Math.min(78, Math.max(22, Math.round(50 + possessionDelta)));
     this.stats.awayPossession = 100 - this.stats.homePossession;
+
+    const isHomePossession = this.stats.homePossession >= this.stats.awayPossession;
+    const possInstr = isHomePossession ? this.homeInstructions : this.awayInstructions;
+    const passEst = 1 + Math.floor(possInstr.inPossession.tempo / 35);
+    const passAcc = Math.min(0.92, Math.max(0.55, 0.62 + (100 - possInstr.inPossession.passingRisk) * 0.003));
+    this.analytics.onPossessionMinute(isHomePossession, passEst, passAcc);
+    if (homeCtx.phase === 'final_third' && isHomePossession) this.analytics.onAttThirdEntry(true);
+    if (awayCtx.phase === 'final_third' && !isHomePossession) this.analytics.onAttThirdEntry(false);
+
+    if (this.minute % 15 === 0) this.refreshAwayAdaptation();
 
     // Interactive moment chance at specific story/tactical juncture (e.g. min 30 or 68)
     if ((this.minute === 35 || this.minute === 68) && !this.pendingInteractiveMoment) {
@@ -237,8 +377,21 @@ export class FootballMatchEngine {
 
     // Goal & Shot chances per minute (~10-15 shots per 90 mins)
     const actionRoll = this.prng.nextFloat();
+    const shotThreshold = 0.14;
 
-    if (actionRoll < 0.14) {
+    const pressSynthetic = (((this.seed >>> 0) ^ Math.imul(this.minute, 991)) % 1000) / 1000;
+    if (pressSynthetic < 0.08 + this.homeInstructions.outOfPossession.pressingIntensity / 500) {
+      this.homePressAttempts++;
+      const successSynthetic = (((this.seed >>> 0) ^ Math.imul(this.minute, 313)) % 1000) / 1000;
+      if (successSynthetic < 0.35 + this.homeInstructions.outOfPossession.pressingIntensity / 250) {
+        this.homePressSuccess++;
+        this.analytics.onPress(true, true);
+        this.analytics.onRecovery(true);
+      } else {
+        this.analytics.onPress(true, false);
+      }
+    }
+    if (actionRoll < shotThreshold) {
       // An attacking event occurred
       const isHomeAttacking = this.prng.nextFloat() < (this.stats.homePossession / 100);
       const attackingClub = isHomeAttacking ? this.homeClub : this.awayClub;
@@ -249,18 +402,44 @@ export class FootballMatchEngine {
       const attackingPlayers = attackingPower.lineup.filter(p => p.position !== 'GK');
       const shooter = this.prng.pick(attackingPlayers.length > 0 ? attackingPlayers : attackingClub.footballSquad);
 
-      const ratio = Math.max(0.4, Math.min(2.5, attackingPower.attack / Math.max(30, defendingPower.defense)));
+      const atkCtx = isHomeAttacking ? homeCtx : awayCtx;
+      const defCtx = isHomeAttacking ? awayCtx : homeCtx;
+      const deviates =
+        this.instructionsDeviate(this.homeInstructions, this.homeTactics) ||
+        this.instructionsDeviate(this.awayInstructions, this.awayTactics);
+      let ratio = Math.max(0.4, Math.min(2.5, attackingPower.attack / Math.max(30, defendingPower.defense)));
+      if (deviates) {
+        ratio *= atkCtx.roleMul * (1 + (atkCtx.phaseMul.attack - 1) * 0.35);
+        ratio *= 1 + defCtx.instr.throughBallRisk * 0.25;
+      }
+      const xgBase = deviates ? 0.08 * atkCtx.instr.xgPerShotMult : 0.08;
       const shotSuccessThreshold = Math.min(0.55, Math.max(0.12, 0.28 * Math.pow(ratio, 2.0)));
-      const onTarget = this.prng.nextFloat() < Math.min(0.65, Math.max(0.35, 0.44 + (attackingPower.attack - defendingPower.defense) * 0.005));
+      const onTargetBase = 0.44 + (attackingPower.attack - defendingPower.defense) * 0.005;
+      const onTarget =
+        this.prng.nextFloat() <
+        Math.min(0.65, Math.max(0.35, deviates ? onTargetBase * atkCtx.instr.onTargetMult : onTargetBase));
+
+      const zone = this.attackZoneForShooter(
+        attackingClub,
+        shooter?.id,
+        isHomeAttacking ? homeCtx.instr.flankBias : awayCtx.instr.flankBias,
+      );
 
       if (isHomeAttacking) {
         this.stats.homeShots++;
-        this.stats.homeXg = +(this.stats.homeXg + 0.08).toFixed(2);
+        this.stats.homeXg = +(this.stats.homeXg + xgBase).toFixed(2);
         if (onTarget) this.stats.homeShotsOnTarget++;
       } else {
         this.stats.awayShots++;
-        this.stats.awayXg = +(this.stats.awayXg + 0.08).toFixed(2);
+        this.stats.awayXg = +(this.stats.awayXg + xgBase).toFixed(2);
         if (onTarget) this.stats.awayShotsOnTarget++;
+      }
+      this.analytics.onShot(isHomeAttacking, zone, xgBase, onTarget);
+      if (zone !== 'center') this.analytics.onProgressivePass(isHomeAttacking);
+      const duelSynthetic = (((this.seed >>> 0) ^ Math.imul(this.minute, 1187)) % 1000) / 1000;
+      this.analytics.onDuel(isHomeAttacking, duelSynthetic < 0.48);
+      if ((((this.seed >>> 0) ^ Math.imul(this.minute, 917)) % 100) < 12) {
+        this.analytics.onTackle(!isHomeAttacking);
       }
 
       if (onTarget) {
@@ -296,7 +475,8 @@ export class FootballMatchEngine {
           };
           this.events.push(saveEvent);
           if (this.prng.nextChance(0.4)) {
-            if (isHomeAttacking) this.stats.homeCorners++; else this.stats.awayCorners++;
+            if (isHomeAttacking) this.stats.homeCorners++;
+            else this.stats.awayCorners++;
           }
         }
       }
@@ -349,6 +529,14 @@ export class FootballMatchEngine {
    */
   public applyLiveTactics(changes: Partial<FootballTactics>): MatchEvent {
     this.homeTactics = this.mergeTactics(this.homeTactics, changes);
+    const mergedFootball = { ...toFootballTactics(this.homeTactics), ...changes };
+    if (changes.tacticalInstructions) {
+      this.homeInstructions = changes.tacticalInstructions;
+    } else {
+      this.homeInstructions =
+        ensureTacticalInstructions(mergedFootball).tacticalInstructions ??
+        deriveTacticalInstructionsFromLegacy(mergedFootball);
+    }
     const { textAr, textEn } = describeTacticalChange(changes);
     const event: MatchEvent = {
       minute: this.minute,
@@ -377,6 +565,20 @@ export class FootballMatchEngine {
 
   public getReferee(): RefereeProfile {
     return this.referee;
+  }
+
+  public getMatchAnalytics() {
+    this.analytics.exportPressStats(
+      this.homePressAttempts,
+      this.homePressSuccess,
+      this.awayPressAttempts,
+      this.awayPressSuccess,
+    );
+    const analytics = this.analytics.finalize();
+    return {
+      analytics,
+      analyticsConclusions: generateAnalyticsConclusions(this.stats, analytics, true),
+    };
   }
 
   /** Reviews opened for this match. Empty when VAR was not enabled. */
@@ -531,9 +733,16 @@ export class FootballMatchEngine {
   private resolvePenalty(isHomeFoul: boolean): void {
     const benefitingHome = !isHomeFoul;
     const takerClub = benefitingHome ? this.homeClub : this.awayClub;
-    const taker = this.prng.pick(
-      takerClub.footballSquad.filter((p) => p.position !== 'GK').slice(0, 11) || takerClub.footballSquad,
-    );
+    const pool = takerClub.footballSquad.filter((p) => p.position !== 'GK').slice(0, 11);
+    const instr = takerClub.id === this.homeClub.id ? this.homeInstructions : this.awayInstructions;
+    const sideTactics = takerClub.id === this.homeClub.id ? this.homeTactics : this.awayTactics;
+    const useDesignated =
+      this.instructionsDeviate(instr, sideTactics) || Boolean(takerClub.footballTactics.setPiecePlans?.freeKickAttack);
+    const designated = takerClub.footballSquad.find((p) => p.id === takerClub.footballTactics.penaltyTakerId);
+    const taker =
+      useDesignated && designated && designated.position !== 'GK'
+        ? designated
+        : this.prng.pick(pool.length > 0 ? pool : takerClub.footballSquad);
     const scored = this.prng.nextChance(REF.penaltyGoalChance);
     if (scored) {
       if (benefitingHome) this.homeScore++;
@@ -622,6 +831,14 @@ export class FootballMatchEngine {
     while (this.minute < 90) {
       this.stepMinute();
     }
+    this.analytics.exportPressStats(
+      this.homePressAttempts,
+      this.homePressSuccess,
+      this.awayPressAttempts,
+      this.awayPressSuccess,
+    );
+    const analytics = this.analytics.finalize();
+    const analyticsConclusions = generateAnalyticsConclusions(this.stats, analytics, true);
     return {
       id: `match_${this.seed}`,
       sport: 'football',
@@ -635,6 +852,8 @@ export class FootballMatchEngine {
       awayScore: this.awayScore,
       events: this.events,
       stats: this.stats,
+      analytics,
+      analyticsConclusions,
       ...(this.varEnabled ? { varReviews: this.getVarReviews() } : {}),
       isFinished: true,
       competition: 'دوري التحدي للدرجة الثانية',

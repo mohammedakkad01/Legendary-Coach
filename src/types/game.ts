@@ -12,6 +12,7 @@ import type {
   PlayerMentalState,
   PlayerPersonalityProfile,
 } from '../domain/livingWorld/types';
+import type { PlayerLifeState } from '../domain/playerLife/types';
 
 export type SportType = 'football' | 'basketball';
 
@@ -88,7 +89,10 @@ export interface Player {
   mentalState?: PlayerMentalState;
   managerRelationship?: ManagerRelationship;
   careerState?: PlayerCareerState;
-  
+
+  /** Phase C player life (condition, development, playing time, mentoring). */
+  playerLife?: PlayerLifeState;
+
   // Dynamic Condition
   morale: number;    // 0-100
   form: number;      // 1-10

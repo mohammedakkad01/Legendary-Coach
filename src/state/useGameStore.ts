@@ -71,6 +71,7 @@ import {
 import { FootballMatchEngine } from '../engine/footballEngine';
 import { createRefereeFromSeed } from '../domain/referee/createRefereeFromSeed';
 import { SeededRandom } from '../engine/prng';
+import { hashStringToSeed } from '../domain/shared/seed';
 import {
   SimTeam,
   PlayerMatchDelta,
@@ -108,6 +109,13 @@ import {
 } from '../domain/livingWorld/events/dispatch';
 import { ensureDefaultHandlersRegistered } from '../domain/livingWorld/events/registry';
 import type { GameEvent, LivingWorldState } from '../domain/livingWorld/types';
+import { applyStateChanges } from '../domain/livingWorld/reducer';
+import { applyUserPostMatchPlayerLife, applyUserWeeklyPlayerLife } from '../domain/playerLife/storeBridge';
+import {
+  legacyDrillToPlan,
+  stateChangesForTrainingSession,
+} from '../domain/playerLife/trainingEngine';
+import { resolveInteraction } from '../domain/playerLife/integration';
 
 export type GameTab = 
   | 'dashboard' 
@@ -318,6 +326,7 @@ interface GameState {
   saveStatus: SaveStatus;
   saveCareerImmediate: () => boolean;
   dispatchLivingWorldEvent: (event: GameEvent) => DispatchResult;
+  resolvePlayerLifeInteraction: (interactionId: string, responseId: string) => boolean;
 }
 
 export const useGameStore = create<GameState>((set, get) => {
@@ -569,6 +578,38 @@ export const useGameStore = create<GameState>((set, get) => {
     const gk = squad.find(p => p.position === 'GK');
     const outfield = squad.filter(p => p.position !== 'GK').slice(0, 10);
     return { clubId, clubName, xi: [gk, ...outfield].filter((p): p is Player => !!p) };
+  };
+
+  const applyPostMatchPlayerLife = (
+    state: GameState,
+    record: MatchRecord,
+    won: boolean,
+    drawn: boolean,
+  ): { club: Club; livingWorld: LivingWorldState } => {
+    const rng = new SeededRandom(record.seed);
+    const deltas = deltasFromUserMatch(
+      record,
+      resolveUserTeam(),
+      resolveOpponentTeam(record.awayClubId, record.awayClubName),
+      rng,
+    );
+    const md = record.matchDay ?? 1;
+    const recentMatchesIn7Days = state.leagueFixtures.filter(
+      (f) => f.played && f.matchday >= md - 3 && f.matchday <= md,
+    ).length;
+    return applyUserPostMatchPlayerLife({
+      club: state.club,
+      livingWorld: state.livingWorld,
+      saveId: state.club.id,
+      matchday: md,
+      won,
+      drawn,
+      goalsFor: record.homeScore,
+      goalsAgainst: record.awayScore,
+      deltas,
+      fatigueProtectionMult: getFatigueProtectionMultiplier(state.vipPoints),
+      recentMatchesIn7Days,
+    });
   };
 
   // Background-load real squads for the rest of the league (once per session)
@@ -826,7 +867,26 @@ export const useGameStore = create<GameState>((set, get) => {
     }
 
     const simulatedMatchdays = [...done].sort((a, b) => a - b);
-    set({ leagueStandings: standings, tournamentStats: stats, simulatedMatchdays, lastRoundSummary: summary });
+    let weeklyClub = state.club;
+    let weeklyWorld = state.livingWorld;
+    if (summary) {
+      const weekly = applyUserWeeklyPlayerLife({
+        club: weeklyClub,
+        livingWorld: weeklyWorld,
+        saveId: state.club.id,
+        matchday: summary.matchday,
+      });
+      weeklyClub = weekly.club;
+      weeklyWorld = weekly.livingWorld;
+    }
+    set({
+      leagueStandings: standings,
+      tournamentStats: stats,
+      simulatedMatchdays,
+      lastRoundSummary: summary,
+      club: weeklyClub,
+      livingWorld: weeklyWorld,
+    });
     saveToStorage({ leagueStandings: standings, tournamentStats: stats, simulatedMatchdays });
     return summary;
   };
@@ -1477,21 +1537,37 @@ export const useGameStore = create<GameState>((set, get) => {
       }
 
       soundEffects.playWhistle(true);
-      const updatedSquad = state.club.footballSquad.map(p => {
-        if (drillType === 'stamina') {
-          return { ...p, stamina: Math.min(100, p.stamina + 8), fatigue: Math.max(0, p.fatigue - 5) };
-        } else if (drillType === 'technical') {
-          return { ...p, form: Math.min(10, p.form + 1), morale: Math.min(100, p.morale + 4) };
-        } else {
-          return { ...p, overall: Math.min(p.potential, p.overall + (Math.random() < 0.25 ? 1 : 0)) };
+      const plan = legacyDrillToPlan(drillType);
+      let changes = stateChangesForTrainingSession(
+        state.club.footballSquad.map((p) => p.id),
+        plan,
+      );
+      if (drillType === 'finishing') {
+        const finishRng = new SeededRandom(hashStringToSeed(`${state.club.id}_finish_${state.leagueFixtures.filter((f) => f.played).length}`));
+        for (const p of state.club.footballSquad) {
+          if (finishRng.nextChance(0.25)) {
+            changes.push({
+              kind: 'patchPlayerLife',
+              playerId: p.id,
+              legacyDelta: { overall: 1 },
+            });
+          }
         }
-      });
+      }
+      const applied = applyStateChanges(
+        { livingWorld: state.livingWorld, players: state.club.footballSquad },
+        changes,
+      );
 
       set({
         vipPoints: state.vipPoints + 15,
+        livingWorld: applied.livingWorld,
         club: {
           ...state.club,
-          footballSquad: updatedSquad,
+          footballSquad: applied.players.map((p) => ({
+            ...p,
+            overall: Math.min(p.potential, p.overall),
+          })),
           finances: {
             ...state.club.finances,
             trainingPoints: state.club.finances.trainingPoints - cost,
@@ -2120,24 +2196,7 @@ export const useGameStore = create<GameState>((set, get) => {
           date: new Date().toISOString().split('T')[0],
         };
 
-        // Squad Fatigue Simulation: starters drain energy, bench recovers
-        const lineupIds = new Set(state.club.footballLineup);
-        const fatigueMult = getFatigueProtectionMultiplier(state.vipPoints);
-        const updatedSquad = state.club.footballSquad.map((p) => {
-          if (lineupIds.has(p.id)) {
-            return {
-              ...p,
-              fatigue: Math.min(100, (p.fatigue || 0) + Math.round(20 * fatigueMult)),
-              stamina: Math.max(10, (p.stamina || 100) - Math.round(22 * fatigueMult)),
-            };
-          } else {
-            return {
-              ...p,
-              fatigue: Math.max(0, (p.fatigue || 0) - 15),
-              stamina: Math.min(100, (p.stamina || 100) + 15),
-            };
-          }
-        });
+        const playerLifePost = applyPostMatchPlayerLife(state, finalRecord, won, drawn);
 
         // Daily & Weekly Missions Progress
         const currentMissions = state.dailyMissions || INITIAL_DAILY_MISSIONS;
@@ -2170,12 +2229,11 @@ export const useGameStore = create<GameState>((set, get) => {
         const fanPenalty = Math.round(4 * mitigationFactor);
 
         const updatedClub = {
-          ...state.club,
-          footballSquad: updatedSquad,
+          ...playerLifePost.club,
           boardTrust: Math.min(100, Math.max(0, state.club.boardTrust + (won ? 4 : (drawn ? 0 : -boardPenalty)))),
           fanMood: Math.min(100, Math.max(0, state.club.fanMood + (won ? 6 : (drawn ? 1 : -fanPenalty)))),
           finances: {
-            ...state.club.finances,
+            ...playerLifePost.club.finances,
             coins: state.club.finances.coins + matchIncome,
             reputation: state.club.finances.reputation + (won ? 35 : 10),
           },
@@ -2195,6 +2253,7 @@ export const useGameStore = create<GameState>((set, get) => {
           dailyMissions: updatedMissions,
           postMatchAnalyst: analystFeedback,
           club: updatedClub,
+          livingWorld: playerLifePost.livingWorld,
         });
         saveToStorage({
           club: updatedClub,
@@ -2475,24 +2534,7 @@ export const useGameStore = create<GameState>((set, get) => {
         date: new Date().toISOString().split('T')[0],
       };
 
-      // Squad Fatigue Simulation
-      const lineupIds = new Set(state.club.footballLineup);
-      const fatigueMult = getFatigueProtectionMultiplier(state.vipPoints);
-      const updatedSquad = state.club.footballSquad.map((p) => {
-        if (lineupIds.has(p.id)) {
-          return {
-            ...p,
-            fatigue: Math.min(100, (p.fatigue || 0) + Math.round(20 * fatigueMult)),
-            stamina: Math.max(10, (p.stamina || 100) - Math.round(22 * fatigueMult)),
-          };
-        } else {
-          return {
-            ...p,
-            fatigue: Math.max(0, (p.fatigue || 0) - 15),
-            stamina: Math.min(100, (p.stamina || 100) + 15),
-          };
-        }
-      });
+      const playerLifePost = applyPostMatchPlayerLife(state, finalRecord, won, drawn);
 
       // Missions Progress
       const currentMissions = state.dailyMissions || INITIAL_DAILY_MISSIONS;
@@ -2525,12 +2567,11 @@ export const useGameStore = create<GameState>((set, get) => {
       const fanPenalty = Math.round(4 * mitigationFactor);
 
       const updatedClub = {
-        ...state.club,
-        footballSquad: updatedSquad,
+        ...playerLifePost.club,
         boardTrust: Math.min(100, Math.max(0, state.club.boardTrust + (won ? 4 : (drawn ? 0 : -boardPenalty)))),
         fanMood: Math.min(100, Math.max(0, state.club.fanMood + (won ? 6 : (drawn ? 1 : -fanPenalty)))),
         finances: {
-          ...state.club.finances,
+          ...playerLifePost.club.finances,
           coins: state.club.finances.coins + matchIncome,
           reputation: state.club.finances.reputation + (won ? 35 : 10),
         },
@@ -2552,6 +2593,7 @@ export const useGameStore = create<GameState>((set, get) => {
         dailyMissions: updatedMissions,
         postMatchAnalyst: analystFeedback,
         club: updatedClub,
+        livingWorld: playerLifePost.livingWorld,
       });
 
       saveToStorage({
@@ -2679,23 +2721,7 @@ export const useGameStore = create<GameState>((set, get) => {
         date: new Date().toISOString().split('T')[0],
       };
 
-      const lineupIds = new Set(state.club.footballLineup);
-      const fatigueMult = getFatigueProtectionMultiplier(state.vipPoints);
-      const updatedSquad = state.club.footballSquad.map((p) => {
-        if (lineupIds.has(p.id)) {
-          return {
-            ...p,
-            fatigue: Math.min(100, (p.fatigue || 0) + Math.round(20 * fatigueMult)),
-            stamina: Math.max(10, (p.stamina || 100) - Math.round(22 * fatigueMult)),
-          };
-        } else {
-          return {
-            ...p,
-            fatigue: Math.max(0, (p.fatigue || 0) - 15),
-            stamina: Math.min(100, (p.stamina || 100) + 15),
-          };
-        }
-      });
+      const playerLifePost = applyPostMatchPlayerLife(state, finalRecord, won, drawn);
 
       // Missions Progress
       const currentMissions = state.dailyMissions || INITIAL_DAILY_MISSIONS;
@@ -2725,12 +2751,11 @@ export const useGameStore = create<GameState>((set, get) => {
       const fanPenalty = Math.round(4 * mitigationFactor);
 
       const updatedClub = {
-        ...state.club,
-        footballSquad: updatedSquad,
+        ...playerLifePost.club,
         boardTrust: Math.min(100, Math.max(0, state.club.boardTrust + (won ? 4 : (drawn ? 0 : -boardPenalty)))),
         fanMood: Math.min(100, Math.max(0, state.club.fanMood + (won ? 6 : (drawn ? 1 : -fanPenalty)))),
         finances: {
-          ...state.club.finances,
+          ...playerLifePost.club.finances,
           coins: state.club.finances.coins + matchIncome,
           reputation: state.club.finances.reputation + (won ? 35 : 10),
         },
@@ -2753,6 +2778,7 @@ export const useGameStore = create<GameState>((set, get) => {
         dailyMissions: updatedMissions,
         postMatchAnalyst: analystFeedback,
         club: updatedClub,
+        livingWorld: playerLifePost.livingWorld,
       });
 
       saveToStorage({
@@ -3291,11 +3317,24 @@ export const useGameStore = create<GameState>((set, get) => {
       const currentTier = VIP_LEVELS.find(t => t.level === currentLevel) || VIP_LEVELS[0];
       const recoveryBonusMult = 1 + (currentTier.recoverySpeedBonusPercent || 0) / 100;
 
-      const updatedSquad = state.club.footballSquad.map((p) => ({
-        ...p,
-        fatigue: Math.max(0, (p.fatigue || 0) - Math.round(35 * recoveryBonusMult)),
-        stamina: Math.min(100, (p.stamina || 100) + Math.round(30 * recoveryBonusMult)),
-      }));
+      const recoveryChanges = stateChangesForTrainingSession(
+        state.club.footballSquad.map((p) => p.id),
+        { category: 'recovery', intensity: 'low' },
+      ).map((c) =>
+        c.kind === 'patchPlayerLife' && c.legacyDelta
+          ? {
+              ...c,
+              legacyDelta: {
+                fatigue: Math.round((c.legacyDelta.fatigue ?? -20) * recoveryBonusMult),
+                stamina: Math.round((c.legacyDelta.stamina ?? 12) * recoveryBonusMult),
+              },
+            }
+          : c,
+      );
+      const recoveryApplied = applyStateChanges(
+        { livingWorld: state.livingWorld, players: state.club.footballSquad },
+        recoveryChanges,
+      );
 
       const updatedMissions = (state.dailyMissions || INITIAL_DAILY_MISSIONS).map((m) => {
         if (m.id === 'mission_manage_fatigue' && !m.isClaimed) {
@@ -3306,7 +3345,7 @@ export const useGameStore = create<GameState>((set, get) => {
 
       const updatedClub = {
         ...state.club,
-        footballSquad: updatedSquad,
+        footballSquad: recoveryApplied.players,
         finances: {
           ...state.club.finances,
           coins: state.club.finances.coins - cost,
@@ -3315,9 +3354,10 @@ export const useGameStore = create<GameState>((set, get) => {
 
       set({
         club: updatedClub,
+        livingWorld: recoveryApplied.livingWorld,
         dailyMissions: updatedMissions,
       });
-      saveToStorage({ club: updatedClub, dailyMissions: updatedMissions });
+      saveToStorage({ club: updatedClub, livingWorld: recoveryApplied.livingWorld, dailyMissions: updatedMissions });
 
       return {
         success: true,
@@ -3561,6 +3601,23 @@ export const useGameStore = create<GameState>((set, get) => {
         saveToStorage(undefined, false);
       }
       return result;
+    },
+
+    resolvePlayerLifeInteraction: (interactionId, responseId) => {
+      const state = get();
+      const interaction = (state.livingWorld.pendingInteractions ?? []).find((i) => i.id === interactionId);
+      if (!interaction) return false;
+      const result = resolveInteraction(
+        { livingWorld: state.livingWorld, players: state.club.footballSquad },
+        interaction,
+        responseId,
+      );
+      set({
+        livingWorld: result.livingWorld,
+        club: { ...state.club, footballSquad: result.players },
+      });
+      saveToStorage(undefined, false);
+      return true;
     },
 
     exportGameData: () => {

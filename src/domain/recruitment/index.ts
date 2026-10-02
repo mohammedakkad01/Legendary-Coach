@@ -147,4 +147,32 @@ export { computePreOfferWillingness } from './motivation/preOfferWillingness';
 export { computeAgentDemands } from './motivation/agentDemands';
 export { withMotivationForNegotiation } from './motivation/negotiationBridge';
 
+export type {
+  AiClubTransferProfile,
+  AiClubFinanceContext,
+  SquadNeedContext,
+  AiTransferActionKind,
+  DecideTransferActionInput,
+  DecideTransferActionResult,
+  TransferTargetCandidate,
+  IdentifiedTransferTarget,
+  ClubTransferPhilosophy,
+  ClubRiskTolerance,
+} from './aiClubs/clubProfileTypes';
+
+export {
+  createDefaultAiClubProfile,
+  ensureAiClubProfiles,
+} from './aiClubs/defaultClubProfiles';
+export { decideTransferAction, isAggressiveBuyAction } from './aiClubs/decideTransferAction';
+export { identifyTransferTargets } from './aiClubs/identifyTransferTargets';
+export type { IdentifyTransferTargetsInput } from './aiClubs/identifyTransferTargets';
+export { runAiClubWeeklyTransferBatch } from './aiClubs/weeklyAiTransferBatch';
+export type {
+  AiClubWeeklyBatchEntry,
+  AiClubWeeklyBatchInput,
+  AiClubWeeklyBatchResult,
+} from './aiClubs/weeklyAiTransferBatch';
+export { collectRecruitmentClubIds, attachAiClubProfiles } from './aiClubs/ensureProfilesOnWorld';
+
 export { ensureRecruitmentV5 } from './migration/migrateRecruitmentV5';

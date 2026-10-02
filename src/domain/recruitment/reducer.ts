@@ -63,6 +63,14 @@ function applyOne(state: RecruitmentWorldState, patch: RecruitmentPatch): Recrui
           : [...state.negotiations, patch.negotiation];
       return { ...state, negotiations };
     }
+    case 'upsertAiClubProfile':
+      return {
+        ...state,
+        aiClubProfiles: {
+          ...state.aiClubProfiles,
+          [patch.profile.clubId]: patch.profile,
+        },
+      };
     default: {
       const _exhaustive: never = patch;
       return _exhaustive;

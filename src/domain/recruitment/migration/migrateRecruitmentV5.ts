@@ -11,6 +11,7 @@ import { mergeWorldPlayers } from '../world/worldPlayerRegistry';
 import { calendarWeekFromGameWeek, deriveGameWeekFromSave } from '../world/gameWeek';
 import { buildTransferWindowState } from '../world/transferWindow';
 import { createDefaultScoutNetwork } from '../scouts/defaultScoutNetwork';
+import { attachAiClubProfiles } from '../aiClubs/ensureProfilesOnWorld';
 import { mergeLegacyNegotiations } from '../negotiation/migrateLegacyNegotiations';
 import {
   RECRUITMENT_WORLD_SCHEMA_VERSION,
@@ -19,10 +20,11 @@ import {
 
 type LegacyRecruitmentWorld = Omit<
   RecruitmentWorldState,
-  'schemaVersion' | 'negotiations'
+  'schemaVersion' | 'negotiations' | 'aiClubProfiles'
 > & {
-  schemaVersion: 1 | 2 | 3 | 4;
+  schemaVersion: 1 | 2 | 3 | 4 | 5;
   negotiations?: RecruitmentWorldState['negotiations'];
+  aiClubProfiles?: RecruitmentWorldState['aiClubProfiles'];
 };
 
 type AnyRecruitmentWorld = LegacyRecruitmentWorld;
@@ -44,14 +46,16 @@ function upgradeToCurrentSchema(save: GameSaveData, world: LegacyRecruitmentWorl
     negotiations = mergeLegacyNegotiations([], save.activeNegotiations, userClubId, gameWeek);
   }
 
-  return {
+  const upgraded: RecruitmentWorldState = {
     ...world,
     schemaVersion: RECRUITMENT_WORLD_SCHEMA_VERSION,
     scoutNetwork: scouts,
     scoutingAssignments: world.scoutingAssignments ?? [],
     scoutingReports: world.scoutingReports ?? [],
     negotiations,
+    aiClubProfiles: world.aiClubProfiles ?? {},
   };
+  return attachAiClubProfiles(upgraded, save);
 }
 
 function seedWorldSeed(save: GameSaveData): number {
@@ -91,7 +95,7 @@ function buildFreshRecruitmentWorld(save: GameSaveData): RecruitmentWorldState {
     knowledgeByObserverClubId[userClubId][player.id] = knowledge;
   }
 
-  return {
+  const baseWorld: RecruitmentWorldState = {
     schemaVersion: RECRUITMENT_WORLD_SCHEMA_VERSION,
     worldSeed,
     gameWeek,
@@ -107,7 +111,9 @@ function buildFreshRecruitmentWorld(save: GameSaveData): RecruitmentWorldState {
       userClubId,
       gameWeek,
     ),
+    aiClubProfiles: {},
   };
+  return attachAiClubProfiles(baseWorld, save);
 }
 
 function repairRecruitmentWorld(save: GameSaveData, existing: AnyRecruitmentWorld): RecruitmentWorldState {

@@ -153,6 +153,28 @@ export const RECRUITMENT_TUNING = {
       professional: bounded(0, -5, 5),
     },
   },
+
+  aiClubs: {
+    maxClubsPerWeek: bounded(6, 2, 16),
+    maxTargetsPerClub: bounded(4, 1, 10),
+    maxCandidatesEvaluatedPerClub: bounded(12, 4, 32),
+    uncertaintyPenaltyScale: bounded(0.35, 0.1, 0.6),
+    minFitToRegisterInterest: bounded(42, 25, 60),
+    loanPreferenceThreshold: bounded(0.55, 0.3, 0.85),
+    sellPressureBudgetFloor: bounded(500_000, 0, 2_000_000),
+    interestThresholds: {
+      registerInterest: bounded(48, 30, 65),
+      negotiate: bounded(62, 45, 78),
+      bidImmediately: bounded(78, 60, 92),
+    },
+    willingnessBoost: {
+      desperate: bounded(22, 10, 35),
+      keen: bounded(14, 5, 25),
+      open: bounded(6, 0, 15),
+      reluctant: bounded(-8, -18, 0),
+      refuse: bounded(-22, -35, -10),
+    },
+  },
 } as const;
 
 export type KnowledgeRevealStage = (typeof RECRUITMENT_TUNING.reveal.stageOrder)[number];

@@ -8,9 +8,10 @@
 import type { KnowledgeRevealStage } from './config/recruitmentTuning';
 import type { ScoutStaff } from './scouts/scoutTypes';
 import type { ScoutingAssignment, ScoutingReport } from './scouting/types';
+import type { AiClubTransferProfile } from './aiClubs/clubProfileTypes';
 import type { TransferNegotiation } from './negotiation/offerTypes';
 
-export const RECRUITMENT_WORLD_SCHEMA_VERSION = 4 as const;
+export const RECRUITMENT_WORLD_SCHEMA_VERSION = 5 as const;
 
 export type TransferWindowPhase = 'closed' | 'summer' | 'winter';
 
@@ -69,6 +70,8 @@ export interface RecruitmentWorldState {
   scoutingAssignments: ScoutingAssignment[];
   scoutingReports: ScoutingReport[];
   negotiations: TransferNegotiation[];
+  /** Configurable AI transfer profiles keyed by club id. */
+  aiClubProfiles: Record<string, AiClubTransferProfile>;
 }
 
 export interface RecruitmentTickContext {
@@ -85,4 +88,5 @@ export type RecruitmentPatch =
   | { kind: 'setScoutNetwork'; scouts: ScoutStaff[] }
   | { kind: 'upsertScoutingAssignment'; assignment: ScoutingAssignment }
   | { kind: 'appendScoutingReport'; report: ScoutingReport }
-  | { kind: 'upsertNegotiation'; negotiation: TransferNegotiation };
+  | { kind: 'upsertNegotiation'; negotiation: TransferNegotiation }
+  | { kind: 'upsertAiClubProfile'; profile: AiClubTransferProfile };

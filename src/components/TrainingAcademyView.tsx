@@ -6,10 +6,11 @@
  * Tactical drills, stamina conditioning, and youth wonderkid promotions.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useGameStore } from '../state/useGameStore';
-import { Dumbbell, Sparkles, UserPlus, Flame, HeartPulse, Crosshair, Search, Check, X, Crown, Star } from 'lucide-react';
+import { Dumbbell, Sparkles, UserPlus, Flame, HeartPulse, Crosshair, Search, Check, X, Crown, Star, Activity } from 'lucide-react';
 import { VIP_LEVELS } from '../data/vipData';
+import { TrainingSessionsPanel } from './player-life/TrainingSessionsPanel';
 
 export const TrainingAcademyView: React.FC = () => {
   const {
@@ -27,6 +28,7 @@ export const TrainingAcademyView: React.FC = () => {
   const isAr = language === 'ar';
   const squad = currentSport === 'football' ? club.footballSquad : club.basketballSquad;
   const [academyFeedback, setAcademyFeedback] = React.useState<string | null>(null);
+  const [activeSubTab, setActiveSubTab] = useState<'sessions' | 'drills' | 'academy'>('sessions');
 
   let currentVipTier = VIP_LEVELS[0];
   for (const tier of VIP_LEVELS) {
@@ -72,7 +74,47 @@ export const TrainingAcademyView: React.FC = () => {
         </div>
       </div>
 
-      {/* Drill Cards Grid */}
+      {/* Sub-Tab Navigation */}
+      <div className="flex items-center gap-2 bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800 w-fit">
+        <button
+          onClick={() => setActiveSubTab('sessions')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+            activeSubTab === 'sessions'
+              ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Activity className="w-4 h-4" />
+          <span>{isAr ? 'الحصص التكتيكية والحمل البدني' : 'Tactical Sessions & Workload'}</span>
+        </button>
+        <button
+          onClick={() => setActiveSubTab('drills')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+            activeSubTab === 'drills'
+              ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Dumbbell className="w-4 h-4" />
+          <span>{isAr ? 'التمارين الفردية السريعة' : 'Quick Drills'}</span>
+        </button>
+        <button
+          onClick={() => setActiveSubTab('academy')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+            activeSubTab === 'academy'
+              ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <UserPlus className="w-4 h-4" />
+          <span>{isAr ? 'أكاديمية الناشئين' : 'Youth Academy'}</span>
+        </button>
+      </div>
+
+      {/* Render Active Sub-View */}
+      {activeSubTab === 'sessions' && <TrainingSessionsPanel />}
+
+      {activeSubTab === 'drills' && (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         
         {/* Drill 1: Stamina & Conditioning */}
@@ -172,9 +214,11 @@ export const TrainingAcademyView: React.FC = () => {
         </div>
 
       </div>
+      )}
 
       {/* Youth Academy — Scouting (Football: real discovery slots / Basketball: legacy instant promote) */}
-      {currentSport === 'football' ? (
+      {activeSubTab === 'academy' && (
+        currentSport === 'football' ? (
         <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 border border-indigo-500/30 rounded-3xl p-6 shadow-2xl space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-2">
@@ -278,7 +322,7 @@ export const TrainingAcademyView: React.FC = () => {
             {isAr ? 'ترقية الموهبة الصاعدة للفريق الأول' : 'Promote Academy Wonderkid'}
           </button>
         </div>
-      )}
+      ))}
 
       {/* Squad Training Status List */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4">

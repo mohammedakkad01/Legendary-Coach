@@ -119,6 +119,8 @@ import {
   stateChangesForTrainingSession,
 } from '../domain/playerLife/trainingEngine';
 import { resolveInteraction } from '../domain/playerLife/integration';
+import { captaincyChangeConsequences } from '../domain/playerLife/captaincy';
+import { assignMentoringPair } from '../domain/playerLife/mentoring';
 
 export type GameTab = 
   | 'dashboard' 
@@ -330,6 +332,12 @@ interface GameState {
   saveCareerImmediate: () => boolean;
   dispatchLivingWorldEvent: (event: GameEvent) => DispatchResult;
   resolvePlayerLifeInteraction: (interactionId: string, responseId: string) => boolean;
+  changeCaptainWithConsequences: (newCaptainId: string) => void;
+  assignMentoringPairAction: (mentorId: string, menteeId: string) => void;
+  removeMentoringPairAction: (menteeId: string) => void;
+  markNotificationRead: (id: string) => void;
+  markAllNotificationsRead: () => void;
+  runCustomTrainingPlan: (plan: import('../domain/playerLife/types').TrainingSessionPlan) => boolean;
 }
 
 export const useGameStore = create<GameState>((set, get) => {
@@ -3649,6 +3657,131 @@ export const useGameStore = create<GameState>((set, get) => {
       set({
         livingWorld: result.livingWorld,
         club: { ...state.club, footballSquad: result.players },
+      });
+      saveToStorage(undefined, false);
+      return true;
+    },
+
+    changeCaptainWithConsequences: (newCaptainId) => {
+      const state = get();
+      const oldCaptainId = state.club.footballTactics.captainId;
+      if (oldCaptainId === newCaptainId) return;
+      const season = state.livingWorld.currentSeason ?? 1;
+      const matchday = state.leagueFixtures.filter((f) => f.played).length + 1;
+      const changes = captaincyChangeConsequences(oldCaptainId, newCaptainId, season, matchday);
+      const applied = applyStateChanges(
+        { livingWorld: state.livingWorld, players: state.club.footballSquad },
+        changes,
+      );
+      soundEffects.playTap();
+      set({
+        livingWorld: applied.livingWorld,
+        club: {
+          ...state.club,
+          footballSquad: applied.players,
+          footballTactics: {
+            ...state.club.footballTactics,
+            captainId: newCaptainId,
+          },
+        },
+      });
+      saveToStorage(undefined, false);
+    },
+
+    assignMentoringPairAction: (mentorId, menteeId) => {
+      const state = get();
+      const changes = assignMentoringPair(mentorId, menteeId);
+      const applied = applyStateChanges(
+        { livingWorld: state.livingWorld, players: state.club.footballSquad },
+        changes,
+      );
+      soundEffects.playTap();
+      set({
+        livingWorld: applied.livingWorld,
+        club: {
+          ...state.club,
+          footballSquad: applied.players,
+        },
+      });
+      saveToStorage(undefined, false);
+    },
+
+    removeMentoringPairAction: (menteeId) => {
+      const state = get();
+      const changes: import('../domain/livingWorld/types').StateChange[] = [
+        {
+          kind: 'patchPlayerLife',
+          playerId: menteeId,
+          patch: { mentoring: { mentorId: undefined, menteeIds: [] } },
+          legacyDelta: {},
+        },
+      ];
+      const applied = applyStateChanges(
+        { livingWorld: state.livingWorld, players: state.club.footballSquad },
+        changes,
+      );
+      soundEffects.playTap();
+      set({
+        livingWorld: applied.livingWorld,
+        club: {
+          ...state.club,
+          footballSquad: applied.players,
+        },
+      });
+      saveToStorage(undefined, false);
+    },
+
+    markNotificationRead: (id) => {
+      const state = get();
+      const notifications = (state.livingWorld.notifications ?? []).map((n) =>
+        n.id === id ? { ...n, read: true } : n,
+      );
+      set({
+        livingWorld: {
+          ...state.livingWorld,
+          notifications,
+        },
+      });
+      saveToStorage(undefined, false);
+    },
+
+    markAllNotificationsRead: () => {
+      const state = get();
+      const notifications = (state.livingWorld.notifications ?? []).map((n) => ({ ...n, read: true }));
+      set({
+        livingWorld: {
+          ...state.livingWorld,
+          notifications,
+        },
+      });
+      saveToStorage(undefined, false);
+    },
+
+    runCustomTrainingPlan: (plan) => {
+      const state = get();
+      const cost = plan.intensity === 'very_high' ? 45 : plan.intensity === 'high' ? 35 : 25;
+      if (state.club.finances.trainingPoints < cost) return false;
+
+      soundEffects.playWhistle(true);
+      const changes = stateChangesForTrainingSession(
+        state.club.footballSquad.map((p) => p.id),
+        plan,
+      );
+      const applied = applyStateChanges(
+        { livingWorld: state.livingWorld, players: state.club.footballSquad },
+        changes,
+      );
+      set({
+        vipPoints: state.vipPoints + 15,
+        livingWorld: applied.livingWorld,
+        club: {
+          ...state.club,
+          footballSquad: applied.players,
+          finances: {
+            ...state.club.finances,
+            trainingPoints: state.club.finances.trainingPoints - cost,
+          },
+        },
       });
       saveToStorage(undefined, false);
       return true;

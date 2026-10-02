@@ -250,4 +250,10 @@ export interface GameState {
   /** Runs the living-world event pipeline (pure domain); not wired to match/story in Phase A. */
   dispatchLivingWorldEvent: (event: GameEvent) => DispatchResult;
   resolvePlayerLifeInteraction: (interactionId: string, responseId: string) => boolean;
+  changeCaptainWithConsequences: (newCaptainId: string) => void;
+  assignMentoringPairAction: (mentorId: string, menteeId: string) => void;
+  removeMentoringPairAction: (menteeId: string) => void;
+  markNotificationRead: (id: string) => void;
+  markAllNotificationsRead: () => void;
+  runCustomTrainingPlan: (plan: import('../domain/playerLife/types').TrainingSessionPlan) => boolean;
 }

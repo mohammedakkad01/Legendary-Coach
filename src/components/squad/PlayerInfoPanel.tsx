@@ -10,12 +10,13 @@
  */
 
 import React from 'react';
-import { X } from 'lucide-react';
+import { X, HeartPulse } from 'lucide-react';
 import type { Player } from '../../types/game';
 import type { PlayerAssignment } from '../../domain/squad/squadTypes';
 import { computeEffectiveRating } from '../../domain/squad/positionSuitability';
 import { PositionBadge } from './PositionBadge';
 import { PLAYER_PANEL_TEXT, SQUAD_SECTION_TEXT, SUITABILITY_LEVEL_TEXT, SUITABILITY_REASON_TEXT, pick } from '../../i18n/squad';
+import { MoodBadge, SquadRoleBadge, InjurySeverityBadge, InjuryReturnRangeBadge } from '../player-life/PlayerLifeBadges';
 
 export interface PlayerInfoPanelProps {
   readonly player: Player;
@@ -37,6 +38,11 @@ export const PlayerInfoPanel: React.FC<PlayerInfoPanelProps> = ({ player, assign
   const breakdown = computeEffectiveRating(player, assignedSlot);
   const key = ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'physical'] as const;
 
+  const life = player.playerLife;
+  const condition = life?.condition;
+  const role = life?.playingTime?.squadRole;
+  const injury = condition?.injury;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/80 backdrop-blur-sm"
@@ -56,13 +62,37 @@ export const PlayerInfoPanel: React.FC<PlayerInfoPanelProps> = ({ player, assign
             </div>
             <div className="min-w-0">
               <p className="text-sm font-black text-white truncate">{isAr ? player.name : player.nameEn}</p>
-              <p className="text-[10px] text-slate-400">{player.nationalityFlag} · {pick(SQUAD_SECTION_TEXT[assignment.section], isAr)}</p>
+              <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                <span className="text-[10px] text-slate-400">{player.nationalityFlag} · {pick(SQUAD_SECTION_TEXT[assignment.section], isAr)}</span>
+                <SquadRoleBadge role={role} isAr={isAr} />
+              </div>
             </div>
           </div>
           <button onClick={onClose} aria-label={pick(T.close, isAr)} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white shrink-0">
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Mood & Mental Indicator */}
+        <div className="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2">
+          <span className="text-[11px] text-slate-400 font-bold">{isAr ? 'الحالة المعنوية والذهنية' : 'Mood & Mindset'}</span>
+          <MoodBadge mental={player.mentalState} isAr={isAr} />
+        </div>
+
+        {/* Injury Warning if applicable */}
+        {injury && (
+          <div className="bg-rose-950/40 border border-rose-800/60 rounded-xl p-2.5 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <InjurySeverityBadge severity={injury.severity} isAr={isAr} />
+              <span className="text-[10px] text-rose-300 font-bold">{isAr ? 'مستبعد للإصابة' : 'Injured'}</span>
+            </div>
+            <InjuryReturnRangeBadge
+              estimatedWeeks={injury.estimatedWeeksRemaining}
+              confidence={injury.diagnosisConfidence}
+              isAr={isAr}
+            />
+          </div>
+        )}
 
         <div className="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2">
           <div>
@@ -93,6 +123,8 @@ export const PlayerInfoPanel: React.FC<PlayerInfoPanelProps> = ({ player, assign
           {stat(pick(T.fatigue, isAr), `${player.fatigue}%`, player.fatigue > 60 ? 'text-rose-400' : 'text-white')}
           {stat(pick(T.morale, isAr), `${player.morale}%`, player.morale < 40 ? 'text-rose-400' : 'text-white')}
           {stat(pick(T.form, isAr), `${player.form}/10`, 'text-lime-400')}
+          {condition && stat(isAr ? 'الحِدّة' : 'Sharpness', `${condition.sharpness}%`, 'text-sky-400')}
+          {condition && stat(isAr ? 'حمل التدريب' : 'Tr. Load', `${condition.trainingLoad}%`, condition.trainingLoad > 70 ? 'text-amber-400' : 'text-slate-300')}
         </div>
 
         <div className="grid grid-cols-3 gap-1.5">

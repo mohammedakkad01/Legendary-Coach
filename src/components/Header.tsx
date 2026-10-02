@@ -12,6 +12,7 @@ import { useFirebase } from '../firebase/FirebaseContext';
 import { CloudSyncModal } from './CloudSyncModal';
 import { RedeemCodeModal } from './RedeemCodeModal';
 import { VIP_LEVELS } from '../data/vipData';
+import { NotificationsModal } from './player-life/NotificationsModal';
 import { 
   Trophy, 
   Coins, 
@@ -27,7 +28,8 @@ import {
   Sparkles,
   Swords,
   Database,
-  Gift
+  Gift,
+  Bell
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -47,12 +49,14 @@ export const Header: React.FC = () => {
     setDailyMissionsModalOpen,
     startTacticalDuel,
     hasSelectedInitialClub,
-    saveStatus
+    saveStatus,
+    livingWorld
   } = useGameStore();
 
   const { user, isOnline, setAuthModalOpen, isAdmin } = useFirebase();
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [showRedeemModal, setShowRedeemModal] = useState(false);
+  const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [showSavedPill, setShowSavedPill] = useState(false);
 
   useEffect(() => {
@@ -64,6 +68,7 @@ export const Header: React.FC = () => {
   }, [saveStatus]);
 
   const claimableMissionsCount = (dailyMissions || []).filter(m => m.current >= m.target && !m.isClaimed).length;
+  const unreadNotificationsCount = (livingWorld?.notifications ?? []).filter(n => !n.read).length;
 
   // Find VIP Tier
   let currentTier = VIP_LEVELS[0];
@@ -203,6 +208,22 @@ export const Header: React.FC = () => {
             <span>{energy}/100</span>
           </div>
 
+          {/* Notifications Bell Button */}
+          <button
+            id="header_notifications_btn"
+            onClick={() => setShowNotificationsModal(true)}
+            className="relative flex items-center gap-1.5 bg-neutral-800/90 hover:bg-neutral-700 border border-slate-700 hover:border-sky-400 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-200 transition-all active:scale-95 cursor-pointer"
+            title={isAr ? 'مركز الإشعارات والتنبيهات' : 'Notifications & Alerts'}
+          >
+            <Bell className="w-3.5 h-3.5 text-sky-400" />
+            <span className="hidden sm:inline">{isAr ? 'الإشعارات' : 'Alerts'}</span>
+            {unreadNotificationsCount > 0 && (
+              <span className="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full bg-sky-500 text-white text-[10px] font-black animate-pulse shadow-md">
+                {unreadNotificationsCount}
+              </span>
+            )}
+          </button>
+
           {/* Daily Missions Button with Notification Badge */}
           <button
             id="header_daily_missions_btn"
@@ -337,6 +358,12 @@ export const Header: React.FC = () => {
       <RedeemCodeModal
         isOpen={showRedeemModal}
         onClose={() => setShowRedeemModal(false)}
+      />
+
+      {/* Notifications Modal */}
+      <NotificationsModal
+        isOpen={showNotificationsModal}
+        onClose={() => setShowNotificationsModal(false)}
       />
 
       {/* Cloud Sync & Firebase Modal */}

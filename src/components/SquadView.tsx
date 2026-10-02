@@ -10,17 +10,27 @@ import React, { useState } from 'react';
 import { useGameStore } from '../state/useGameStore';
 import { useFeedback } from '../context/FeedbackContext';
 import { Player } from '../types/game';
-import { Users, Star, Award, Shield, Zap, Sparkles, HeartPulse, Activity } from 'lucide-react';
+import { Users, Star, Award, Shield, Zap, Sparkles, HeartPulse, Activity, MessageSquare } from 'lucide-react';
+import { PlayerConversationsView } from './player-life/PlayerConversationsView';
+import { MedicalCenterView } from './player-life/MedicalCenterView';
+import { DressingRoomView } from './player-life/DressingRoomView';
+import { MentoringView } from './player-life/MentoringView';
 
 export const SquadView: React.FC = () => {
-  const { club, currentSport, language, runSquadRecoverySession } = useGameStore();
+  const { club, livingWorld, currentSport, language, runSquadRecoverySession } = useGameStore();
   const { toast } = useFeedback();
   const isAr = language === 'ar';
 
   const squad = currentSport === 'football' ? club.footballSquad : club.basketballSquad;
   const lineupIds = currentSport === 'football' ? club.footballLineup : club.basketballLineup;
 
+  const [activeSquadTab, setActiveSquadTab] = useState<'roster' | 'conversations' | 'dressing_room' | 'mentoring' | 'medical'>('roster');
   const [selectedPlayer, setSelectedPlayer] = useState<Player>(squad[0]);
+
+  const pendingInteractionsCount = (livingWorld?.pendingInteractions ?? []).length;
+  const injuredCount = squad.filter(
+    (p) => (p.injuredWeeks ?? 0) > 0 || p.playerLife?.condition?.injury !== undefined,
+  ).length;
 
   const avgFatigue = squad.length > 0 
     ? Math.round(squad.reduce((acc, p) => acc + (p.fatigue || 0), 0) / squad.length)
@@ -34,10 +44,10 @@ export const SquadView: React.FC = () => {
         <div>
           <div className="flex items-center gap-2 text-sky-400 text-xs font-bold mb-1">
             <Users className="w-4 h-4" />
-            <span>{isAr ? 'إدارة الفريق والقائمة الرسمية' : 'Senior Squad & Roster'}</span>
+            <span>{isAr ? 'إدارة الفريق والحياة اليومية' : 'Senior Squad & Player Life'}</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black font-heading text-white">
-            {isAr ? 'قائمة لاعبي الفريق الأول وتفاصيل العقود' : 'First Team Squad & Contracts'}
+            {isAr ? 'شؤون التشكيلة والعلاقات وغرفة الملابس' : 'First Team, Dressing Room & Player Life'}
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
             {isAr ? `إجمالي اللاعبين: ${squad.length} لاعباً مسجلاً في الكشوفات الرسمية.` : `Total squad size: ${squad.length} registered players.`}
@@ -70,6 +80,86 @@ export const SquadView: React.FC = () => {
         </div>
       </div>
 
+      {/* Sub-Tab Navigation Bar */}
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800">
+        <button
+          onClick={() => setActiveSquadTab('roster')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+            activeSquadTab === 'roster'
+              ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>{isAr ? 'قائمة اللاعبين' : 'Squad Roster'}</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSquadTab('conversations')}
+          className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+            activeSquadTab === 'conversations'
+              ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4" />
+          <span>{isAr ? 'محادثات اللاعبين' : 'Conversations'}</span>
+          {pendingInteractionsCount > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black animate-pulse">
+              {pendingInteractionsCount}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveSquadTab('dressing_room')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+            activeSquadTab === 'dressing_room'
+              ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <Shield className="w-4 h-4" />
+          <span>{isAr ? 'غرفة الملابس' : 'Dressing Room'}</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSquadTab('mentoring')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+            activeSquadTab === 'mentoring'
+              ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <Sparkles className="w-4 h-4" />
+          <span>{isAr ? 'الإرشاد والتوجيه' : 'Mentoring'}</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSquadTab('medical')}
+          className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap ${
+            activeSquadTab === 'medical'
+              ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <HeartPulse className="w-4 h-4" />
+          <span>{isAr ? 'العيادة والإصابات' : 'Medical & Injuries'}</span>
+          {injuredCount > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-black">
+              {injuredCount}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Sub-view Rendering */}
+      {activeSquadTab === 'conversations' && <PlayerConversationsView />}
+      {activeSquadTab === 'dressing_room' && <DressingRoomView />}
+      {activeSquadTab === 'mentoring' && <MentoringView />}
+      {activeSquadTab === 'medical' && <MedicalCenterView />}
+
+      {activeSquadTab === 'roster' && (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Squad Roster Grid (7 Cols) */}
@@ -236,6 +326,7 @@ export const SquadView: React.FC = () => {
         </div>
 
       </div>
+      )}
 
     </div>
   );

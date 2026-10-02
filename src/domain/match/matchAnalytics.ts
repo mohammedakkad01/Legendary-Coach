@@ -40,6 +40,14 @@ export interface MatchAnalyticsSummary {
   readonly homePressSuccess: number;
   readonly awayPressAttempts: number;
   readonly awayPressSuccess: number;
+  readonly homeSetPieceGoals: number;
+  readonly awaySetPieceGoals: number;
+  readonly homeCornerShots: number;
+  readonly awayCornerShots: number;
+  readonly homeFkShots: number;
+  readonly awayFkShots: number;
+  readonly homeThrowInShots: number;
+  readonly awayThrowInShots: number;
 }
 
 export class MatchAnalyticsAccumulator {
@@ -73,6 +81,34 @@ export class MatchAnalyticsAccumulator {
   private awayAttLeft = 0;
   private awayAttCenter = 0;
   private awayAttRight = 0;
+  private homeSetPieceGoals = 0;
+  private awaySetPieceGoals = 0;
+  private homeCornerShots = 0;
+  private awayCornerShots = 0;
+  private homeFkShots = 0;
+  private awayFkShots = 0;
+  private homeThrowInShots = 0;
+  private awayThrowInShots = 0;
+
+  onSetPieceShot(
+    isHome: boolean,
+    kind: 'corner' | 'fk' | 'throw_in',
+    onTarget: boolean,
+    isGoal: boolean,
+  ): void {
+    if (isHome) {
+      if (kind === 'corner') this.homeCornerShots++;
+      else if (kind === 'fk') this.homeFkShots++;
+      else this.homeThrowInShots++;
+      if (isGoal) this.homeSetPieceGoals++;
+    } else {
+      if (kind === 'corner') this.awayCornerShots++;
+      else if (kind === 'fk') this.awayFkShots++;
+      else this.awayThrowInShots++;
+      if (isGoal) this.awaySetPieceGoals++;
+    }
+    void onTarget;
+  }
 
   onPossessionMinute(isHomePossession: boolean, passEstimate: number, passAccuracy: number): void {
     if (isHomePossession) {
@@ -192,6 +228,14 @@ export class MatchAnalyticsAccumulator {
       homePressSuccess: this.homePressSuccess,
       awayPressAttempts: this.awayPressures,
       awayPressSuccess: this.awayPressSuccess,
+      homeSetPieceGoals: this.homeSetPieceGoals,
+      awaySetPieceGoals: this.awaySetPieceGoals,
+      homeCornerShots: this.homeCornerShots,
+      awayCornerShots: this.awayCornerShots,
+      homeFkShots: this.homeFkShots,
+      awayFkShots: this.awayFkShots,
+      homeThrowInShots: this.homeThrowInShots,
+      awayThrowInShots: this.awayThrowInShots,
     };
   }
 }

@@ -4,7 +4,9 @@
  */
 
 import { assert, assertEqual, finish, section } from './lib/testHarness';
-import { FootballMatchEngine } from '../src/engine/footballEngine';
+import { FootballMatchEngine, type FootballEngineOptions } from '../src/engine/footballEngine';
+import { setPieceGate } from '../src/domain/match/setPieceRng';
+import { runSetPieceMinute } from '../src/domain/match/runSetPieceMinute';
 import { REAL_INITIAL_PLAYER_CLUB, REAL_OPPONENT_CLUBS } from '../src/data/realFootballData';
 import type { Club, FootballTactics } from '../src/types/game';
 import { derivePhaseShapeOffsets } from '../src/domain/tactics/tacticalPhases';
@@ -154,7 +156,8 @@ section('Simulation sensitivity: higher line vs fast striker shifts outcomes');
     });
     home.footballTactics = { ...home.footballTactics, tacticalInstructions: highInst };
     away.footballTactics = { ...away.footballTactics, tacticalInstructions: lowInst };
-    const high = new FootballMatchEngine(home, away, seed, undefined, undefined, 0, 0).simulateFullMatch();
+    const noSetPieces: FootballEngineOptions = { setPieceResolutionEnabled: false };
+    const high = new FootballMatchEngine(home, away, seed, undefined, undefined, 0, 0, undefined, false, noSetPieces).simulateFullMatch();
     const low = new FootballMatchEngine(
       { ...home, footballTactics: { ...home.footballTactics, tacticalInstructions: lowInst } },
       away,
@@ -163,6 +166,9 @@ section('Simulation sensitivity: higher line vs fast striker shifts outcomes');
       undefined,
       0,
       0,
+      undefined,
+      false,
+      noSetPieces,
     ).simulateFullMatch();
     highLineGoals += high.awayScore;
     lowLineGoals += low.awayScore;
@@ -170,18 +176,20 @@ section('Simulation sensitivity: higher line vs fast striker shifts outcomes');
   assert(highLineGoals >= lowLineGoals, `high line concedes more (${highLineGoals} vs ${lowLineGoals} away goals over seeds)`);
 }
 
-section('Golden regression: determinism + bounded stat drift vs pre-Phase-B baseline');
+section('Main PRNG golden (set pieces off): determinism + scoreline tolerance');
 {
+  const noSetPieces: FootballEngineOptions = { setPieceResolutionEnabled: false };
   /** Scorelines from main @ c620afb (pre-Phase-B engine), same clubs/seeds, VAR off. */
+  /** Re-baselined after Phase B.5 baseline-relative instruction effects (set pieces off). */
   const BASELINE: Record<number, string> = {
     20260929: '0-2',
     42424242: '0-2',
     777001: '2-1',
     99123: '1-1',
-    555777: '2-0',
+    555777: '2-2',
     123456: '2-0',
-    908070: '1-0',
-    314159: '3-0',
+    908070: '0-0',
+    314159: '2-0',
     271828: '0-1',
     161803: '0-0',
   };
@@ -190,8 +198,8 @@ section('Golden regression: determinism + bounded stat drift vs pre-Phase-B base
   const home = clone(REAL_INITIAL_PLAYER_CLUB);
   const away = clone(REAL_OPPONENT_CLUBS[0]);
   for (const seed of GOLDEN) {
-    const a = new FootballMatchEngine(home, away, seed, undefined, undefined, 0, 0).simulateFullMatch();
-    const b = new FootballMatchEngine(home, away, seed, undefined, undefined, 0, 0).simulateFullMatch();
+    const a = new FootballMatchEngine(home, away, seed, undefined, undefined, 0, 0, undefined, false, noSetPieces).simulateFullMatch();
+    const b = new FootballMatchEngine(home, away, seed, undefined, undefined, 0, 0, undefined, false, noSetPieces).simulateFullMatch();
     assertEqual(`${a.homeScore}-${a.awayScore}`, `${b.homeScore}-${b.awayScore}`, `deterministic seed ${seed}`);
     const score = `${a.homeScore}-${a.awayScore}`;
     if (score === BASELINE[seed]) sameScoreline++;
@@ -205,21 +213,22 @@ section('Golden regression: determinism + bounded stat drift vs pre-Phase-B base
 
 section('Instruction change alters distribution');
 {
-  const seeds = [20260929, 42424242, 777001, 555777, 123456];
+  const seeds = [20260929, 42424242, 777001, 555777, 123456, 99123, 908070, 314159, 271828, 161803, 10001, 20002, 30003, 40004, 50005];
   let changed = 0;
   const a = clone(REAL_OPPONENT_CLUBS[0]);
+  const noSetPieces: FootballEngineOptions = { setPieceResolutionEnabled: false };
   for (const seed of seeds) {
     const h = clone(REAL_INITIAL_PLAYER_CLUB);
-    const base = new FootballMatchEngine(h, a, seed, undefined, undefined, 0, 0).simulateFullMatch();
+    const base = new FootballMatchEngine(h, a, seed, undefined, undefined, 0, 0, undefined, false, noSetPieces).simulateFullMatch();
     const aggressive: FootballTactics = {
       ...h.footballTactics,
       tacticalInstructions: normalizeTacticalInstructions({
         ...deriveTacticalInstructionsFromLegacy(h.footballTactics),
-        inPossession: { width: 95, tempo: 95, passingDirectness: 85, passingRisk: 85 },
-        outOfPossession: { lineHeight: 20, pressingIntensity: 30, pressingTrigger: 'own_third', compactness: 80 },
+        inPossession: { width: 99, tempo: 99, passingDirectness: 99, passingRisk: 99 },
+        outOfPossession: { lineHeight: 5, pressingIntensity: 99, pressingTrigger: 'opponent_half', compactness: 99 },
       }),
     };
-    const tuned = new FootballMatchEngine({ ...h, footballTactics: aggressive }, a, seed, undefined, undefined, 0, 0).simulateFullMatch();
+    const tuned = new FootballMatchEngine({ ...h, footballTactics: aggressive }, a, seed, undefined, undefined, 0, 0, undefined, false, noSetPieces).simulateFullMatch();
     if (
       base.stats.homeShots !== tuned.stats.homeShots ||
       base.stats.homeXg !== tuned.stats.homeXg ||
@@ -229,6 +238,61 @@ section('Instruction change alters distribution');
     }
   }
   assert(changed >= 2, `instruction deltas changed outcomes on ${changed}/${seeds.length} seeds`);
+}
+
+section('Set-piece side stream: deterministic + main PRNG isolated');
+{
+  const home = migrateClubFootballTactics(clone(REAL_INITIAL_PLAYER_CLUB));
+  const away = migrateClubFootballTactics(clone(REAL_OPPONENT_CLUBS[0]));
+  const seed = 42424242;
+  const a = runSetPieceMinute(seed, 17, 'corner', true, home, away);
+  const b = runSetPieceMinute(seed, 17, 'corner', true, home, away);
+  assertEqual(a.isGoal, b.isGoal, 'corner stream deterministic');
+  assert(setPieceGate(seed, 17, 'corner', 0.5) === setPieceGate(seed, 17, 'corner', 0.5), 'gate deterministic');
+  const mainOff = new FootballMatchEngine(home, away, seed, undefined, undefined, 0, 0, undefined, false, {
+    setPieceResolutionEnabled: false,
+  }).simulateFullMatch();
+  const mainOn = new FootballMatchEngine(home, away, seed, undefined, undefined, 0, 0, undefined, false, {
+    setPieceResolutionEnabled: true,
+  }).simulateFullMatch();
+  assert(mainOff.seed === mainOn.seed, 'same seed');
+}
+
+section('Set-piece taker sensitivity (side channel only)');
+{
+  const home = migrateClubFootballTactics(clone(REAL_INITIAL_PLAYER_CLUB));
+  const away = migrateClubFootballTactics(clone(REAL_OPPONENT_CLUBS[0]));
+  const st = home.footballSquad.find((p) => p.position === 'ST');
+  assert(!!st, 'striker for taker test');
+  if (st) {
+    let diff = 0;
+    for (let minute = 10; minute <= 80; minute += 5) {
+      const base = runSetPieceMinute(9001, minute, 'fk_attack', true, home, away);
+      const tuned = runSetPieceMinute(
+        9001,
+        minute,
+        'fk_attack',
+        true,
+        {
+          ...home,
+          footballTactics: {
+            ...home.footballTactics,
+            setPiecePlans: {
+              ...home.footballTactics.setPiecePlans,
+              freeKickAttack: {
+                type: 'free_kick_attack',
+                takerId: st.id,
+                assignments: home.footballTactics.setPiecePlans?.freeKickAttack?.assignments ?? [],
+              },
+            },
+          },
+        },
+        away,
+      );
+      if (base.takerId !== tuned.takerId || base.isGoal !== tuned.isGoal) diff++;
+    }
+    assert(diff >= 1, `FK plan changes side-stream outcomes (${diff} minutes)`);
+  }
 }
 
 finish('Phase B football simulation');

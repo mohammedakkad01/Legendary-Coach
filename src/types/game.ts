@@ -294,6 +294,8 @@ export interface MatchEvent {
   eventId?: string;
   /** The incident stays in the log after VAR disallows it. Score and stats ignore it. */
   annulled?: boolean;
+  /** Set-piece resolution path when type is goal/save from a dead ball. */
+  setPieceKind?: 'corner' | 'fk' | 'throw_in';
 }
 
 export interface InteractiveDecisionOption {

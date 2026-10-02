@@ -76,13 +76,36 @@ export function resolveSetPiece(
         : undefined;
 
   const taker = findPlayer(attackClub, attackPlan?.takerId ?? defaultTaker);
-  const delivery = taker ? attr(taker, 'passing') : 65;
-  const attackAerial = aerialThreat(attackPlan ?? { type, assignments: [] }, attackClub);
+  let delivery = taker ? attr(taker, 'passing') : 65;
+  let attackAerial = aerialThreat(attackPlan ?? { type, assignments: [] }, attackClub);
+  if (type === 'free_kick_attack' && taker) {
+    delivery = (attr(taker, 'passing') + attr(taker, 'shooting')) / 2;
+    const edge = attackPlan?.assignments.filter((a) => a.task === 'edge_of_box') ?? [];
+    if (edge.length > 0) {
+      let s = 0;
+      for (const a of edge) {
+        const p = findPlayer(attackClub, a.playerId);
+        if (p) s += attr(p, 'shooting');
+      }
+      attackAerial = s / edge.length;
+    }
+  }
+  if (type === 'throw_in_attack') {
+    delivery = taker ? attr(taker, 'passing') * 0.85 : 58;
+    attackAerial *= 0.75;
+  }
   const defAerial = defenceAerial(defendPlan, defendClub);
+  const blockers = attackPlan?.assignments.filter((a) => a.task === 'block_defender') ?? [];
+  let blockBonus = 0;
+  for (const b of blockers) {
+    const p = findPlayer(attackClub, b.playerId);
+    if (p) blockBonus += attr(p, 'physical') * 0.02;
+  }
 
   const attackScore =
     delivery * SIM_WEIGHTS.setPieceDeliveryWeight +
     attackAerial * SIM_WEIGHTS.setPieceAerialWeight +
+    blockBonus +
     (100 - defAerial) * (1 - SIM_WEIGHTS.setPieceDeliveryWeight - SIM_WEIGHTS.setPieceAerialWeight);
 
   const onTarget = rng.nextFloat() < Math.min(0.55, Math.max(0.18, 0.22 + attackScore / 400));

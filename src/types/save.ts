@@ -7,6 +7,7 @@
  */
 
 import type { LivingWorldState } from '../domain/livingWorld/types';
+import type { RecruitmentWorldState } from '../domain/recruitment/types';
 import {
   Club,
   Player,
@@ -31,7 +32,7 @@ import {
  * Increment this whenever a non-backward-compatible change is introduced
  * and provide a corresponding migration function in persistenceService.ts.
  */
-export const CURRENT_SAVE_VERSION = 4;
+export const CURRENT_SAVE_VERSION = 5;
 
 /**
  * Full Canonical Game Save Schema (Version 2)
@@ -92,6 +93,9 @@ export interface GameSaveData {
 
   /** Phase A living world slice (relationships, memories, events, notifications). */
   livingWorld?: LivingWorldState;
+
+  /** Phase D recruitment slice (knowledge, sparse world truth, transfer windows). */
+  recruitmentWorld?: RecruitmentWorldState;
 
   /**
    * Unknown root-level JSON keys preserved across migrate/export/import.

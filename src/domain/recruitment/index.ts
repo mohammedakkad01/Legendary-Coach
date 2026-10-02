@@ -16,6 +16,30 @@ export type {
   TransferWindowState,
 } from './types';
 
+export type { ScoutStaff, ScoutSpecialty } from './scouts/scoutTypes';
+export type {
+  ScoutingAssignment,
+  ScoutingReport,
+  ScoutingTargetKind,
+  ScoutingAssignmentStatus,
+} from './scouting/types';
+
+export {
+  createDefaultScoutNetwork,
+  scoutQualityScore,
+  findScout,
+  isPoorScout,
+} from './scouts/defaultScoutNetwork';
+
+export {
+  createScoutingAssignment,
+  watchMatchForScoutingAssignment,
+  runCompleteScoutingReport,
+  applyRecruitmentCommandPatches,
+} from './scouting/orchestration';
+
+export type { CreateAssignmentResult, ScoutingReportFlowResult } from './scouting/orchestration';
+
 export { RECRUITMENT_WORLD_SCHEMA_VERSION } from './types';
 
 export { RECRUITMENT_TUNING } from './config/recruitmentTuning';
@@ -66,6 +90,7 @@ export {
   applyRecruitmentToSave,
   syncRecruitmentCalendarFromSave,
   runRecruitmentCalendarSync,
+  applyScoutingPatchesToSave,
 } from './integration';
 export type { RecruitmentIntegrationResult } from './integration';
 

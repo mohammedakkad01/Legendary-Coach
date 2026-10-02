@@ -6,8 +6,10 @@
  */
 
 import type { KnowledgeRevealStage } from './config/recruitmentTuning';
+import type { ScoutStaff } from './scouts/scoutTypes';
+import type { ScoutingAssignment, ScoutingReport } from './scouting/types';
 
-export const RECRUITMENT_WORLD_SCHEMA_VERSION = 1 as const;
+export const RECRUITMENT_WORLD_SCHEMA_VERSION = 2 as const;
 
 export type TransferWindowPhase = 'closed' | 'summer' | 'winter';
 
@@ -61,6 +63,10 @@ export interface RecruitmentWorldState {
   /** Sparse recruitment truth keyed by player id — persisted but not exposed via public API. */
   worldPlayers: Record<string, import('./trueProfile/types').TrueWorldPlayer>;
   knowledgeByObserverClubId: Record<string, Record<string, KnowledgeState>>;
+  /** Placeholder scout staff until Phase E hiring. */
+  scoutNetwork: ScoutStaff[];
+  scoutingAssignments: ScoutingAssignment[];
+  scoutingReports: ScoutingReport[];
 }
 
 export interface RecruitmentTickContext {
@@ -73,4 +79,7 @@ export type RecruitmentPatch =
   | { kind: 'setGameWeek'; gameWeek: number }
   | { kind: 'setTransferWindow'; transferWindow: TransferWindowState }
   | { kind: 'upsertKnowledge'; knowledge: KnowledgeState }
-  | { kind: 'mergeWorldPlayer'; playerId: string; patch: Partial<import('./trueProfile/types').TrueWorldPlayer> };
+  | { kind: 'mergeWorldPlayer'; playerId: string; patch: Partial<import('./trueProfile/types').TrueWorldPlayer> }
+  | { kind: 'setScoutNetwork'; scouts: ScoutStaff[] }
+  | { kind: 'upsertScoutingAssignment'; assignment: ScoutingAssignment }
+  | { kind: 'appendScoutingReport'; report: ScoutingReport };

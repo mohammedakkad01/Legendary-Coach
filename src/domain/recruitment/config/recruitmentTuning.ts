@@ -69,6 +69,18 @@ export const RECRUITMENT_TUNING = {
   migration: {
     defaultGameWeek: bounded(1, 0, 52),
   },
+
+  scouting: {
+    maxActiveAssignmentsPerClub: bounded(6, 1, 12),
+    maxStoredReports: bounded(48, 12, 120),
+    confidencePerReport: bounded(9, 3, 18),
+    confidencePerMatchWatched: bounded(4, 1, 10),
+    matchesWatchedCapPerAssignment: bounded(5, 1, 10),
+    /** League/region assignments use a generic data-availability prior (Phase E replaces). */
+    dataAvailabilityPrior: bounded(55, 30, 80),
+    reportOverallErrorMax: bounded(9, 4, 15),
+    poorScoutReliabilityThreshold: bounded(42, 25, 55),
+  },
 } as const;
 
 export type KnowledgeRevealStage = (typeof RECRUITMENT_TUNING.reveal.stageOrder)[number];

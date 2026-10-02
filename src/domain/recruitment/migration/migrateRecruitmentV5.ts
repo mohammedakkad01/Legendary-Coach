@@ -10,15 +10,43 @@ import { createInitialKnowledge } from '../knowledge/knowledgeState';
 import { mergeWorldPlayers } from '../world/worldPlayerRegistry';
 import { calendarWeekFromGameWeek, deriveGameWeekFromSave } from '../world/gameWeek';
 import { buildTransferWindowState } from '../world/transferWindow';
+import { createDefaultScoutNetwork } from '../scouts/defaultScoutNetwork';
 import {
   RECRUITMENT_WORLD_SCHEMA_VERSION,
   type RecruitmentWorldState,
 } from '../types';
 
-function isRecruitmentWorldV1(
-  world: RecruitmentWorldState | undefined,
-): world is RecruitmentWorldState {
-  return !!world && world.schemaVersion === RECRUITMENT_WORLD_SCHEMA_VERSION;
+/** Save slice before Part 1B scouting fields (schemaVersion 1). */
+type LegacyRecruitmentWorldV1 = Omit<
+  RecruitmentWorldState,
+  'schemaVersion' | 'scoutNetwork' | 'scoutingAssignments' | 'scoutingReports'
+> & {
+  schemaVersion: 1;
+  scoutNetwork?: RecruitmentWorldState['scoutNetwork'];
+  scoutingAssignments?: RecruitmentWorldState['scoutingAssignments'];
+  scoutingReports?: RecruitmentWorldState['scoutingReports'];
+};
+
+type AnyRecruitmentWorld = LegacyRecruitmentWorldV1 | RecruitmentWorldState;
+
+function isRecruitmentWorldPresent(world: AnyRecruitmentWorld | undefined): world is AnyRecruitmentWorld {
+  return !!world && (world.schemaVersion === 1 || world.schemaVersion === RECRUITMENT_WORLD_SCHEMA_VERSION);
+}
+
+function upgradeToCurrentSchema(save: GameSaveData, world: AnyRecruitmentWorld): RecruitmentWorldState {
+  const userClubId = save.club.id;
+  const scouts =
+    world.scoutNetwork && world.scoutNetwork.length > 0
+      ? world.scoutNetwork
+      : createDefaultScoutNetwork(userClubId, world.worldSeed || seedWorldSeed(save));
+
+  return {
+    ...world,
+    schemaVersion: RECRUITMENT_WORLD_SCHEMA_VERSION,
+    scoutNetwork: scouts,
+    scoutingAssignments: world.scoutingAssignments ?? [],
+    scoutingReports: world.scoutingReports ?? [],
+  };
 }
 
 function seedWorldSeed(save: GameSaveData): number {
@@ -65,16 +93,19 @@ function buildFreshRecruitmentWorld(save: GameSaveData): RecruitmentWorldState {
     transferWindow: buildTransferWindowState(calendarWeek),
     worldPlayers,
     knowledgeByObserverClubId,
+    scoutNetwork: createDefaultScoutNetwork(userClubId, worldSeed),
+    scoutingAssignments: [],
+    scoutingReports: [],
   };
 }
 
-function repairRecruitmentWorld(save: GameSaveData, existing: RecruitmentWorldState): RecruitmentWorldState {
+function repairRecruitmentWorld(save: GameSaveData, existing: AnyRecruitmentWorld): RecruitmentWorldState {
   const userClubId = save.club.id;
   const squad = save.club.footballSquad ?? [];
   const market = save.scoutMarket ?? [];
   const allPlayers = [...squad, ...market];
 
-  let world: RecruitmentWorldState = {
+  let world: AnyRecruitmentWorld = {
     ...existing,
     worldSeed: existing.worldSeed || seedWorldSeed(save),
     worldPlayers: mergeWorldPlayers(existing.worldPlayers ?? {}, allPlayers),
@@ -108,7 +139,7 @@ function repairRecruitmentWorld(save: GameSaveData, existing: RecruitmentWorldSt
     transferWindow: buildTransferWindowState(calendarWeek),
   };
 
-  return world;
+  return upgradeToCurrentSchema(save, world);
 }
 
 /**
@@ -116,8 +147,8 @@ function repairRecruitmentWorld(save: GameSaveData, existing: RecruitmentWorldSt
  */
 export function ensureRecruitmentV5(save: GameSaveData): GameSaveData {
   let recruitmentWorld: RecruitmentWorldState;
-  if (isRecruitmentWorldV1(save.recruitmentWorld)) {
-    recruitmentWorld = repairRecruitmentWorld(save, save.recruitmentWorld);
+  if (isRecruitmentWorldPresent(save.recruitmentWorld as AnyRecruitmentWorld | undefined)) {
+    recruitmentWorld = repairRecruitmentWorld(save, save.recruitmentWorld as AnyRecruitmentWorld);
   } else {
     recruitmentWorld = buildFreshRecruitmentWorld(save);
   }

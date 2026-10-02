@@ -5,6 +5,7 @@
  * Recruitment-owned state applicator (does not touch livingWorld / PlayerLife).
  */
 
+import { RECRUITMENT_TUNING as T } from './config/recruitmentTuning';
 import type { RecruitmentPatch, RecruitmentWorldState } from './types';
 import type { TrueWorldPlayer } from './trueProfile/types';
 
@@ -34,6 +35,24 @@ function applyOne(state: RecruitmentWorldState, patch: RecruitmentPatch): Recrui
           ...state.worldPlayers,
           [patch.playerId]: { ...prev, ...patch.patch, playerId: patch.playerId },
         },
+      };
+    }
+    case 'setScoutNetwork':
+      return { ...state, scoutNetwork: [...patch.scouts] };
+    case 'upsertScoutingAssignment': {
+      const idx = state.scoutingAssignments.findIndex((a) => a.id === patch.assignment.id);
+      const scoutingAssignments =
+        idx >= 0
+          ? state.scoutingAssignments.map((a, i) => (i === idx ? patch.assignment : a))
+          : [...state.scoutingAssignments, patch.assignment];
+      return { ...state, scoutingAssignments };
+    }
+    case 'appendScoutingReport': {
+      const scoutingReports = [...state.scoutingReports, patch.report];
+      const max = T.scouting.maxStoredReports;
+      return {
+        ...state,
+        scoutingReports: scoutingReports.length > max ? scoutingReports.slice(-max) : scoutingReports,
       };
     }
     default: {

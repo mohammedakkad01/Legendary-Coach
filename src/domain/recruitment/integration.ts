@@ -54,3 +54,11 @@ export function runRecruitmentCalendarSync(save: GameSaveData): GameSaveData {
   if (patches.length === 0) return save;
   return applyRecruitmentToSave(save, patches).save;
 }
+
+/** Apply scouting patches and persist on save (store hook point for later parts). */
+export function applyScoutingPatchesToSave(
+  save: GameSaveData,
+  patches: readonly RecruitmentPatch[],
+): RecruitmentIntegrationResult {
+  return applyRecruitmentToSave(save, patches);
+}

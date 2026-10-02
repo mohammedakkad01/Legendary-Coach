@@ -1,10 +1,21 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * Maps legacy store `activeNegotiations` into recruitmentWorld.negotiations.
+ *
+ * Limitations:
+ * - Legacy rows never stored a selling club id; migrated negotiations use sellingClubId `'market'`.
+ * - `startedWeek` / `updatedWeek` are set from the save game week at migration time; ISO timestamps
+ *   are preserved in `legacySnapshot` when present.
+ * - `playerName` / `marketValue` are UI listing snapshots only (see NegotiationLegacySnapshot).
  */
 
 import type { PlayerNegotiation } from '../../../types/game';
-import type { TransferNegotiation, TransferOffer } from './offerTypes';
+import type { NegotiationLegacySnapshot, TransferNegotiation, TransferOffer } from './offerTypes';
+
+/** Placeholder selling club when legacy data has no seller (free-agent / market UI flow). */
+export const LEGACY_UNKNOWN_SELLING_CLUB_ID = 'market' as const;
 
 export function mapLegacyPlayerNegotiation(
   legacy: PlayerNegotiation,
@@ -37,6 +48,18 @@ export function mapLegacyPlayerNegotiation(
         }
       : undefined;
 
+  const legacySnapshot: NegotiationLegacySnapshot = {
+    playerDisplayName: legacy.playerName || undefined,
+    listingMarketValue: legacy.marketValue > 0 ? legacy.marketValue : undefined,
+    lastMessageAr: legacy.lastMessageAr || undefined,
+    lastMessageEn: legacy.lastMessageEn || undefined,
+    startedAtIso: legacy.startedAt || undefined,
+    updatedAtIso: legacy.updatedAt || undefined,
+    ...(sellingClubId === LEGACY_UNKNOWN_SELLING_CLUB_ID
+      ? { migratedWithoutSellingClub: true as const }
+      : {}),
+  };
+
   return {
     id: legacy.id,
     playerId: legacy.playerId,
@@ -50,6 +73,7 @@ export function mapLegacyPlayerNegotiation(
     lastReasonCodes: ['migrated_from_legacy'],
     startedWeek: gameWeek,
     updatedWeek: gameWeek,
+    legacySnapshot,
   };
 }
 
@@ -64,7 +88,7 @@ export function mergeLegacyNegotiations(
     if (byId.has(leg.id)) continue;
     byId.set(
       leg.id,
-      mapLegacyPlayerNegotiation(leg, 'market', userClubId, gameWeek),
+      mapLegacyPlayerNegotiation(leg, LEGACY_UNKNOWN_SELLING_CLUB_ID, userClubId, gameWeek),
     );
   }
   return [...byId.values()];

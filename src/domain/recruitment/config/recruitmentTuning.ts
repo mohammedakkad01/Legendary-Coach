@@ -84,6 +84,7 @@ export const RECRUITMENT_TUNING = {
 
   negotiation: {
     maxRoundsDefault: bounded(4, 2, 8),
+    maxSellOnPercent: bounded(50, 10, 75),
     minCounterIncrement: bounded(5000, 1000, 25000),
     insultGap: bounded(0.28, 0.15, 0.4),
     temperamentalRejectChance: bounded(0.18, 0.05, 0.35),

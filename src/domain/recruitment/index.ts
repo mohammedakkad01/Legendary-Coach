@@ -29,8 +29,14 @@ export type {
   TransferOfferClause,
   TransferNegotiation,
   RichNegotiationStatus,
+  NegotiationLegacySnapshot,
 } from './negotiation/offerTypes';
-export { computeUpfrontCash, isLoanOffer } from './negotiation/offerTypes';
+export {
+  computeUpfrontCash,
+  isLoanOffer,
+  isTerminalNegotiationStatus,
+  TERMINAL_NEGOTIATION_STATUSES,
+} from './negotiation/offerTypes';
 
 export type {
   ClubNegotiationContext,
@@ -49,7 +55,11 @@ export {
   acceptCounterOffer,
   createDraftNegotiation,
 } from './negotiation/negotiationMachine';
-export type { SubmitOfferInput, NegotiationFlowResult } from './negotiation/negotiationMachine';
+export type {
+  SubmitOfferInput,
+  AcceptCounterOfferInput,
+  NegotiationFlowResult,
+} from './negotiation/negotiationMachine';
 
 export {
   createDefaultScoutNetwork,

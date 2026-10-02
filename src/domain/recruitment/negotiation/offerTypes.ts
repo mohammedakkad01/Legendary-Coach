@@ -46,6 +46,23 @@ export type RichNegotiationStatus =
   | 'withdrawn'
   | 'expired';
 
+/**
+ * Non-authoritative UI fields preserved from legacy `activeNegotiations` during migration.
+ * Does not replace recruitment knowledge or world player truth.
+ */
+export interface NegotiationLegacySnapshot {
+  playerDisplayName?: string;
+  listingMarketValue?: number;
+  lastMessageAr?: string;
+  lastMessageEn?: string;
+  startedAtIso?: string;
+  updatedAtIso?: string;
+  /**
+   * Legacy saves did not record a selling club; migrated rows use `sellingClubId: 'market'`.
+   */
+  migratedWithoutSellingClub?: true;
+}
+
 export interface TransferNegotiation {
   id: string;
   playerId: string;
@@ -59,6 +76,18 @@ export interface TransferNegotiation {
   lastReasonCodes: readonly string[];
   startedWeek: number;
   updatedWeek: number;
+  legacySnapshot?: NegotiationLegacySnapshot;
+}
+
+export const TERMINAL_NEGOTIATION_STATUSES: readonly RichNegotiationStatus[] = [
+  'accepted',
+  'rejected',
+  'expired',
+  'withdrawn',
+] as const;
+
+export function isTerminalNegotiationStatus(status: RichNegotiationStatus): boolean {
+  return (TERMINAL_NEGOTIATION_STATUSES as readonly string[]).includes(status);
 }
 
 export function computeUpfrontCash(clauses: readonly TransferOfferClause[]): number {

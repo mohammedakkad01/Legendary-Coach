@@ -24,6 +24,8 @@ export interface PlayerNegotiationContext {
   referenceMarketValue: number;
   transferDesire: number;
   contractYearsRemaining: number;
+  /** When explicitly false, offer validation fails (caller-established availability only). */
+  availableForTransfer?: boolean;
 }
 
 export type OfferValidationCode =
@@ -39,7 +41,12 @@ export type OfferValidationCode =
   | 'offer_missing_terms'
   | 'wrong_buyer'
   | 'wrong_seller'
-  | 'negotiation_not_open';
+  | 'negotiation_not_open'
+  | 'player_unavailable'
+  | 'invalid_bonus_fields'
+  | 'invalid_loan_terms'
+  | 'invalid_performance_bonus'
+  | 'invalid_player_exchange';
 
 export interface OfferValidationResult {
   valid: boolean;

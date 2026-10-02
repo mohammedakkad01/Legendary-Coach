@@ -8,6 +8,7 @@ import type { RecruitmentPatch } from '../types';
 import type { ClubNegotiationContext, PlayerNegotiationContext } from './contextTypes';
 import { evaluateOffer } from './evaluateOffer';
 import type { TransferNegotiation, TransferOffer } from './offerTypes';
+import { isTerminalNegotiationStatus } from './offerTypes';
 import { validateOffer } from './validateOffer';
 
 export interface SubmitOfferInput {
@@ -23,6 +24,15 @@ export interface SubmitOfferInput {
   exchangePlayerIdsInBuyerSquad?: readonly string[];
 }
 
+export interface AcceptCounterOfferInput {
+  negotiation: TransferNegotiation;
+  buyer: ClubNegotiationContext;
+  seller: ClubNegotiationContext;
+  player: PlayerNegotiationContext;
+  gameWeek: number;
+  exchangePlayerIdsInBuyerSquad?: readonly string[];
+}
+
 export interface NegotiationFlowResult {
   ok: boolean;
   patches: RecruitmentPatch[];
@@ -33,6 +43,10 @@ export interface NegotiationFlowResult {
 }
 
 export function submitNegotiationOffer(input: SubmitOfferInput): NegotiationFlowResult {
+  if (isTerminalNegotiationStatus(input.negotiation.status)) {
+    return { ok: false, patches: [], validationCodes: ['negotiation_not_open'] };
+  }
+
   const validation = validateOffer(
     input.buyer,
     input.seller,
@@ -112,8 +126,8 @@ export function withdrawNegotiation(
   negotiation: TransferNegotiation,
   gameWeek: number,
 ): NegotiationFlowResult {
-  if (negotiation.status === 'accepted' || negotiation.status === 'withdrawn') {
-    return { ok: false, patches: [] };
+  if (isTerminalNegotiationStatus(negotiation.status)) {
+    return { ok: false, patches: [], validationCodes: ['negotiation_not_open'] };
   }
   const updated: TransferNegotiation = {
     ...negotiation,
@@ -124,13 +138,19 @@ export function withdrawNegotiation(
   return { ok: true, patches: [{ kind: 'upsertNegotiation', negotiation: updated }], negotiation: updated };
 }
 
-export function acceptCounterOffer(
-  negotiation: TransferNegotiation,
-  gameWeek: number,
-): NegotiationFlowResult {
+export function acceptCounterOffer(input: AcceptCounterOfferInput): NegotiationFlowResult {
+  const { negotiation, gameWeek, buyer, seller, player } = input;
   if (negotiation.status !== 'countered' || !negotiation.counterOffer) {
-    return { ok: false, patches: [] };
+    return { ok: false, patches: [], validationCodes: ['negotiation_not_open'] };
   }
+
+  const validation = validateOffer(buyer, seller, player, negotiation.counterOffer, {
+    exchangePlayerIdsInBuyerSquad: input.exchangePlayerIdsInBuyerSquad,
+  });
+  if (!validation.valid) {
+    return { ok: false, patches: [], validationCodes: validation.reasonCodes };
+  }
+
   const updated: TransferNegotiation = {
     ...negotiation,
     status: 'accepted',

@@ -9,6 +9,7 @@
 import { GameSaveData, LegacyGameSaveData, CURRENT_SAVE_VERSION } from '../../types/save';
 import { ensureLivingWorldV3 } from '../../domain/livingWorld/migrateLivingWorld';
 import { ensureFootballSimulationV4 } from '../../domain/tactics/migrateFootballSimulation';
+import { ensurePlayerLifeV4 } from '../../domain/playerLife/migratePlayerLife';
 import { attachPassthrough } from './savePassthrough';
 import { Club, Fixture, LeagueStanding, DailyMission, StoryMission } from '../../types/game';
 import { REAL_INITIAL_PLAYER_CLUB, REAL_INITIAL_STANDINGS, REAL_INITIAL_SCOUT_MARKET } from '../../data/realFootballData';
@@ -112,7 +113,8 @@ export class MigrationService {
     const withVersion: GameSaveData = { ...base, saveVersion: CURRENT_SAVE_VERSION };
     const withWorld = ensureLivingWorldV3(withVersion);
     const withFootball = ensureFootballSimulationV4(withWorld);
-    return attachPassthrough(withFootball, raw);
+    const withPlayerLife = ensurePlayerLifeV4(withFootball);
+    return attachPassthrough(withPlayerLife, raw);
   }
 }
 

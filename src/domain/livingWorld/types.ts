@@ -6,6 +6,12 @@
  */
 
 import type { Player, PlayerPersonality } from '../../types/game';
+import type {
+  CaptaincyHistoryEntry,
+  DressingRoomState,
+  PendingPlayerInteraction,
+  PlayerLifePatch,
+} from '../playerLife/types';
 
 /** Numeric personality axes (0–100). Distinct from legacy `PlayerPersonality` archetype string. */
 export interface PlayerPersonalityProfile {
@@ -179,7 +185,7 @@ export interface NotificationThrottleState {
 }
 
 export interface LivingWorldState {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   currentSeason: number;
   managerCareer: ManagerCareerState;
   clubMemory: ClubMemoryEntry[];
@@ -188,11 +194,17 @@ export interface LivingWorldState {
   eventLog: GameEvent[];
   notifications: GameNotification[];
   notificationThrottle: NotificationThrottleState;
+  /** Phase C — player life (optional until migration). */
+  dressingRoom?: DressingRoomState;
+  interactionCooldowns?: Record<string, number>;
+  pendingInteractions?: PendingPlayerInteraction[];
+  captaincyHistory?: CaptaincyHistoryEntry[];
   /** Opponent → compact scouting tendencies (Phase B). */
   opponentTacticalScouting?: Record<string, OpponentTacticalScoutingCompact>;
 }
 
 export const LIVING_WORLD_SCHEMA_VERSION = 1 as const;
+export const LIVING_WORLD_SCHEMA_VERSION_V2 = 2 as const;
 export const MAX_PLAYER_MEMORIES = 24;
 export const MAX_CLUB_MEMORIES = 48;
 export const MAX_RELATIONSHIPS_PER_PLAYER = 6;
@@ -239,6 +251,30 @@ export type StateChange =
   | { kind: 'addNotification'; notification: GameNotification }
   | { kind: 'mergeNotifications'; notifications: GameNotification[] }
   | { kind: 'setLivingWorldSeason'; season: number }
+  | {
+      kind: 'patchPlayerLife';
+      playerId: string;
+      patch?: PlayerLifePatch;
+      conditionDelta?: Partial<{
+        trainingLoad: number;
+        sharpness: number;
+        matchFitness: number;
+        recoveryQuality: number;
+      }>;
+      legacyDelta?: Partial<{
+        morale: number;
+        fatigue: number;
+        stamina: number;
+        form: number;
+        overall: number;
+      }>;
+      legacySet?: Partial<{ injuredWeeks: number }>;
+    }
+  | { kind: 'patchDressingRoom'; patch: import('../playerLife/types').DressingRoomPatch }
+  | { kind: 'addPendingInteraction'; interaction: PendingPlayerInteraction }
+  | { kind: 'removePendingInteraction'; interactionId: string }
+  | { kind: 'setInteractionCooldown'; key: string; matchday: number }
+  | { kind: 'appendCaptaincyHistory'; entry: CaptaincyHistoryEntry }
   | { kind: 'setManagerTacticalIdentity'; identity: TacticalIdentitySnapshot }
   | { kind: 'appendTacticalUsage'; sample: TacticalUsageSample }
   | { kind: 'mergeOpponentScouting'; entry: OpponentTacticalScoutingCompact };

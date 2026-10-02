@@ -9,10 +9,11 @@ import { createDefaultManagerCareer } from './managerCareer';
 import { ensurePlayerLivingWorldFields } from './playerDefaults';
 import { generateSquadRelationships } from './relationships';
 import type { LivingWorldState } from './types';
-import { LIVING_WORLD_SCHEMA_VERSION } from './types';
+import { LIVING_WORLD_SCHEMA_VERSION, LIVING_WORLD_SCHEMA_VERSION_V2 } from './types';
+import { upgradeLivingWorldToV2 } from '../playerLife/migratePlayerLife';
 
 export function createEmptyLivingWorld(clubReputation: number): LivingWorldState {
-  return {
+  return upgradeLivingWorldToV2({
     schemaVersion: LIVING_WORLD_SCHEMA_VERSION,
     currentSeason: 1,
     managerCareer: createDefaultManagerCareer(clubReputation),
@@ -22,7 +23,7 @@ export function createEmptyLivingWorld(clubReputation: number): LivingWorldState
     eventLog: [],
     notifications: [],
     notificationThrottle: { dayBuckets: {} },
-  };
+  });
 }
 
 function clubSnapshotFromClub(club: Club): {
@@ -53,9 +54,11 @@ export function hydrateLivingWorldFromClub(
   const updatedClub = { ...club, footballSquad: squad };
 
   let world =
-    livingWorld && livingWorld.schemaVersion === LIVING_WORLD_SCHEMA_VERSION
-      ? livingWorld
-      : createEmptyLivingWorld(updatedClub.finances.reputation);
+    livingWorld &&
+    (livingWorld.schemaVersion === LIVING_WORLD_SCHEMA_VERSION ||
+      livingWorld.schemaVersion === LIVING_WORLD_SCHEMA_VERSION_V2)
+      ? upgradeLivingWorldToV2(livingWorld)
+      : upgradeLivingWorldToV2(createEmptyLivingWorld(updatedClub.finances.reputation));
 
   if (world.relationships.length === 0 && squad.length >= 2) {
     world = {

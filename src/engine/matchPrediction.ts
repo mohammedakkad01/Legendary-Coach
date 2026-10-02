@@ -17,6 +17,7 @@ import { positionGroupOf } from '../domain/squad/positionTaxonomy';
 import type { PositionGroup as Group } from '../domain/squad/positionTaxonomy';
 import { evaluatePositionSuitability } from '../domain/squad/positionSuitability';
 import { getFormation } from '../domain/squad/formations';
+import { computeMatchPerformanceMultiplier } from '../domain/playerLife/matchPerformance';
 
 // Single taxonomy lives in domain/squad/positionTaxonomy.ts. Non-football
 // positions keep this file's historical fallback (attack).
@@ -95,7 +96,8 @@ const weightedAverage = (
     if (w <= 0) continue;
     // An unavailable player (injured/suspended) contributes nothing.
     const available = (p.injuredWeeks || 0) > 0 || (p.suspendedMatches || 0) > 0 ? 0.6 : 1;
-    sum += rate(p) * suitability.multiplier * w * available;
+    const perf = computeMatchPerformanceMultiplier(p);
+    sum += rate(p) * suitability.multiplier * w * available * perf;
     wSum += w;
   }
   return wSum > 0 ? sum / wSum : 0;

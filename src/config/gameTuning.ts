@@ -283,7 +283,127 @@ export const BEST_TACTICS = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// 7) VAR  (Phase 6 — user-match engine only, and only when the engine is
+// 7) PLAYER LIFE  (Phase C — domain/playerLife/*; user squad only)
+// ---------------------------------------------------------------------------
+export const PLAYER_LIFE = {
+  morale: {
+    win: bounded(6, 0, 15),
+    draw: bounded(0, -5, 5),
+    loss: bounded(-5, -15, 0),
+    goalBonus: bounded(3, 0, 8),
+    assistBonus: bounded(2, 0, 6),
+    cleanSheetBonus: bounded(2, 0, 6),
+    benchUnhappiness: bounded(-2, -8, 0),
+    starterHappiness: bounded(2, 0, 6),
+  },
+  mental: {
+    pressureFromLossWhenExpected: bounded(5, 0, 12),
+    frustrationFromMinutesScale: bounded(2.2, 0.5, 5),
+    ambitionFrustrationMultMin: bounded(0.85, 0.5, 1),
+    ambitionFrustrationMultMax: bounded(1.35, 1, 2),
+  },
+  playingTime: {
+    starterExpectedMin: bounded(75, 50, 90),
+    rotationExpectedMin: bounded(45, 20, 70),
+    youthExpectedMin: bounded(20, 5, 40),
+    shortfallFrustrationPer10Min: bounded(2.0, 0.5, 5),
+    minutesHistoryLength: bounded(5, 3, 8),
+  },
+  complaint: {
+    globalCooldownWeeks: bounded(2, 1, 4),
+    perPlayerCooldownWeeks: bounded(4, 2, 8),
+    maxProbability: bounded(0.35, 0.05, 0.6),
+    frustrationThreshold: bounded(55, 40, 80),
+  },
+  form: {
+    ratingWeight: bounded(0.55, 0.2, 0.9),
+    idleWeekDecay: bounded(0.35, 0.1, 1),
+    min: 1,
+    max: 10,
+    neutral: bounded(5.5, 4, 7),
+  },
+  training: {
+    intensityLoad: {
+      low: bounded(5, 1, 15),
+      normal: bounded(12, 5, 25),
+      high: bounded(22, 10, 40),
+      very_high: bounded(35, 15, 55),
+    },
+    recoveryLoadDelta: bounded(-20, -40, -5),
+    staminaDrillFatigueDelta: bounded(-5, -15, 0),
+    staminaDrillStaminaDelta: bounded(8, 3, 15),
+    technicalFormDelta: bounded(1, 0, 2),
+    technicalMoraleDelta: bounded(4, 0, 10),
+    weeklyLoadDecay: bounded(8, 2, 20),
+    sharpnessFromMatchMin: bounded(0.15, 0.05, 0.4),
+    sharpnessTrainingGain: bounded(4, 1, 10),
+    sharpnessDecayPerWeek: bounded(3, 1, 8),
+  },
+  injury: {
+    baseInMatchPer90: bounded(0.035, 0.01, 0.08),
+    fatigueRiskScale: bounded(1.6, 1, 3),
+    loadRiskScale: bounded(1.4, 1, 3),
+    congestionBonusPerMatch: bounded(0.12, 0.02, 0.25),
+    ageRiskOver30: bounded(1.25, 1, 2),
+    medicalLevelToQuality: bounded(0.08, 0.04, 0.12),
+    severityWeeks: {
+      minor: { min: 1, max: 2 },
+      moderate: { min: 3, max: 6 },
+      major: { min: 8, max: 14 },
+      recurring: { min: 2, max: 5 },
+    },
+    diagnosisErrorMaxWeeks: bounded(2, 0, 4),
+    recoveryWeeklyProgress: bounded(1, 0.5, 2),
+  },
+  development: {
+    weeklyBaseProgress: bounded(0.08, 0.02, 0.2),
+    momentumGain: bounded(4, 1, 10),
+    momentumLoss: bounded(3, 1, 8),
+    potentialEstimateBand: bounded(6, 2, 12),
+    agePeakStart: 22,
+    agePeakEnd: 27,
+    declineAge: 32,
+  },
+  dressingRoom: {
+    crisisBaseProbability: bounded(0.018, 0.005, 0.05),
+    crisisCooldownWeeks: bounded(10, 4, 16),
+    cohesionFromWin: bounded(2, 0, 5),
+    cohesionFromLoss: bounded(-2, -5, 0),
+    lowCohesionThreshold: bounded(35, 20, 50),
+  },
+  captaincy: {
+    leadershipWeight: bounded(0.22, 0, 0.4),
+    experienceWeight: bounded(0.18, 0, 0.35),
+    loyaltyWeight: bounded(0.12, 0, 0.3),
+    trustWeight: bounded(0.2, 0, 0.4),
+    relationshipWeight: bounded(0.15, 0, 0.35),
+    changeShockMorale: bounded(-8, -20, 0),
+    changeCohesionDelta: bounded(-5, -15, 0),
+  },
+  mentoring: {
+    minAgeGap: bounded(4, 2, 8),
+    relationshipStrengthScale: bounded(0.7, 0.2, 1),
+    professionalismGain: bounded(2, 0, 5),
+    leadershipGain: bounded(1, 0, 4),
+    confidenceGain: bounded(2, 0, 6),
+  },
+  matchPerformance: {
+    multMin: bounded(0.88, 0.75, 0.95),
+    multMax: bounded(1.12, 1.05, 1.25),
+    moraleNeutral: bounded(50, 40, 60),
+    sharpnessNeutral: bounded(50, 40, 60),
+    matchFitnessNeutral: bounded(70, 50, 85),
+    formNeutral: bounded(5.5, 4, 7),
+    moraleWeight: bounded(0.35, 0, 0.6),
+    sharpnessWeight: bounded(0.25, 0, 0.5),
+    matchFitnessWeight: bounded(0.2, 0, 0.4),
+    formWeight: bounded(0.2, 0, 0.4),
+    fatiguePenaltyWeight: bounded(0.15, 0, 0.35),
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// 8) VAR  (Phase 6 — user-match engine only, and only when the engine is
 // constructed with varEnabled: true. NOT matchdaySimulator. There is no
 // enabled flag in this object.)
 // ---------------------------------------------------------------------------
@@ -346,4 +466,5 @@ deepFreeze(TACTICAL_DEFAULTS);
 deepFreeze(TACTICAL_ENGINE);
 deepFreeze(REFEREE);
 deepFreeze(BEST_TACTICS);
+deepFreeze(PLAYER_LIFE);
 deepFreeze(VAR);

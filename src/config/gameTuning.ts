@@ -196,6 +196,8 @@ export const REFEREE = {
 // — never the match engine.
 // ---------------------------------------------------------------------------
 export const BEST_TACTICS = {
+  /** When true, lineup optimizer blends functional-role compatibility into slotValue (opt-in). */
+  useRoleCompatibilityInSlotValue: false,
   /** Share (0–0.5) of a slot value that comes from role-relevant attributes instead of overall. */
   attributeBlend: bounded(0.25, 0, 0.5),
   /** Max rating points a player's form (1–10) can add/remove. 0 disables form. */

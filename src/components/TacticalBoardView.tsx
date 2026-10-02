@@ -32,6 +32,21 @@ import { BestTacticsPreviewSheet } from './tactics/BestTacticsPreviewSheet';
 import { bestTacticsErrorText, bestTacticsLabel } from '../i18n/bestTactics';
 import { simulateMatchRound, MatchRoundResult } from '../engine/tacticalMatchEngine';
 import type { Player } from '../types/game';
+import {
+  getInstructionSliderValue,
+  instructionSliderLabels,
+  patchInstructionSlider,
+  type InstructionSliderKey,
+} from '../domain/tactics/instructionUi';
+import { SetPiecePlanEditor } from './tactics/SetPiecePlanEditor';
+
+const INSTRUCTION_SLIDERS: InstructionSliderKey[] = [
+  'inPossession.width',
+  'inPossession.tempo',
+  'inPossession.passingRisk',
+  'outOfPossession.lineHeight',
+  'outOfPossession.pressingIntensity',
+];
 
 interface FormationItem {
   id: FootballFormation;
@@ -573,6 +588,41 @@ export const TacticalBoardView: React.FC = () => {
                 className="w-4 h-4 accent-sky-500 rounded cursor-pointer"
               />
             </div>
+
+            <div className="space-y-2.5 pt-2 border-t border-slate-800">
+              <p className="text-[11px] font-bold text-slate-400">
+                {isAr ? 'تعليمات متقدمة (Phase B)' : 'Advanced instructions'}
+              </p>
+              {INSTRUCTION_SLIDERS.map((key) => {
+                const labels = instructionSliderLabels(isAr);
+                const value = getInstructionSliderValue(tactics, key);
+                return (
+                  <div key={key}>
+                    <div className="flex justify-between text-[10px] text-slate-500 mb-0.5">
+                      <span>{labels[key]}</span>
+                      <span className="font-mono text-slate-300">{value}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={value}
+                      onChange={(e) =>
+                        updateFootballTactics(patchInstructionSlider(tactics, key, Number(e.target.value)))
+                      }
+                      className="w-full accent-sky-500 h-1.5"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+
+            <SetPiecePlanEditor
+              club={club}
+              tactics={tactics}
+              isAr={isAr}
+              onChange={(partial) => updateFootballTactics(partial)}
+            />
           </div>
 
           {/* Bench & Substitutes Drawer */}

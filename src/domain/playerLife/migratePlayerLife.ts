@@ -83,7 +83,6 @@ export function ensurePlayerLifeFields(player: Player): Player {
 }
 
 export function upgradeLivingWorldToV2(world: LivingWorldState): LivingWorldState {
-  if (world.schemaVersion >= LIVING_WORLD_SCHEMA_VERSION_V2) return world;
   return {
     ...world,
     schemaVersion: LIVING_WORLD_SCHEMA_VERSION_V2,
@@ -95,6 +94,7 @@ export function upgradeLivingWorldToV2(world: LivingWorldState): LivingWorldStat
     interactionCooldowns: world.interactionCooldowns ?? {},
     pendingInteractions: world.pendingInteractions ?? [],
     captaincyHistory: world.captaincyHistory ?? [],
+    opponentTacticalScouting: world.opponentTacticalScouting ?? {},
   };
 }
 

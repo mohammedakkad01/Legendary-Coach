@@ -243,6 +243,29 @@ export const MatchResultsCharacterModal: React.FC = () => {
                     </span>
                   </div>
                 </div>
+
+                {record.analyticsConclusions && record.analyticsConclusions.length > 0 && (
+                  <div className="pt-2 space-y-1.5 border-t border-neutral-800">
+                    <span className="text-[10px] font-bold text-violet-400 uppercase tracking-wide">
+                      {isAr ? 'استنتاجات تكتيكية' : 'Tactical insights'}
+                    </span>
+                    <ul className="space-y-1">
+                      {record.analyticsConclusions.map((c) => (
+                        <li key={c.code} className="text-[11px] text-neutral-300 leading-snug">
+                          • {isAr ? c.sentenceAr : c.sentenceEn}
+                        </li>
+                      ))}
+                    </ul>
+                    {record.analytics && (
+                      <p className="text-[10px] text-neutral-500 font-mono">
+                        PPDA {isHome ? record.analytics.homePpda : record.analytics.awayPpda}
+                        {' · '}
+                        {isAr ? 'تمريرات تقدمية' : 'Prog. passes'}{' '}
+                        {isHome ? record.analytics.homeProgressivePasses : record.analytics.awayProgressivePasses}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

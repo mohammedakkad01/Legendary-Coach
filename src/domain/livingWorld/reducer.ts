@@ -261,6 +261,25 @@ function applyOne(input: ReducerInput, change: StateChange): ReducerInput {
         players,
       };
     }
+    case 'setManagerTacticalIdentity':
+      return {
+        livingWorld: {
+          ...livingWorld,
+          managerCareer: { ...livingWorld.managerCareer, tacticalIdentity: change.identity },
+        },
+        players,
+      };
+    case 'appendTacticalUsage': {
+      const history = livingWorld.managerCareer.tacticalUsageHistory ?? [];
+      const next = [...history, change.sample].slice(-24);
+      return {
+        livingWorld: {
+          ...livingWorld,
+          managerCareer: { ...livingWorld.managerCareer, tacticalUsageHistory: next },
+        },
+        players,
+      };
+    }
     case 'addPendingInteraction': {
       const list = livingWorld.pendingInteractions ?? [];
       if (list.some((i) => i.id === change.interaction.id)) return input;
@@ -268,6 +287,16 @@ function applyOne(input: ReducerInput, change: StateChange): ReducerInput {
         livingWorld: {
           ...livingWorld,
           pendingInteractions: [...list, change.interaction].slice(-30),
+        },
+        players,
+      };
+    }
+    case 'mergeOpponentScouting': {
+      const prev = livingWorld.opponentTacticalScouting ?? {};
+      return {
+        livingWorld: {
+          ...livingWorld,
+          opponentTacticalScouting: { ...prev, [change.entry.opponentClubId]: change.entry },
         },
         players,
       };

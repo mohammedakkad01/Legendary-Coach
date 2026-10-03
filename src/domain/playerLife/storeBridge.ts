@@ -6,7 +6,9 @@
  */
 
 import type { Club } from '../../types/game';
+import type { GameSaveData } from '../../types/save';
 import type { LivingWorldState } from '../livingWorld/types';
+import { getClubModifiersForSave } from '../clubManagement/storeBridge';
 import type { PlayerMatchDelta } from '../../engine/matchdaySimulator';
 import { SeededRandom } from '../../engine/prng';
 import { hashStringToSeed } from '../shared/seed';
@@ -17,6 +19,7 @@ import type { PostMatchTickInput } from './types';
 export function applyUserPostMatchPlayerLife(params: {
   club: Club;
   livingWorld: LivingWorldState;
+  saveSnapshot?: Pick<GameSaveData, 'clubManagement'>;
   saveId: string;
   matchday: number;
   won: boolean;
@@ -33,6 +36,9 @@ export function applyUserPostMatchPlayerLife(params: {
     club.id,
     club.footballLineup,
   );
+  const mods = params.saveSnapshot
+    ? getClubModifiersForSave({ club, clubManagement: params.saveSnapshot.clubManagement } as GameSaveData, club)
+    : null;
   const tick: PostMatchTickInput = {
     season: livingWorld.currentSeason,
     matchday: params.matchday,
@@ -45,6 +51,8 @@ export function applyUserPostMatchPlayerLife(params: {
     trainingGroundLevel: club.facilities.trainingGroundLevel,
     recentMatchesIn7Days: params.recentMatchesIn7Days,
     fatigueProtectionMult: params.fatigueProtectionMult,
+    medicalInjuryRiskMult: mods?.medicalInjuryRiskMult,
+    medicalDiagnosisMult: mods?.medicalDiagnosisMult,
   };
 
   const rng = new SeededRandom(hashStringToSeed(`${params.saveId}_pm_${params.matchday}`));
@@ -65,9 +73,13 @@ export function applyUserPostMatchPlayerLife(params: {
 export function applyUserWeeklyPlayerLife(params: {
   club: Club;
   livingWorld: LivingWorldState;
+  saveSnapshot?: Pick<GameSaveData, 'clubManagement'>;
   saveId: string;
   matchday: number;
 }): { club: Club; livingWorld: LivingWorldState } {
+  const mods = params.saveSnapshot
+    ? getClubModifiersForSave({ club: params.club, clubManagement: params.saveSnapshot.clubManagement } as GameSaveData, params.club)
+    : null;
   const rng = new SeededRandom(hashStringToSeed(`${params.saveId}_wk_${params.matchday}`));
   const result = runWeeklyPlayerLife(
     { livingWorld: params.livingWorld, players: params.club.footballSquad },
@@ -79,6 +91,8 @@ export function applyUserWeeklyPlayerLife(params: {
       captainId: params.club.footballTactics.captainId,
       lineupIds: params.club.footballLineup,
       benchIds: params.club.footballBench,
+      staffDevelopmentMult: mods?.developmentRate,
+      medicalRecoveryMult: mods?.medicalRecoveryMult,
     },
     rng,
   );

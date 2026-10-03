@@ -37,6 +37,7 @@ import { SaveStatus } from '../types/save';
 import type { DispatchResult } from '../domain/livingWorld/events/dispatch';
 import type { GameEvent, LivingWorldState } from '../domain/livingWorld/types';
 import type { RecruitmentWorldState } from '../domain/recruitment';
+import type { ClubManagementState } from '../domain/clubManagement/types';
 
 import type { MoveTarget } from '../domain/squad/squadTypes';
 import type { MoveResult } from '../domain/squad/moveEntity';
@@ -145,6 +146,7 @@ export interface GameState {
   livingWorld: LivingWorldState;
   /** Phase D recruitment slice (persisted; domain-only truth stays internal). */
   recruitmentWorld: RecruitmentWorldState;
+  clubManagement: ClubManagementState;
   saveId: string;
   /** Persistence-only unknown root JSON keys (never read by gameplay). */
   savePassthrough: Record<string, unknown>;

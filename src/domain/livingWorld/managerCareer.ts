@@ -11,6 +11,7 @@ export function createDefaultManagerCareer(clubReputation: number): ManagerCaree
   return {
     reputation: base,
     reputationLedger: [],
+    employmentStatus: 'employed',
   };
 }
 

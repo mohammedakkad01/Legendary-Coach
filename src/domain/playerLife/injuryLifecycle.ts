@@ -24,12 +24,18 @@ function weeksForSeverity(severity: InjurySeverity, rng: SeededRandom): number {
 
 export function rollInjury(
   rng: SeededRandom,
-  opts: { fatigueInjury?: boolean; medicalCenterLevel: number },
+  opts: {
+    fatigueInjury?: boolean;
+    medicalCenterLevel: number;
+    medicalDiagnosisMult?: number;
+  },
 ): PlayerInjuryState {
   const fatigueInjury = opts.fatigueInjury ?? rng.nextChance(0.35);
   const severity = pickSeverity(rng, fatigueInjury);
   const trueWeeks = weeksForSeverity(severity, rng);
-  const medQ = 0.5 + (clamp(opts.medicalCenterLevel, 1, 10) - 1) * P.injury.medicalLevelToQuality;
+  const medQ =
+    (0.5 + (clamp(opts.medicalCenterLevel, 1, 10) - 1) * P.injury.medicalLevelToQuality) *
+    clamp(opts.medicalDiagnosisMult ?? 1, 0.5, 1.5);
   const diagnosisConfidence = clamp(55 + medQ * 35, 40, 95);
   const error = Math.round((1 - diagnosisConfidence / 100) * P.injury.diagnosisErrorMaxWeeks);
   const sign = rng.nextChance(0.5) ? 1 : -1;
@@ -48,8 +54,11 @@ export function rollInjury(
 export function advanceInjuryWeek(
   injury: PlayerInjuryState,
   medicalCenterLevel: number,
+  medicalRecoveryMult = 1,
 ): PlayerInjuryState | null {
-  const med = 0.5 + (clamp(medicalCenterLevel, 1, 10) - 1) * P.injury.medicalLevelToQuality;
+  const med =
+    (0.5 + (clamp(medicalCenterLevel, 1, 10) - 1) * P.injury.medicalLevelToQuality) *
+    clamp(medicalRecoveryMult, 0.5, 1.5);
   const progress = P.injury.recoveryWeeklyProgress * med;
   const trueNext = injury.trueWeeksRemaining - progress;
   const estNext = injury.estimatedWeeksRemaining - progress;

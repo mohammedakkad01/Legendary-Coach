@@ -26,6 +26,7 @@ import { runWeeklyRecruitmentTickOnSave, type WeeklyRecruitmentTickSaveInput } f
 import type { ObservedPlayerView, RecruitmentWorldState } from './types';
 import type { AcademyIntakeClubContext } from './academy/academyTypes';
 import { RECRUITMENT_TUNING as T } from './config/recruitmentTuning';
+import { getClubModifiersForSave } from '../clubManagement/storeBridge';
 
 const KNOWN_AI_BUDGET: Record<string, number> = {
   club_man_city: 120_000_000,
@@ -198,6 +199,11 @@ export function buildWeeklyRecruitmentTickInputFromSave(
     clubReputation: clampPct(save.club.finances.reputation / 100),
     regionCode: 'SA',
   };
+  if (save.clubManagement) {
+    const mods = getClubModifiersForSave(save, save.club);
+    academy.coachingQuality = mods.academyCoachingQuality;
+    academy.recruitmentInvestment = mods.academyRecruitmentInvestment;
+  }
 
   return {
     gameWeek,

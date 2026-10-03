@@ -198,6 +198,8 @@ export interface ClubFacilities {
   youthAcademyLevel: number; // 1-10 (talent star probability)
   medicalCenterLevel: number;// 1-10 (injury recovery speed)
   scoutingNetworkLevel: number; // 1-10 (scouting accuracy)
+  /** Phase E — tactical analytics department (optional on old saves). */
+  analyticsDepartmentLevel?: number;
 }
 
 // A facility upgrade now takes real construction time instead of completing

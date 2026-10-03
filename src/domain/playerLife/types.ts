@@ -151,6 +151,8 @@ export interface PostMatchTickInput {
   recentMatchesIn7Days: number;
   /** VIP fatigue protection (1 = no reduction). */
   fatigueProtectionMult?: number;
+  medicalInjuryRiskMult?: number;
+  medicalDiagnosisMult?: number;
 }
 
 export interface WeeklyTickInput {
@@ -161,6 +163,8 @@ export interface WeeklyTickInput {
   captainId?: string;
   lineupIds: string[];
   benchIds: string[];
+  staffDevelopmentMult?: number;
+  medicalRecoveryMult?: number;
 }
 
 export type PlayerLifePatch = {

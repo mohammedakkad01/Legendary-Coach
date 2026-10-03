@@ -21,7 +21,7 @@ export function useTransferMarket() {
   const { setAuthModalOpen, user } = useFirebase();
   const isAr = language === 'ar';
 
-  const [activeTab, setActiveTab] = useState<'market' | 'world_scout' | 'squad'>('market');
+  const [activeTab, setActiveTab] = useState<'market' | 'scouting_hub' | 'rumors' | 'loans' | 'world_scout' | 'squad'>('market');
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');

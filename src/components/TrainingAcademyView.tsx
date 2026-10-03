@@ -11,6 +11,7 @@ import { useGameStore } from '../state/useGameStore';
 import { Dumbbell, Sparkles, UserPlus, Flame, HeartPulse, Crosshair, Search, Check, X, Crown, Star, Activity } from 'lucide-react';
 import { VIP_LEVELS } from '../data/vipData';
 import { TrainingSessionsPanel } from './player-life/TrainingSessionsPanel';
+import { YouthRecruitmentView } from './recruitment/academy/YouthRecruitmentView';
 
 export const TrainingAcademyView: React.FC = () => {
   const {
@@ -216,91 +217,12 @@ export const TrainingAcademyView: React.FC = () => {
       </div>
       )}
 
-      {/* Youth Academy — Scouting (Football: real discovery slots / Basketball: legacy instant promote) */}
+      {/* Youth Academy — Phase D Recruitment Focus & Intake Stories */}
       {activeSubTab === 'academy' && (
         currentSport === 'football' ? (
-        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 border border-indigo-500/30 rounded-3xl p-6 shadow-2xl space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <UserPlus className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-lg font-black font-heading text-white">
-                  {isAr ? 'أكاديمية الشباب — اكتشاف المواهب' : 'Youth Academy Scouting'}
-                </h3>
-              </div>
-              <p className="text-xs sm:text-sm text-slate-400 max-w-xl leading-relaxed">
-                {isAr
-                  ? `أرسل الكشافين لاكتشاف موهبة جديدة (تكلفة ${SCOUT_COST_TP} نقطة تدريب). مستوى منشأة أكاديمية الشباب يرفع فرصتك بموهبة 5 نجوم.`
-                  : `Send scouts to discover a new prospect (${SCOUT_COST_TP} training points). A higher Youth Academy facility level improves your odds of a 5-star find.`}
-              </p>
-            </div>
-
-            <div className="flex flex-col items-center gap-2 flex-shrink-0">
-              <span className="text-[11px] text-slate-400 font-bold">
-                {isAr ? 'خانات الاكتشاف' : 'Discovery Slots'}: {academyDiscoveries.length}/{maxAcademySlots}
-              </span>
-              <button
-                onClick={handleScout}
-                disabled={academyDiscoveries.length >= maxAcademySlots || club.finances.trainingPoints < SCOUT_COST_TP}
-                className={`px-6 py-3.5 rounded-2xl font-black text-xs sm:text-sm shadow-xl whitespace-nowrap flex items-center gap-2 ${
-                  academyDiscoveries.length >= maxAcademySlots || club.finances.trainingPoints < SCOUT_COST_TP
-                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-indigo-500 to-sky-600 hover:from-indigo-400 hover:to-sky-500 text-white cursor-pointer shadow-indigo-500/30'
-                }`}
-              >
-                <Search className="w-4 h-4" />
-                {isAr ? `استكشاف موهبة (${SCOUT_COST_TP} TP)` : `Scout Talent (${SCOUT_COST_TP} TP)`}
-              </button>
-              {maxAcademySlots < 2 && (
-                <span className="text-[10px] text-purple-400 flex items-center gap-1">
-                  <Crown className="w-3 h-3" /> {isAr ? 'VIP 13 لخانة إضافية' : 'VIP 13 for extra slot'}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {academyFeedback && (
-            <div className="p-3 rounded-2xl bg-indigo-950/60 border border-indigo-500/40 text-indigo-200 text-xs font-bold text-center">
-              {academyFeedback}
-            </div>
-          )}
-
-          {academyDiscoveries.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {academyDiscoveries.map((d) => (
-                <div key={d.id} className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1 mb-1">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <Star key={i} className={`w-3 h-3 ${i < d.starRating ? 'text-amber-400 fill-amber-400' : 'text-slate-700'}`} />
-                      ))}
-                    </div>
-                    <p className="text-sm font-bold text-white truncate">{isAr ? d.talent.name : d.talent.nameEn}</p>
-                    <p className="text-[10px] text-slate-400">
-                      {d.talent.position} · {isAr ? `إمكانية ${d.talent.potential}` : `Pot ${d.talent.potential}`} · {isAr ? `عمر ${d.talent.age}` : `Age ${d.talent.age}`}
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-1.5 flex-shrink-0">
-                    <button
-                      onClick={() => handlePromoteDiscovery(d.id)}
-                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black flex items-center gap-1"
-                    >
-                      <Check className="w-3 h-3" /> {isAr ? 'ترقية' : 'Promote'}
-                    </button>
-                    <button
-                      onClick={() => releaseAcademyDiscovery(d.id)}
-                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 text-[10px] font-bold flex items-center gap-1"
-                    >
-                      <X className="w-3 h-3" /> {isAr ? 'استبعاد' : 'Release'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 border border-indigo-500/30 rounded-3xl p-6 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-6">
+          <YouthRecruitmentView />
+        ) : (
+          <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 border border-indigo-500/30 rounded-3xl p-6 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-6">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <UserPlus className="w-5 h-5 text-indigo-400" />

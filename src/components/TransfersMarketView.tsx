@@ -14,9 +14,15 @@ import {
   Trophy, 
   ArrowLeftRight, 
   X, 
-  CheckCircle2 
+  CheckCircle2,
+  Compass,
+  Newspaper,
+  Clock
 } from 'lucide-react';
-import { NegotiationModal } from './NegotiationModal';
+import { RichNegotiationModal } from './recruitment/negotiation/RichNegotiationModal';
+import { ScoutingHubView } from './recruitment/scouting/ScoutingHubView';
+import { RumorsFeedView } from './recruitment/rumors/RumorsFeedView';
+import { LoanCenterView } from './recruitment/loans/LoanCenterView';
 import { useTransferMarket } from '../hooks/useTransferMarket';
 import { TransferMarketHeader } from './transfers/TransferMarketHeader';
 import { TransferFilters } from './transfers/TransferFilters';
@@ -98,10 +104,46 @@ export const TransfersMarketView: React.FC = () => {
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>{isAr ? 'سوق الانتقالات المتاح' : 'Available Targets'}</span>
+            <span>{isAr ? 'سوق الانتقالات' : 'Transfer Market'}</span>
             <span className="px-1.5 py-0.5 text-[10px] rounded-md bg-slate-950/60 text-slate-300">
               {filteredAndSortedMarket.length}
             </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('scouting_hub')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'scouting_hub' 
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20' 
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Compass className="w-4 h-4" />
+            <span>{isAr ? 'مركز الكشافة' : 'Scouting Hub'}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('rumors')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'rumors' 
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20' 
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Newspaper className="w-4 h-4" />
+            <span>{isAr ? 'الشائعات والأخبار' : 'Rumors Feed'}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('loans')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'loans' 
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20' 
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Clock className="w-4 h-4" />
+            <span>{isAr ? 'مركز الإعارات' : 'Loan Center'}</span>
           </button>
 
           <button
@@ -231,7 +273,29 @@ export const TransfersMarketView: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 2: LIVE WORLD STAR SCOUT SEARCH */}
+      {/* TAB 2: SCOUTING HUB (Phase D) */}
+      {activeTab === 'scouting_hub' && (
+        <ScoutingHubView
+          onStartNegotiation={(player) => setNegotiatingPlayer(player)}
+        />
+      )}
+
+      {/* TAB 3: RUMORS & MEDIA FEED (Phase D) */}
+      {activeTab === 'rumors' && (
+        <RumorsFeedView
+          onInspectPlayer={(player) => setInspectingPlayer(player)}
+          onNegotiatePlayer={(player) => setNegotiatingPlayer(player)}
+        />
+      )}
+
+      {/* TAB 4: LOAN CENTER (Phase D) */}
+      {activeTab === 'loans' && (
+        <LoanCenterView
+          onStartNegotiation={(player) => setNegotiatingPlayer(player)}
+        />
+      )}
+
+      {/* TAB 5: LIVE WORLD STAR SCOUT SEARCH */}
       {activeTab === 'world_scout' && (
         <WorldScoutView
           isAr={isAr}
@@ -249,7 +313,7 @@ export const TransfersMarketView: React.FC = () => {
         />
       )}
 
-      {/* TAB 3: SQUAD SALES */}
+      {/* TAB 6: SQUAD SALES */}
       {activeTab === 'squad' && (
         <SquadSalesView
           isAr={isAr}
@@ -269,9 +333,11 @@ export const TransfersMarketView: React.FC = () => {
         }}
       />
 
-      <NegotiationModal
+      {/* RICH NEGOTIATION MODAL (Phase D) */}
+      <RichNegotiationModal
         player={negotiatingPlayer}
         onClose={() => setNegotiatingPlayer(null)}
+        isAr={isAr}
       />
 
     </div>

@@ -9,6 +9,7 @@
 import { GameSaveData, CURRENT_SAVE_VERSION, SaveStatus } from '../../types/save';
 import { ensureLivingWorldV3 } from '../../domain/livingWorld/migrateLivingWorld';
 import { ensurePlayerLifeV4 } from '../../domain/playerLife/migratePlayerLife';
+import { ensureRecruitmentV5 } from '../../domain/recruitment/migration/migrateRecruitmentV5';
 import { ensureFootballSimulationV4 } from '../../domain/tactics/migrateFootballSimulation';
 import { Club, ClubFinances, ClubFacilities, SportType } from '../../types/game';
 import { REAL_INITIAL_PLAYER_CLUB, REAL_INITIAL_STANDINGS, REAL_INITIAL_SCOUT_MARKET } from '../../data/realFootballData';
@@ -160,13 +161,16 @@ export class SaveService {
 
       unlockedSpeed2x: Boolean(state.unlockedSpeed2x),
       livingWorld: state.livingWorld as GameSaveData['livingWorld'],
+      recruitmentWorld: state.recruitmentWorld as GameSaveData['recruitmentWorld'],
       savePassthrough:
         state.savePassthrough && typeof state.savePassthrough === 'object'
           ? (state.savePassthrough as Record<string, unknown>)
           : undefined,
     };
 
-    return ensurePlayerLifeV4(ensureFootballSimulationV4(ensureLivingWorldV3(base)));
+    return ensureRecruitmentV5(
+      ensurePlayerLifeV4(ensureFootballSimulationV4(ensureLivingWorldV3(base))),
+    );
   }
 
   public serialize(data: GameSaveData, pretty = false): string {

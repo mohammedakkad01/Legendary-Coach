@@ -44,6 +44,7 @@ export const GAME_SAVE_KNOWN_TOP_LEVEL_KEYS: ReadonlySet<string> = new Set([
   'matchScoutReports',
   'unlockedSpeed2x',
   'livingWorld',
+  'recruitmentWorld',
   'savePassthrough',
   // legacy v1 keys (stripped into passthrough if still present after migrate)
   'version',

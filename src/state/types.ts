@@ -36,6 +36,7 @@ import { TeamSynergyResult } from '../utils/teamSynergy';
 import { SaveStatus } from '../types/save';
 import type { DispatchResult } from '../domain/livingWorld/events/dispatch';
 import type { GameEvent, LivingWorldState } from '../domain/livingWorld/types';
+import type { RecruitmentWorldState } from '../domain/recruitment';
 
 import type { MoveTarget } from '../domain/squad/squadTypes';
 import type { MoveResult } from '../domain/squad/moveEntity';
@@ -142,6 +143,9 @@ export interface GameState {
 
   /** Living world slice (persisted; gameplay wiring in later phases). */
   livingWorld: LivingWorldState;
+  /** Phase D recruitment slice (persisted; domain-only truth stays internal). */
+  recruitmentWorld: RecruitmentWorldState;
+  saveId: string;
   /** Persistence-only unknown root JSON keys (never read by gameplay). */
   savePassthrough: Record<string, unknown>;
 

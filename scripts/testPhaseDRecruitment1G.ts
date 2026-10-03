@@ -99,21 +99,21 @@ function dest(overrides: Partial<LoanDestinationClubContext> & { clubId: string 
   };
 }
 
-section('Migration bumps recruitment schema to v7 (loan search is stateless)');
+section('Migration bumps recruitment schema to v8 (loan search is stateless)');
 {
   const save = baseSave();
-  assertEqual(save.recruitmentWorld!.schemaVersion, 7, 'schema v7');
+  assertEqual(save.recruitmentWorld!.schemaVersion, 8, 'schema v8');
   const twice = ensureRecruitmentV5(clone(save));
   assertEqual(JSON.stringify(save.recruitmentWorld), JSON.stringify(twice.recruitmentWorld), 'idempotent');
 }
 
-section('v6 → v7 upgrade');
+section('v6 → v8 upgrade');
 {
   const save = baseSave();
   const v6 = clone(save.recruitmentWorld!);
   v6.schemaVersion = 6;
   const up = ensureRecruitmentV5({ ...save, recruitmentWorld: v6 as GameSaveData['recruitmentWorld'] });
-  assertEqual(up.recruitmentWorld!.schemaVersion, 7, 'v6→v7');
+  assertEqual(up.recruitmentWorld!.schemaVersion, 8, 'v6→v8');
 }
 
 section('Hard filters reject weak destinations');

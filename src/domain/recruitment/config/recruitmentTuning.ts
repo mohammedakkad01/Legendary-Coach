@@ -190,6 +190,28 @@ export const RECRUITMENT_TUNING = {
     },
   },
 
+  academy: {
+    baseProspectsPerIntake: bounded(2, 1, 4),
+    prospectsPerAcademyLevel: bounded(0.35, 0.1, 0.6),
+    maxProspectsPerIntake: bounded(6, 2, 10),
+    highInvestmentThreshold: bounded(65, 40, 85),
+    highInvestmentProspectBonus: bounded(1, 0, 2),
+    basePotential: bounded(68, 55, 78),
+    potentialPerAcademyLevel: bounded(1.6, 0.8, 2.5),
+    coachingPotentialBonus: bounded(6, 2, 12),
+    reputationPotentialBonus: bounded(4, 1, 8),
+    potentialNoise: bounded(8, 4, 14),
+    minPotential: bounded(58, 45, 65),
+    maxPotential: bounded(96, 88, 99),
+    baseOverallGap: bounded(12, 8, 18),
+    overallGapNoise: bounded(6, 2, 10),
+    minOverall: bounded(45, 40, 52),
+    minAge: bounded(16, 15, 17),
+    maxAge: bounded(18, 17, 19),
+    marketValueFactor: bounded(650, 400, 900),
+    maxStoredIntakeRecords: bounded(32, 8, 80),
+  },
+
   aiClubs: {
     maxClubsPerWeek: bounded(6, 2, 16),
     maxTargetsPerClub: bounded(4, 1, 10),

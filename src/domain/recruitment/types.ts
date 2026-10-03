@@ -15,8 +15,12 @@ import type {
   RumorThrottleState,
   TransferRumor,
 } from './rumors/rumorTypes';
+import type {
+  AcademyIntakeRecord,
+  RecruitmentFocusConfig,
+} from './academy/academyTypes';
 
-export const RECRUITMENT_WORLD_SCHEMA_VERSION = 7 as const;
+export const RECRUITMENT_WORLD_SCHEMA_VERSION = 8 as const;
 
 export type TransferWindowPhase = 'closed' | 'summer' | 'winter';
 
@@ -80,6 +84,8 @@ export interface RecruitmentWorldState {
   transferRumors: TransferRumor[];
   clubInterestRecords: ClubInterestRecord[];
   rumorThrottle: RumorThrottleState;
+  academyFocusByClubId: Record<string, RecruitmentFocusConfig>;
+  academyIntakeRecords: AcademyIntakeRecord[];
 }
 
 export interface RecruitmentTickContext {
@@ -100,4 +106,7 @@ export type RecruitmentPatch =
   | { kind: 'upsertAiClubProfile'; profile: AiClubTransferProfile }
   | { kind: 'appendTransferRumor'; rumor: TransferRumor }
   | { kind: 'appendClubInterest'; interest: ClubInterestRecord }
-  | { kind: 'setRumorThrottle'; throttle: RumorThrottleState };
+  | { kind: 'setRumorThrottle'; throttle: RumorThrottleState }
+  | { kind: 'setAcademyFocus'; clubId: string; focus: RecruitmentFocusConfig }
+  | { kind: 'upsertWorldPlayer'; player: import('./trueProfile/types').TrueWorldPlayer }
+  | { kind: 'appendAcademyIntakeRecord'; record: AcademyIntakeRecord };

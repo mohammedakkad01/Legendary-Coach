@@ -37,6 +37,14 @@ function applyOne(state: RecruitmentWorldState, patch: RecruitmentPatch): Recrui
         },
       };
     }
+    case 'upsertWorldPlayer':
+      return {
+        ...state,
+        worldPlayers: {
+          ...state.worldPlayers,
+          [patch.player.playerId]: patch.player,
+        },
+      };
     case 'setScoutNetwork':
       return { ...state, scoutNetwork: [...patch.scouts] };
     case 'upsertScoutingAssignment': {
@@ -89,6 +97,23 @@ function applyOne(state: RecruitmentWorldState, patch: RecruitmentPatch): Recrui
     }
     case 'setRumorThrottle':
       return { ...state, rumorThrottle: patch.throttle };
+    case 'setAcademyFocus':
+      return {
+        ...state,
+        academyFocusByClubId: {
+          ...state.academyFocusByClubId,
+          [patch.clubId]: patch.focus,
+        },
+      };
+    case 'appendAcademyIntakeRecord': {
+      const academyIntakeRecords = [...state.academyIntakeRecords, patch.record];
+      const max = T.academy.maxStoredIntakeRecords;
+      return {
+        ...state,
+        academyIntakeRecords:
+          academyIntakeRecords.length > max ? academyIntakeRecords.slice(-max) : academyIntakeRecords,
+      };
+    }
     default: {
       const _exhaustive: never = patch;
       return _exhaustive;

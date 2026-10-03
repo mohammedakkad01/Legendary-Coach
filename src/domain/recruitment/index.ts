@@ -221,4 +221,29 @@ export type {
 export { applyLoanHardFilters, scoreLoanDestination, defaultLoanTerms } from './loans/loanScore';
 export { searchLoanTargets } from './loans/searchLoanTargets';
 
+export type {
+  RecruitmentFocusAxis,
+  RecruitmentPositionGroup,
+  RecruitmentFocusConfig,
+  AcademyIntakeClubContext,
+  AcademyIntakeProspectView,
+  AcademyIntakeRecord,
+  AcademyIntakeStoryKind,
+  RunAcademyIntakeInput,
+  RunAcademyIntakeResult,
+} from './academy/academyTypes';
+
+export {
+  defaultRecruitmentFocus,
+  normalizeRecruitmentFocus,
+  positionPoolForFocus,
+  focusGenerationModifiers,
+} from './academy/recruitmentFocus';
+export { computeAcademyIntakeCapacity } from './academy/intakeGenerator';
+export {
+  runAcademyIntake,
+  getClubRecruitmentFocus,
+  patchesForRecruitmentFocus,
+} from './academy/runAcademyIntake';
+
 export { ensureRecruitmentV5 } from './migration/migrateRecruitmentV5';

@@ -84,7 +84,7 @@ function signals(overrides: Partial<TransferMotivationSignalContext>): TransferM
 section('Migration bumps recruitment schema to v4 (motivation slice — stateless)');
 {
   const save = baseSave();
-  assertEqual(save.recruitmentWorld!.schemaVersion, 9, 'schema v9');
+  assertEqual(save.recruitmentWorld!.schemaVersion, 8, 'schema v8');
   const twice = ensureRecruitmentV5(clone(save));
   assertEqual(JSON.stringify(save.recruitmentWorld), JSON.stringify(twice.recruitmentWorld), 'idempotent');
 }
@@ -95,7 +95,7 @@ section('v3 recruitmentWorld upgrades to v4 without data loss');
   const v3 = clone(save.recruitmentWorld!);
   v3.schemaVersion = 3;
   const upgraded = ensureRecruitmentV5({ ...save, recruitmentWorld: v3 as GameSaveData['recruitmentWorld'] });
-  assertEqual(upgraded.recruitmentWorld!.schemaVersion, 9, 'v3→v9');
+  assertEqual(upgraded.recruitmentWorld!.schemaVersion, 8, 'v3→v8');
   assertEqual(upgraded.recruitmentWorld!.negotiations.length, save.recruitmentWorld!.negotiations.length, 'negotiations kept');
 }
 

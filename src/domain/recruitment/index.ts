@@ -146,8 +146,6 @@ export type {
   WeeklyRecruitmentTickSkipReason,
 } from './tick/weeklyRecruitmentTick';
 
-export type { RecruitmentWeeklyTickState } from './types';
-
 export type {
   TransferMotivationSignalContext,
   TransferMotivationResult,

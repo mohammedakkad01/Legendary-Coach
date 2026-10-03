@@ -118,7 +118,7 @@ function motivationBundle(playerId: string, playingPct: number) {
 section('Migration seeds AI club profiles (schema v5)');
 {
   const save = baseSave();
-  assertEqual(save.recruitmentWorld!.schemaVersion, 9, 'schema v9');
+  assertEqual(save.recruitmentWorld!.schemaVersion, 8, 'schema v8');
   assert(!!save.recruitmentWorld!.aiClubProfiles['club_man_city'], 'man city profile');
   assertEqual(
     save.recruitmentWorld!.aiClubProfiles['club_man_city'].philosophy,
@@ -140,7 +140,7 @@ section('v4 world upgrades to v5 with aiClubProfiles');
   v4.schemaVersion = 4;
   delete (v4 as { aiClubProfiles?: unknown }).aiClubProfiles;
   const up = ensureRecruitmentV5({ ...save, recruitmentWorld: v4 as GameSaveData['recruitmentWorld'] });
-  assertEqual(up.recruitmentWorld!.schemaVersion, 9, 'v5→v9');
+  assertEqual(up.recruitmentWorld!.schemaVersion, 8, 'v5→v8');
   assert(Object.keys(up.recruitmentWorld!.aiClubProfiles).length > 0, 'profiles populated');
 }
 

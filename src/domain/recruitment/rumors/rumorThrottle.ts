@@ -33,6 +33,7 @@ export function canCreateRumor(
 
 export function recordRumorCreated(state: RumorThrottleState, gameWeek: number, dedupeKey: string): RumorThrottleState {
   return {
+    ...state,
     rumorsCreatedByWeek: {
       ...state.rumorsCreatedByWeek,
       [gameWeek]: (state.rumorsCreatedByWeek[gameWeek] ?? 0) + 1,
@@ -45,5 +46,5 @@ export function recordRumorCreated(state: RumorThrottleState, gameWeek: number, 
 }
 
 export function emptyRumorThrottleState(): RumorThrottleState {
-  return { rumorsCreatedByWeek: {}, lastCreatedWeekByKey: {} };
+  return { rumorsCreatedByWeek: {}, lastCreatedWeekByKey: {}, orchestrationCompletedWeeks: {} };
 }

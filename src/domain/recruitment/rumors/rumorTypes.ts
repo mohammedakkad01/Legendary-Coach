@@ -54,4 +54,6 @@ export interface RumorThrottleState {
   rumorsCreatedByWeek: Record<number, number>;
   /** dedupe key -> last created week */
   lastCreatedWeekByKey: Record<string, number>;
+  /** gameWeek -> weekly recruitment orchestration already applied (schema v8 idempotency). */
+  orchestrationCompletedWeeks: Record<number, boolean>;
 }

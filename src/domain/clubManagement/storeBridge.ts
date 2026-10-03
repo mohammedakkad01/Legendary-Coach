@@ -16,11 +16,11 @@ import type { PlayerNegotiationContext } from '../recruitment/negotiation/contex
 import { applyClubManagementChanges } from './reducer';
 import { postFinanceTransaction } from './finance/financeLedger';
 import {
-  validateLegacyCoinSpend,
-  validateTransferSpend,
+  validateUserClubTransferSpend,
   applyTransferSaleProceeds,
   applyTransferSpend,
 } from './finance/validateSpend';
+import type { TransferSpendRequest } from './finance/validateSpend';
 import { syncClubFromClubManagement, extendedFacilitiesFromClub } from './syncLegacyClub';
 import { computeClubSystemModifiers } from './modifiers/attributeModifier';
 import { runWeeklyClubManagementTick, computeMatchGateReceipt } from './tick/weeklyClubTick';
@@ -52,7 +52,7 @@ export function validateUserTransferOffer(
   squadWages: readonly number[],
   gameWeek: number,
 ): ReturnType<typeof validateOffer> {
-  const financeCheck = validateTransferSpend(cm.finance, {
+  const financeCheck = validateUserClubTransferSpend(cm.finance, {
     transferFee: offer.clauses.reduce((s, c) => (c.kind === 'fee' ? s + c.amount : s), 0),
     squadWeeklyWages: squadWages,
     addedWeeklyWage: player.weeklyWage,
@@ -70,9 +70,30 @@ export function validateUserTransferOffer(
   return domain;
 }
 
-export function sharedLegacySpendCheck(cm: ClubManagementState | undefined, club: Club, amount: number) {
-  if (cm) return validateLegacyCoinSpend(cm.finance, amount);
-  if (amount > club.finances.coins) return { valid: false as const, reasonCodes: ['insufficient_coins'] as const };
+export type UserTransferSpendContext = Pick<TransferSpendRequest, 'addedWeeklyWage' | 'gameWeek'>;
+
+function squadWeeklyWagesFromClub(club: Club): number[] {
+  return club.footballSquad.map((p) => p.wage);
+}
+
+/** Legacy store negotiation / quick buy — same finance rules as validateUserTransferOffer. */
+export function sharedLegacySpendCheck(
+  cm: ClubManagementState | undefined,
+  club: Club,
+  transferFee: number,
+  context: UserTransferSpendContext,
+) {
+  if (cm) {
+    return validateUserClubTransferSpend(cm.finance, {
+      transferFee,
+      squadWeeklyWages: squadWeeklyWagesFromClub(club),
+      addedWeeklyWage: context.addedWeeklyWage ?? 0,
+      gameWeek: context.gameWeek,
+    });
+  }
+  if (transferFee <= 0 || transferFee > club.finances.coins) {
+    return { valid: false as const, reasonCodes: ['insufficient_coins'] as const };
+  }
   return { valid: true as const, reasonCodes: [] as const };
 }
 

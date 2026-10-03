@@ -40,6 +40,14 @@ export function validateTransferSpend(
   return { valid: codes.length === 0, reasonCodes: [...new Set(codes)] };
 }
 
+/** Authoritative user-club transfer finance check (legacy store + domain negotiation). */
+export function validateUserClubTransferSpend(
+  finance: FinanceSlice,
+  request: TransferSpendRequest,
+): FinanceValidationResult {
+  return validateTransferSpend(finance, request);
+}
+
 export function applyTransferSpend(
   finance: FinanceSlice,
   fee: number,
@@ -62,7 +70,7 @@ export function applyTransferSaleProceeds(
   };
 }
 
-/** Legacy store + domain negotiation shared check (coins only for fee). */
+/** Coins-only helper for callers not performing a full transfer-budget check (compatibility). */
 export function validateLegacyCoinSpend(finance: FinanceSlice, amount: number): FinanceValidationResult {
   if (amount <= 0) return { valid: false, reasonCodes: ['insufficient_coins'] };
   if (amount > finance.coins) return { valid: false, reasonCodes: ['insufficient_coins'] };

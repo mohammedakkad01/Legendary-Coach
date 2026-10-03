@@ -6,8 +6,13 @@
 import { REAL_INITIAL_PLAYER_CLUB } from '../src/data/realFootballData';
 import { ensureRecruitmentV5 } from '../src/domain/recruitment/migration/migrateRecruitmentV5';
 import { ensureClubManagementV6, buildClubManagementFromSave } from '../src/domain/clubManagement/migration/migrateClubManagementV6';
-import { validateTransferSpend } from '../src/domain/clubManagement/finance/validateSpend';
-import { sharedLegacySpendCheck } from '../src/domain/clubManagement/storeBridge';
+import { validateUserClubTransferSpend } from '../src/domain/clubManagement/finance/validateSpend';
+import {
+  sharedLegacySpendCheck,
+  validateUserTransferOffer,
+  buildUserNegotiationFinanceContext,
+  recordPlayerPurchase,
+} from '../src/domain/clubManagement/storeBridge';
 import { computeClubSystemModifiers } from '../src/domain/clubManagement/modifiers/attributeModifier';
 import { extendedFacilitiesFromClub } from '../src/domain/clubManagement/syncLegacyClub';
 import { weeklyDevelopmentProgress } from '../src/domain/playerLife/developmentEngine';
@@ -80,20 +85,120 @@ function testMigrationIdempotent(): void {
   assert(twice.saveVersion === 6, 'save version 6');
 }
 
+function reasonCodesEqual(a: readonly string[], b: readonly string[]): boolean {
+  return [...a].sort().join('|') === [...b].sort().join('|');
+}
+
 function testFinanceValidationParity(): void {
   const save = baseSave(50_000);
   const cm = save.clubManagement!;
   const squadWages = save.club.footballSquad.map((p) => p.wage);
   const fee = 60_000;
-  const legacy = sharedLegacySpendCheck(cm, save.club, fee);
-  const domain = validateTransferSpend(cm.finance, {
+  const ctx = { addedWeeklyWage: 0, gameWeek: 1 };
+  const legacy = sharedLegacySpendCheck(cm, save.club, fee, ctx);
+  const authoritative = validateUserClubTransferSpend(cm.finance, {
     transferFee: fee,
     squadWeeklyWages: squadWages,
-    gameWeek: 1,
+    ...ctx,
   });
-  assert(!legacy.valid && !domain.valid, 'both reject over-budget spend');
-  assert(legacy.reasonCodes.includes('insufficient_coins'), 'legacy insufficient');
-  assert(domain.reasonCodes.includes('insufficient_coins'), 'domain insufficient');
+  assert(!legacy.valid && !authoritative.valid, 'both reject over-budget spend');
+  assert(reasonCodesEqual(legacy.reasonCodes, authoritative.reasonCodes), 'legacy matches authoritative codes');
+}
+
+function testLegacyDomainNegotiationFinanceParity(): void {
+  const save = baseSave(200_000);
+  let cm = save.clubManagement!;
+  cm = applyClubManagementChanges(cm, [
+    {
+      kind: 'patchFinance',
+      patch: { transferBudget: 25_000, wageBudgetWeekly: 48_000, transferRestrictedUntilWeek: 8 },
+    },
+  ]);
+  const fee = 30_000;
+  const addedWage = 12_000;
+  const gameWeek = 5;
+  const ctx = { addedWeeklyWage: addedWage, gameWeek };
+  const legacy = sharedLegacySpendCheck(cm, save.club, fee, ctx);
+  const squadWages = save.club.footballSquad.map((p) => p.wage);
+  const authoritative = validateUserClubTransferSpend(cm.finance, {
+    transferFee: fee,
+    squadWeeklyWages: squadWages,
+    ...ctx,
+  });
+  assert(reasonCodesEqual(legacy.reasonCodes, authoritative.reasonCodes), 'store path matches authoritative');
+
+  const buyer = buildUserNegotiationFinanceContext(cm, save.club.footballSquad, 'open', save.club.id);
+  const seller = buildUserNegotiationFinanceContext(cm, save.club.footballSquad, 'open', 'seller');
+  const domainOffer = validateUserTransferOffer(
+    cm,
+    buyer,
+    seller,
+    {
+      playerId: 'p1',
+      personality: 'professional',
+      weeklyWage: addedWage,
+      referenceMarketValue: fee,
+      transferDesire: 50,
+      contractYearsRemaining: 2,
+      availableForTransfer: true,
+    },
+    { id: 'o1', fromClubId: save.club.id, toClubId: 'seller', playerId: 'p1', clauses: [{ kind: 'fee', amount: fee }] },
+    squadWages,
+    gameWeek,
+  );
+  assert(!authoritative.valid, 'authoritative rejects combined constraints');
+  assert(!domainOffer.valid, 'domain negotiation rejected when finance fails');
+  assert(domainOffer.reasonCodes.includes('insufficient_budget'), 'domain maps budget failure');
+  assert(domainOffer.reasonCodes.includes('window_closed'), 'domain maps transfer restriction');
+}
+
+function testTransferBudgetRejected(): void {
+  const save = baseSave(100_000);
+  let cm = save.clubManagement!;
+  cm = applyClubManagementChanges(cm, [{ kind: 'patchFinance', patch: { transferBudget: 5_000 } }]);
+  const check = sharedLegacySpendCheck(cm, save.club, 10_000, { addedWeeklyWage: 0, gameWeek: 1 });
+  assert(!check.valid && check.reasonCodes.includes('transfer_budget_exceeded'), 'transfer budget enforced');
+}
+
+function testWageBudgetRejected(): void {
+  const save = baseSave(100_000);
+  let cm = save.clubManagement!;
+  const squadLoad = save.club.footballSquad.reduce((s, p) => s + p.wage, 0);
+  cm = applyClubManagementChanges(cm, [{ kind: 'patchFinance', patch: { wageBudgetWeekly: squadLoad } }]);
+  const check = sharedLegacySpendCheck(cm, save.club, 1_000, { addedWeeklyWage: 1, gameWeek: 1 });
+  assert(!check.valid && check.reasonCodes.includes('wage_budget_exceeded'), 'wage budget enforced');
+}
+
+function testTransferRestrictionEnforced(): void {
+  const save = baseSave(100_000);
+  let cm = save.clubManagement!;
+  cm = applyClubManagementChanges(cm, [{ kind: 'patchFinance', patch: { transferRestrictedUntilWeek: 10 } }]);
+  const check = sharedLegacySpendCheck(cm, save.club, 1_000, { addedWeeklyWage: 0, gameWeek: 5 });
+  assert(!check.valid && check.reasonCodes.includes('transfer_restricted'), 'transfer restriction enforced');
+}
+
+function testSuccessfulPurchaseRecordsFinance(): void {
+  const save = baseSave(100_000);
+  const cm = save.clubManagement!;
+  const fee = 25_000;
+  const beforeBudget = cm.finance.transferBudget;
+  const ledgerBefore = cm.finance.ledger.length;
+  const after = recordPlayerPurchase(cm, fee, 2, 1, new Date(0).toISOString());
+  assert(after.finance.transferBudget === beforeBudget - fee, 'transfer budget reduced');
+  assert(after.finance.ledger.length === ledgerBefore + 1, 'ledger entry appended');
+  const entry = after.finance.ledger.at(-1)!;
+  assert(entry.category === 'transfer_in' && entry.amount === -fee, 'purchase ledger transaction');
+  assert(entry.reasonCode === 'player_purchase', 'purchase reason code');
+}
+
+function testRejectedSpendNoFinanceMutation(): void {
+  const save = baseSave(100_000);
+  let cm = save.clubManagement!;
+  cm = applyClubManagementChanges(cm, [{ kind: 'patchFinance', patch: { transferBudget: 500 } }]);
+  const before = JSON.stringify(cm.finance);
+  const check = sharedLegacySpendCheck(cm, save.club, 50_000, { addedWeeklyWage: 0, gameWeek: 1 });
+  assert(!check.valid, 'spend rejected');
+  assert(JSON.stringify(cm.finance) === before, 'no partial finance mutation on reject');
 }
 
 function testLedgerBalance(): void {
@@ -237,6 +342,12 @@ function testBoardLadder(): void {
 function main(): void {
   testMigrationIdempotent();
   testFinanceValidationParity();
+  testLegacyDomainNegotiationFinanceParity();
+  testTransferBudgetRejected();
+  testWageBudgetRejected();
+  testTransferRestrictionEnforced();
+  testSuccessfulPurchaseRecordsFinance();
+  testRejectedSpendNoFinanceMutation();
   testLedgerBalance();
   testNeutralStaffPreservesDevelopment();
   testInjuryDirection();

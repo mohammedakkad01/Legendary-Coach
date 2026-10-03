@@ -1628,7 +1628,10 @@ export const useGameStore = create<GameState>((set, get) => {
             : `You've reached the max simultaneous negotiations (${maxSlots}). Finish one or reach VIP 6 for an extra slot.`
         };
       }
-      const openSpend = sharedLegacySpendCheck(state.clubManagement, state.club, initialOfferAmount);
+      const openSpend = sharedLegacySpendCheck(state.clubManagement, state.club, initialOfferAmount, {
+        addedWeeklyWage: player.wage,
+        gameWeek: deriveGameWeekFromSave(buildPartialSave(state)),
+      });
       if (initialOfferAmount <= 0 || !openSpend.valid) {
         return { success: false, message: isAr ? 'العرض المبدئي غير صالح أو يتجاوز رصيدك' : 'The opening offer is invalid or exceeds your balance' };
       }
@@ -1688,7 +1691,10 @@ export const useGameStore = create<GameState>((set, get) => {
       if (newOfferAmount <= negotiation.currentOfferAmount) {
         return { success: false, message: isAr ? 'يجب أن يكون العرض الجديد أعلى من السابق' : 'The new offer must be higher than the previous one' };
       }
-      const counterSpend = sharedLegacySpendCheck(state.clubManagement, state.club, newOfferAmount);
+      const counterSpend = sharedLegacySpendCheck(state.clubManagement, state.club, newOfferAmount, {
+        addedWeeklyWage: player.wage,
+        gameWeek: deriveGameWeekFromSave(buildPartialSave(state)),
+      });
       if (!counterSpend.valid) {
         return { success: false, message: isAr ? 'هذا العرض يتجاوز رصيدك الحالي' : 'This offer exceeds your current balance' };
       }
@@ -1736,13 +1742,16 @@ export const useGameStore = create<GameState>((set, get) => {
       const currentTier = VIP_LEVELS.find(t => t.level === currentLevel) || VIP_LEVELS[0];
       const discountMult = 1 - (currentTier.transferDiscountPercent || 0) / 100;
       const finalPrice = Math.round((negotiation.counterAmount ?? negotiation.currentOfferAmount) * discountMult);
-      const finalSpend = sharedLegacySpendCheck(state.clubManagement, state.club, finalPrice);
-      if (!finalSpend.valid) {
-        return { success: false, message: isAr ? 'رصيدك لا يكفي لإتمام هذا الاتفاق الآن' : "You don't have enough funds to close this deal now" };
-      }
       const player = state.scoutMarket.find(p => p.id === negotiation.playerId);
       if (!player) {
         return { success: false, message: isAr ? 'اللاعب لم يعد متاحاً في السوق' : 'Player is no longer available in the market' };
+      }
+      const finalSpend = sharedLegacySpendCheck(state.clubManagement, state.club, finalPrice, {
+        addedWeeklyWage: player.wage,
+        gameWeek: deriveGameWeekFromSave(buildPartialSave(state)),
+      });
+      if (!finalSpend.valid) {
+        return { success: false, message: isAr ? 'رصيدك لا يكفي لإتمام هذا الاتفاق الآن' : "You don't have enough funds to close this deal now" };
       }
 
       soundEffects.playFanfare();
@@ -2006,7 +2015,10 @@ export const useGameStore = create<GameState>((set, get) => {
 
     buyPlayer: (player) => {
       const state = get();
-      const buyCheck = sharedLegacySpendCheck(state.clubManagement, state.club, player.marketValue);
+      const buyCheck = sharedLegacySpendCheck(state.clubManagement, state.club, player.marketValue, {
+        addedWeeklyWage: player.wage,
+        gameWeek: deriveGameWeekFromSave(buildPartialSave(state)),
+      });
       if (!buyCheck.valid) return false;
 
       soundEffects.playFanfare();

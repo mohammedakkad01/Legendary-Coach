@@ -12,7 +12,8 @@ export type RecruitmentRngOperation =
   | 'confidence_adjust'
   | 'negotiation_eval'
   | 'motivation_eval'
-  | 'ai_transfer_decision';
+  | 'ai_transfer_decision'
+  | 'rumor_reliability';
 
 export function recruitmentRng(
   worldSeed: number,

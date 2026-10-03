@@ -175,4 +175,36 @@ export type {
 } from './aiClubs/weeklyAiTransferBatch';
 export { collectRecruitmentClubIds, attachAiClubProfiles } from './aiClubs/ensureProfilesOnWorld';
 
+export type {
+  TransferRumor,
+  TransferRumorType,
+  RumorReliability,
+  RumorClaimKind,
+  RumorSourceKind,
+  ClubInterestRecord,
+  RumorThrottleState,
+} from './rumors/rumorTypes';
+
+export {
+  generateWeeklyRumors,
+} from './rumors/generateRumors';
+export type {
+  GenerateWeeklyRumorsInput,
+  GenerateWeeklyRumorsResult,
+  RumorInterestCandidate,
+  AgentActivityCandidate,
+} from './rumors/generateRumors';
+export { buildRumorsFromAiWeeklyBatch } from './rumors/orchestration';
+export {
+  renderRumorTemplate,
+  toPublicRumorView,
+} from './rumors/rumorTemplates';
+export type { PublicRumorView } from './rumors/rumorTemplates';
+export {
+  rumorDedupeKey,
+  canCreateRumor,
+  recordRumorCreated,
+  emptyRumorThrottleState,
+} from './rumors/rumorThrottle';
+
 export { ensureRecruitmentV5 } from './migration/migrateRecruitmentV5';

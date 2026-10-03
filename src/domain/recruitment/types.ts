@@ -10,8 +10,13 @@ import type { ScoutStaff } from './scouts/scoutTypes';
 import type { ScoutingAssignment, ScoutingReport } from './scouting/types';
 import type { AiClubTransferProfile } from './aiClubs/clubProfileTypes';
 import type { TransferNegotiation } from './negotiation/offerTypes';
+import type {
+  ClubInterestRecord,
+  RumorThrottleState,
+  TransferRumor,
+} from './rumors/rumorTypes';
 
-export const RECRUITMENT_WORLD_SCHEMA_VERSION = 5 as const;
+export const RECRUITMENT_WORLD_SCHEMA_VERSION = 6 as const;
 
 export type TransferWindowPhase = 'closed' | 'summer' | 'winter';
 
@@ -72,6 +77,9 @@ export interface RecruitmentWorldState {
   negotiations: TransferNegotiation[];
   /** Configurable AI transfer profiles keyed by club id. */
   aiClubProfiles: Record<string, AiClubTransferProfile>;
+  transferRumors: TransferRumor[];
+  clubInterestRecords: ClubInterestRecord[];
+  rumorThrottle: RumorThrottleState;
 }
 
 export interface RecruitmentTickContext {
@@ -89,4 +97,7 @@ export type RecruitmentPatch =
   | { kind: 'upsertScoutingAssignment'; assignment: ScoutingAssignment }
   | { kind: 'appendScoutingReport'; report: ScoutingReport }
   | { kind: 'upsertNegotiation'; negotiation: TransferNegotiation }
-  | { kind: 'upsertAiClubProfile'; profile: AiClubTransferProfile };
+  | { kind: 'upsertAiClubProfile'; profile: AiClubTransferProfile }
+  | { kind: 'appendTransferRumor'; rumor: TransferRumor }
+  | { kind: 'appendClubInterest'; interest: ClubInterestRecord }
+  | { kind: 'setRumorThrottle'; throttle: RumorThrottleState };

@@ -154,6 +154,18 @@ export const RECRUITMENT_TUNING = {
     },
   },
 
+  rumors: {
+    maxPerWeek: bounded(8, 2, 20),
+    maxStoredRumors: bounded(64, 16, 160),
+    maxStoredInterests: bounded(48, 12, 120),
+    dedupeCooldownWeeks: bounded(2, 1, 6),
+    maxFabricatedPerWeek: bounded(2, 0, 5),
+    reliableConfidenceThreshold: bounded(72, 55, 90),
+    uncertainConfidenceThreshold: bounded(45, 25, 65),
+    lowConfidenceTruthBecomesReliableChance: bounded(0.22, 0.05, 0.45),
+    falseRumorReliabilityFalseRate: bounded(0.75, 0.5, 0.95),
+  },
+
   aiClubs: {
     maxClubsPerWeek: bounded(6, 2, 16),
     maxTargetsPerClub: bounded(4, 1, 10),

@@ -13,6 +13,7 @@ import { buildTransferWindowState } from '../world/transferWindow';
 import { createDefaultScoutNetwork } from '../scouts/defaultScoutNetwork';
 import { attachAiClubProfiles } from '../aiClubs/ensureProfilesOnWorld';
 import { mergeLegacyNegotiations } from '../negotiation/migrateLegacyNegotiations';
+import { emptyRumorThrottleState } from '../rumors/rumorThrottle';
 import {
   RECRUITMENT_WORLD_SCHEMA_VERSION,
   type RecruitmentWorldState,
@@ -20,11 +21,14 @@ import {
 
 type LegacyRecruitmentWorld = Omit<
   RecruitmentWorldState,
-  'schemaVersion' | 'negotiations' | 'aiClubProfiles'
+  'schemaVersion' | 'negotiations' | 'aiClubProfiles' | 'transferRumors' | 'clubInterestRecords' | 'rumorThrottle'
 > & {
-  schemaVersion: 1 | 2 | 3 | 4 | 5;
+  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6;
   negotiations?: RecruitmentWorldState['negotiations'];
   aiClubProfiles?: RecruitmentWorldState['aiClubProfiles'];
+  transferRumors?: RecruitmentWorldState['transferRumors'];
+  clubInterestRecords?: RecruitmentWorldState['clubInterestRecords'];
+  rumorThrottle?: RecruitmentWorldState['rumorThrottle'];
 };
 
 type AnyRecruitmentWorld = LegacyRecruitmentWorld;
@@ -54,6 +58,9 @@ function upgradeToCurrentSchema(save: GameSaveData, world: LegacyRecruitmentWorl
     scoutingReports: world.scoutingReports ?? [],
     negotiations,
     aiClubProfiles: world.aiClubProfiles ?? {},
+    transferRumors: world.transferRumors ?? [],
+    clubInterestRecords: world.clubInterestRecords ?? [],
+    rumorThrottle: world.rumorThrottle ?? emptyRumorThrottleState(),
   };
   return attachAiClubProfiles(upgraded, save);
 }
@@ -112,6 +119,9 @@ function buildFreshRecruitmentWorld(save: GameSaveData): RecruitmentWorldState {
       gameWeek,
     ),
     aiClubProfiles: {},
+    transferRumors: [],
+    clubInterestRecords: [],
+    rumorThrottle: emptyRumorThrottleState(),
   };
   return attachAiClubProfiles(baseWorld, save);
 }

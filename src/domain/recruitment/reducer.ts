@@ -71,6 +71,24 @@ function applyOne(state: RecruitmentWorldState, patch: RecruitmentPatch): Recrui
           [patch.profile.clubId]: patch.profile,
         },
       };
+    case 'appendTransferRumor': {
+      const transferRumors = [...state.transferRumors, patch.rumor];
+      const max = T.rumors.maxStoredRumors;
+      return {
+        ...state,
+        transferRumors: transferRumors.length > max ? transferRumors.slice(-max) : transferRumors,
+      };
+    }
+    case 'appendClubInterest': {
+      const clubInterestRecords = [...state.clubInterestRecords, patch.interest];
+      const max = T.rumors.maxStoredInterests;
+      return {
+        ...state,
+        clubInterestRecords: clubInterestRecords.length > max ? clubInterestRecords.slice(-max) : clubInterestRecords,
+      };
+    }
+    case 'setRumorThrottle':
+      return { ...state, rumorThrottle: patch.throttle };
     default: {
       const _exhaustive: never = patch;
       return _exhaustive;

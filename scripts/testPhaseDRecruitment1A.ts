@@ -72,7 +72,7 @@ section('Save v4 → v5 migration adds recruitmentWorld');
   const v5 = ensureRecruitmentV5(v4);
   assertEqual(v5.saveVersion, CURRENT_SAVE_VERSION, 'bumped to current save version');
   assert(!!v5.recruitmentWorld, 'recruitmentWorld present');
-  assertEqual(v5.recruitmentWorld!.schemaVersion, 5, 'recruitment schema v5');
+  assertEqual(v5.recruitmentWorld!.schemaVersion, 6, 'recruitment schema v6');
 }
 
 section('Migration idempotency');

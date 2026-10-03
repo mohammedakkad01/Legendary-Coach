@@ -166,6 +166,30 @@ export const RECRUITMENT_TUNING = {
     falseRumorReliabilityFalseRate: bounded(0.75, 0.5, 0.95),
   },
 
+  loans: {
+    maxDestinationsPerSearch: bounded(24, 8, 64),
+    defaultMaxResults: bounded(8, 3, 20),
+    minRecommendScore: bounded(42, 25, 65),
+    minConfidencePct: bounded(28, 10, 45),
+    strongPlayingTimeThreshold: bounded(65, 45, 85),
+    strongFacilitiesThreshold: bounded(70, 50, 90),
+    highPotentialThreshold: bounded(76, 65, 88),
+    starterRoleBonus: bounded(12, 4, 22),
+    youthPotentialBonus: bounded(8, 2, 16),
+    uncertaintyPenaltyScale: bounded(0.22, 0.08, 0.4),
+    defaultWageSplitPercent: bounded(50, 20, 80),
+    defaultDurationWeeks: bounded(20, 8, 52),
+    scoreWeights: {
+      playingTime: bounded(0.32, 0.15, 0.5),
+      leagueLevel: bounded(0.14, 0.05, 0.25),
+      trainingFacilities: bounded(0.12, 0.05, 0.22),
+      clubReputation: bounded(0.1, 0.04, 0.2),
+      tacticalCompatibility: bounded(0.14, 0.06, 0.25),
+      estimatedRating: bounded(0.12, 0.05, 0.22),
+      starterRole: bounded(0.06, 0.02, 0.12),
+    },
+  },
+
   aiClubs: {
     maxClubsPerWeek: bounded(6, 2, 16),
     maxTargetsPerClub: bounded(4, 1, 10),

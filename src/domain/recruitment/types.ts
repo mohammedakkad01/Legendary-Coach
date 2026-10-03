@@ -16,7 +16,7 @@ import type {
   TransferRumor,
 } from './rumors/rumorTypes';
 
-export const RECRUITMENT_WORLD_SCHEMA_VERSION = 6 as const;
+export const RECRUITMENT_WORLD_SCHEMA_VERSION = 7 as const;
 
 export type TransferWindowPhase = 'closed' | 'summer' | 'winter';
 

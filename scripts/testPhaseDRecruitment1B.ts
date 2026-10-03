@@ -64,7 +64,7 @@ function baseSave(): GameSaveData {
 section('Migration seeds scout network (schema v2)');
 {
   const save = baseSave();
-  assertEqual(save.recruitmentWorld!.schemaVersion, 6, 'schema v6');
+  assertEqual(save.recruitmentWorld!.schemaVersion, 7, 'schema v7');
   assert(save.recruitmentWorld!.scoutNetwork.length >= 3, 'default scouts');
   assertEqual(save.recruitmentWorld!.scoutingAssignments.length, 0, 'no assignments yet');
 }

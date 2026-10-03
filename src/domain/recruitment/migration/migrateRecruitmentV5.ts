@@ -23,7 +23,7 @@ type LegacyRecruitmentWorld = Omit<
   RecruitmentWorldState,
   'schemaVersion' | 'negotiations' | 'aiClubProfiles' | 'transferRumors' | 'clubInterestRecords' | 'rumorThrottle'
 > & {
-  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6;
+  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   negotiations?: RecruitmentWorldState['negotiations'];
   aiClubProfiles?: RecruitmentWorldState['aiClubProfiles'];
   transferRumors?: RecruitmentWorldState['transferRumors'];

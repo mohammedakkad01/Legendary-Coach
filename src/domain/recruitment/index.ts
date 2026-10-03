@@ -207,4 +207,18 @@ export {
   emptyRumorThrottleState,
 } from './rumors/rumorThrottle';
 
+export type {
+  LoanSearchFilters,
+  LoanDestinationClubContext,
+  LoanPlayerSearchContext,
+  LoanRecommendation,
+  LoanRejectReason,
+  LoanScoreReason,
+  SearchLoanTargetsInput,
+  SearchLoanTargetsResult,
+} from './loans/loanTypes';
+
+export { applyLoanHardFilters, scoreLoanDestination, defaultLoanTerms } from './loans/loanScore';
+export { searchLoanTargets } from './loans/searchLoanTargets';
+
 export { ensureRecruitmentV5 } from './migration/migrateRecruitmentV5';

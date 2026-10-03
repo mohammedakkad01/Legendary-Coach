@@ -13,7 +13,8 @@ export type RecruitmentRngOperation =
   | 'negotiation_eval'
   | 'motivation_eval'
   | 'ai_transfer_decision'
-  | 'rumor_reliability';
+  | 'rumor_reliability'
+  | 'loan_search_rank';
 
 export function recruitmentRng(
   worldSeed: number,

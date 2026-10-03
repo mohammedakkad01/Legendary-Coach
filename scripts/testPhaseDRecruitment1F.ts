@@ -86,10 +86,10 @@ function observed(partial: Partial<KnowledgeState> & { playerId: string; observe
   });
 }
 
-section('Migration initializes rumor slices (schema v6)');
+section('Migration initializes rumor slices (schema v7)');
 {
   const save = baseSave();
-  assertEqual(save.recruitmentWorld!.schemaVersion, 6, 'schema v6');
+  assertEqual(save.recruitmentWorld!.schemaVersion, 7, 'schema v7');
   assert(Array.isArray(save.recruitmentWorld!.transferRumors), 'rumors array');
   assert(Array.isArray(save.recruitmentWorld!.clubInterestRecords), 'interests array');
   assert(!!save.recruitmentWorld!.rumorThrottle, 'throttle state');
@@ -104,7 +104,7 @@ section('v5 → v6 upgrade preserves AI profiles');
   v5.schemaVersion = 5;
   delete (v5 as { transferRumors?: unknown }).transferRumors;
   const up = ensureRecruitmentV5({ ...save, recruitmentWorld: v5 as GameSaveData['recruitmentWorld'] });
-  assertEqual(up.recruitmentWorld!.schemaVersion, 6, 'v5→v6');
+  assertEqual(up.recruitmentWorld!.schemaVersion, 7, 'v6→v7');
   assert(!!up.recruitmentWorld!.aiClubProfiles['club_man_city'], 'profiles kept');
 }
 

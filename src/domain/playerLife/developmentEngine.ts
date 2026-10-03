@@ -19,6 +19,7 @@ export function weeklyDevelopmentProgress(
   player: Player,
   minutesLastWeek: number,
   trainingGroundLevel: number,
+  staffDevelopmentMult = 1,
 ): { overallDelta: number; devPatch: Partial<PlayerDevelopmentSlice> } {
   const dev = player.playerLife?.development;
   if (!dev || player.overall >= dev.truePotential) {
@@ -28,12 +29,14 @@ export function weeklyDevelopmentProgress(
   const prof = player.personalityProfile?.professionalism ?? 55;
   const morale = player.morale ?? 50;
   const facility = 1 + (clamp(trainingGroundLevel, 1, 10) - 1) * 0.04;
+  const staffMult = clamp(staffDevelopmentMult, 0.5, 1.5);
   const minutesFactor = clamp(minutesLastWeek / 70, 0, 1.1);
 
   let progress =
     P.development.weeklyBaseProgress *
     ageDevelopmentMultiplier(player.age) *
     facility *
+    staffMult *
     minutesFactor *
     (0.7 + prof / 200) *
     (0.85 + morale / 300);

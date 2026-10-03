@@ -117,6 +117,23 @@ import { applyUserPostMatchPlayerLife, applyUserWeeklyPlayerLife } from '../doma
 import { applyUserWeeklyRecruitment } from '../domain/recruitment/storeBridge';
 import { ensureRecruitmentV5 } from '../domain/recruitment/migration/migrateRecruitmentV5';
 import type { RecruitmentWorldState } from '../domain/recruitment';
+import { ensureClubManagementV6 } from '../domain/clubManagement/migration/migrateClubManagementV6';
+import type { ClubManagementState } from '../domain/clubManagement/types';
+import type { GameSaveData } from '../types/save';
+import {
+  applyUserWeeklyClubManagement,
+  computeMatchGateReceipt,
+  getClubModifiersForSave,
+  sharedLegacySpendCheck,
+  recordMatchRevenueOnClubManagement,
+  recordPlayerSale,
+  recordPlayerPurchase,
+  applyPostMatchFanUpdate,
+} from '../domain/clubManagement/storeBridge';
+import { applyClubManagementChanges } from '../domain/clubManagement/reducer';
+import { applyResultToBoardTrust } from '../domain/clubManagement/board/boardLogic';
+import { syncClubFromClubManagement } from '../domain/clubManagement/syncLegacyClub';
+import { deriveGameWeekFromSave } from '../domain/recruitment/world/gameWeek';
 import {
   legacyDrillToPlan,
   stateChangesForTrainingSession,
@@ -224,6 +241,7 @@ interface GameState {
 
   livingWorld: LivingWorldState;
   recruitmentWorld: RecruitmentWorldState;
+  clubManagement: ClubManagementState;
   saveId: string;
   savePassthrough: Record<string, unknown>;
 
@@ -596,12 +614,117 @@ export const useGameStore = create<GameState>((set, get) => {
     return { clubId, clubName, xi: [gk, ...outfield].filter((p): p is Player => !!p) };
   };
 
+  const buildPartialSave = (state: GameState): GameSaveData =>
+    ({
+      saveVersion: 6,
+      saveId: state.saveId,
+      savedAt: new Date().toISOString(),
+      appVersion: '2.1.0',
+      currentSport: state.currentSport,
+      language: state.language,
+      soundEnabled: state.soundEnabled,
+      hasSelectedInitialClub: state.hasSelectedInitialClub,
+      isGuest: state.isGuest,
+      hasClaimedLoginBonus: state.hasClaimedLoginBonus,
+      club: state.club,
+      energy: state.energy,
+      lastEnergyUpdate: state.lastEnergyUpdate,
+      vipPoints: state.vipPoints,
+      lastVipClaimDate: state.lastVipClaimDate,
+      claimedVipUpgradeChests: [],
+      missionSkipUsedDate: state.missionSkipUsedDate,
+      checkInStreak: state.checkInStreak,
+      lastCheckInDate: state.lastCheckInDate,
+      savedTacticalPlans: state.savedTacticalPlans,
+      pendingFacilityUpgrades: state.pendingFacilityUpgrades,
+      activeNegotiations: state.activeNegotiations,
+      academyDiscoveries: state.academyDiscoveries,
+      scoutMarket: state.scoutMarket,
+      dailyMissions: state.dailyMissions,
+      storyMissions: state.storyMissions,
+      leagueStandings: state.leagueStandings,
+      leagueFixtures: state.leagueFixtures,
+      matchHistory: state.matchHistory,
+      tournamentStats: state.tournamentStats,
+      simulatedMatchdays: state.simulatedMatchdays,
+      matchScoutReports: state.matchScoutReports,
+      unlockedSpeed2x: state.unlockedSpeed2x,
+      livingWorld: state.livingWorld,
+      recruitmentWorld: state.recruitmentWorld,
+      clubManagement: state.clubManagement,
+    }) as GameSaveData;
+
+  const computeUserMatchIncome = (state: GameState, scale = 1): number => {
+    const sponsor = state.club.finances.sponsorIncomePerMatch;
+    if (!state.clubManagement) {
+      return Math.round((state.club.finances.ticketPrice * 5200 + sponsor) * scale);
+    }
+    const mods = getClubModifiersForSave(buildPartialSave(state), state.club);
+    const gate = computeMatchGateReceipt({
+      ticketPrice: state.club.finances.ticketPrice,
+      modifiers: mods,
+      isHome: true,
+    });
+    return Math.round((gate + sponsor) * scale);
+  };
+
+  const applyMatchEconomy = (
+    state: GameState,
+    playerLifeClub: Club,
+    matchIncome: number,
+    won: boolean,
+    drawn: boolean,
+    boardPenalty: number,
+    fanPenalty: number,
+  ): { club: Club; clubManagement: ClubManagementState } => {
+    let cm = state.clubManagement;
+    const gw = deriveGameWeekFromSave(buildPartialSave(state));
+    if (cm) {
+      const sponsor = state.club.finances.sponsorIncomePerMatch;
+      cm = recordMatchRevenueOnClubManagement(cm, {
+        gateReceipt: Math.max(0, matchIncome - sponsor),
+        sponsorIncome: sponsor,
+        gameWeek: gw,
+        season: state.livingWorld.currentSeason,
+        timestampIso: new Date().toISOString(),
+      });
+      cm = applyPostMatchFanUpdate(cm, won, drawn, state.club.finances.ticketPrice, gw);
+      cm = applyClubManagementChanges(cm, [
+        { kind: 'patchBoard', patch: applyResultToBoardTrust(cm.board, won, drawn) },
+      ]);
+      const club = syncClubFromClubManagement(
+        {
+          ...playerLifeClub,
+          finances: {
+            ...playerLifeClub.finances,
+            reputation: playerLifeClub.finances.reputation + (won ? 35 : 10),
+          },
+        },
+        cm,
+      );
+      return { club, clubManagement: cm };
+    }
+    return {
+      clubManagement: cm,
+      club: {
+        ...playerLifeClub,
+        boardTrust: Math.min(100, Math.max(0, state.club.boardTrust + (won ? 4 : (drawn ? 0 : -boardPenalty)))),
+        fanMood: Math.min(100, Math.max(0, state.club.fanMood + (won ? 6 : (drawn ? 1 : -fanPenalty)))),
+        finances: {
+          ...playerLifeClub.finances,
+          coins: state.club.finances.coins + matchIncome,
+          reputation: playerLifeClub.finances.reputation + (won ? 35 : 10),
+        },
+      },
+    };
+  };
+
   const applyPostMatchPlayerLife = (
     state: GameState,
     record: MatchRecord,
     won: boolean,
     drawn: boolean,
-  ): { club: Club; livingWorld: LivingWorldState } => {
+  ): { club: Club; livingWorld: LivingWorldState; clubManagement?: ClubManagementState } => {
     const rng = new SeededRandom(record.seed);
     const deltas = deltasFromUserMatch(
       record,
@@ -616,7 +739,8 @@ export const useGameStore = create<GameState>((set, get) => {
     return applyUserPostMatchPlayerLife({
       club: state.club,
       livingWorld: state.livingWorld,
-      saveId: state.club.id,
+      saveSnapshot: { clubManagement: state.clubManagement },
+      saveId: state.saveId,
       matchday: md,
       won,
       drawn,
@@ -885,10 +1009,12 @@ export const useGameStore = create<GameState>((set, get) => {
     let weeklyClub = state.club;
     let weeklyWorld = state.livingWorld;
     let weeklyRecruitmentWorld = state.recruitmentWorld;
+    let weeklyClubManagement = state.clubManagement;
     if (summary) {
       const weekly = applyUserWeeklyPlayerLife({
         club: weeklyClub,
         livingWorld: weeklyWorld,
+        saveSnapshot: { clubManagement: weeklyClubManagement },
         saveId: state.saveId,
         matchday: summary.matchday,
       });
@@ -908,6 +1034,26 @@ export const useGameStore = create<GameState>((set, get) => {
       weeklyClub = recruitment.club;
       weeklyWorld = recruitment.livingWorld;
       weeklyRecruitmentWorld = recruitment.recruitmentWorld;
+
+      const partialSave = buildPartialSave({
+        ...state,
+        club: weeklyClub,
+        livingWorld: weeklyWorld,
+        recruitmentWorld: weeklyRecruitmentWorld,
+        clubManagement: weeklyClubManagement,
+        leagueStandings: standings,
+        simulatedMatchdays,
+      });
+      const cmTick = applyUserWeeklyClubManagement({
+        save: partialSave,
+        club: weeklyClub,
+        livingWorld: weeklyWorld,
+        saveId: state.saveId,
+        matchday: summary.matchday,
+      });
+      weeklyClub = cmTick.club;
+      weeklyWorld = cmTick.livingWorld;
+      weeklyClubManagement = cmTick.clubManagement;
     }
     set({
       leagueStandings: standings,
@@ -917,6 +1063,7 @@ export const useGameStore = create<GameState>((set, get) => {
       club: weeklyClub,
       livingWorld: weeklyWorld,
       recruitmentWorld: weeklyRecruitmentWorld,
+      clubManagement: weeklyClubManagement,
     });
     saveToStorage({
       leagueStandings: standings,
@@ -925,6 +1072,7 @@ export const useGameStore = create<GameState>((set, get) => {
       club: weeklyClub,
       livingWorld: weeklyWorld,
       recruitmentWorld: weeklyRecruitmentWorld,
+      clubManagement: weeklyClubManagement,
     });
     return summary;
   };
@@ -987,6 +1135,48 @@ export const useGameStore = create<GameState>((set, get) => {
     initialSave?.club ?? REAL_INITIAL_PLAYER_CLUB,
     initialSave?.livingWorld
   );
+  const initialClubManagement: ClubManagementState =
+    initialSave?.clubManagement ??
+    ensureClubManagementV6(
+      ensureRecruitmentV5({
+        saveVersion: 6,
+        saveId: initialSave?.saveId ?? `save_${Date.now()}`,
+        savedAt: new Date().toISOString(),
+        appVersion: '2.1.0',
+        currentSport: initialSave?.currentSport ?? 'football',
+        language: initialSave?.language ?? 'ar',
+        soundEnabled: initialSave?.soundEnabled ?? true,
+        hasSelectedInitialClub: initialClubSelected,
+        isGuest: initialSave?.isGuest ?? true,
+        hasClaimedLoginBonus: initialSave?.hasClaimedLoginBonus ?? false,
+        club: initialHydrated.club,
+        energy: initialSave?.energy ?? 100,
+        lastEnergyUpdate: initialSave?.lastEnergyUpdate ?? Date.now(),
+        vipPoints: initialSave?.vipPoints ?? 0,
+        lastVipClaimDate: initialSave?.lastVipClaimDate ?? null,
+        claimedVipUpgradeChests: initialSave?.claimedVipUpgradeChests ?? [1],
+        missionSkipUsedDate: initialSave?.missionSkipUsedDate ?? null,
+        checkInStreak: initialSave?.checkInStreak ?? 0,
+        lastCheckInDate: initialSave?.lastCheckInDate ?? null,
+        savedTacticalPlans: initialSave?.savedTacticalPlans ?? [],
+        pendingFacilityUpgrades: initialSave?.pendingFacilityUpgrades ?? [],
+        activeNegotiations: initialSave?.activeNegotiations ?? [],
+        academyDiscoveries: initialSave?.academyDiscoveries ?? [],
+        scoutMarket: initialSave?.scoutMarket ?? REAL_INITIAL_SCOUT_MARKET,
+        dailyMissions: initialSave?.dailyMissions ?? INITIAL_DAILY_MISSIONS,
+        storyMissions: initialSave?.storyMissions ?? STORY_CHAPTER_1_MISSIONS,
+        leagueStandings: initialSave?.leagueStandings ?? REAL_INITIAL_STANDINGS,
+        leagueFixtures: initialSave?.leagueFixtures ?? [],
+        matchHistory: initialSave?.matchHistory ?? [],
+        tournamentStats: initialSave?.tournamentStats ?? [],
+        simulatedMatchdays: initialSave?.simulatedMatchdays ?? [],
+        matchScoutReports: initialSave?.matchScoutReports ?? {},
+        unlockedSpeed2x: initialSave?.unlockedSpeed2x ?? false,
+        livingWorld: initialHydrated.livingWorld,
+        recruitmentWorld: initialRecruitmentWorld,
+      }),
+    ).clubManagement!;
+  const initialClubSynced = syncClubFromClubManagement(initialHydrated.club, initialClubManagement);
 
   return {
     saveStatus: 'idle',
@@ -1006,7 +1196,7 @@ export const useGameStore = create<GameState>((set, get) => {
     clubSelectionModalOpen: !initialClubSelected,
     
     // Club & Career Starts from ZERO
-    club: initialHydrated.club,
+    club: initialClubSynced,
     energy: initialSave?.energy || 100,
     lastEnergyUpdate: Date.now(),
     vipPoints: initialSave?.vipPoints || 0, // Starts from ZERO!
@@ -1077,6 +1267,7 @@ export const useGameStore = create<GameState>((set, get) => {
 
     livingWorld: initialHydrated.livingWorld,
     recruitmentWorld: initialRecruitmentWorld,
+    clubManagement: initialClubManagement,
     saveId: initialSave?.saveId ?? `save_${Date.now()}`,
     savePassthrough: initialSave?.savePassthrough ?? {},
 
@@ -1437,7 +1628,11 @@ export const useGameStore = create<GameState>((set, get) => {
             : `You've reached the max simultaneous negotiations (${maxSlots}). Finish one or reach VIP 6 for an extra slot.`
         };
       }
-      if (initialOfferAmount <= 0 || initialOfferAmount > state.club.finances.coins) {
+      const openSpend = sharedLegacySpendCheck(state.clubManagement, state.club, initialOfferAmount, {
+        addedWeeklyWage: player.wage,
+        gameWeek: deriveGameWeekFromSave(buildPartialSave(state)),
+      });
+      if (initialOfferAmount <= 0 || !openSpend.valid) {
         return { success: false, message: isAr ? 'العرض المبدئي غير صالح أو يتجاوز رصيدك' : 'The opening offer is invalid or exceeds your balance' };
       }
 
@@ -1496,7 +1691,11 @@ export const useGameStore = create<GameState>((set, get) => {
       if (newOfferAmount <= negotiation.currentOfferAmount) {
         return { success: false, message: isAr ? 'يجب أن يكون العرض الجديد أعلى من السابق' : 'The new offer must be higher than the previous one' };
       }
-      if (newOfferAmount > state.club.finances.coins) {
+      const counterSpend = sharedLegacySpendCheck(state.clubManagement, state.club, newOfferAmount, {
+        addedWeeklyWage: player.wage,
+        gameWeek: deriveGameWeekFromSave(buildPartialSave(state)),
+      });
+      if (!counterSpend.valid) {
         return { success: false, message: isAr ? 'هذا العرض يتجاوز رصيدك الحالي' : 'This offer exceeds your current balance' };
       }
 
@@ -1543,12 +1742,16 @@ export const useGameStore = create<GameState>((set, get) => {
       const currentTier = VIP_LEVELS.find(t => t.level === currentLevel) || VIP_LEVELS[0];
       const discountMult = 1 - (currentTier.transferDiscountPercent || 0) / 100;
       const finalPrice = Math.round((negotiation.counterAmount ?? negotiation.currentOfferAmount) * discountMult);
-      if (finalPrice > state.club.finances.coins) {
-        return { success: false, message: isAr ? 'رصيدك لا يكفي لإتمام هذا الاتفاق الآن' : "You don't have enough funds to close this deal now" };
-      }
       const player = state.scoutMarket.find(p => p.id === negotiation.playerId);
       if (!player) {
         return { success: false, message: isAr ? 'اللاعب لم يعد متاحاً في السوق' : 'Player is no longer available in the market' };
+      }
+      const finalSpend = sharedLegacySpendCheck(state.clubManagement, state.club, finalPrice, {
+        addedWeeklyWage: player.wage,
+        gameWeek: deriveGameWeekFromSave(buildPartialSave(state)),
+      });
+      if (!finalSpend.valid) {
+        return { success: false, message: isAr ? 'رصيدك لا يكفي لإتمام هذا الاتفاق الآن' : "You don't have enough funds to close this deal now" };
       }
 
       soundEffects.playFanfare();
@@ -1556,27 +1759,59 @@ export const useGameStore = create<GameState>((set, get) => {
 
       const canJoinBench = state.club.footballBench.length < getMaxBenchSlots(state.vipPoints);
       const updatedNegotiations = state.activeNegotiations.filter(n => n.id !== negotiationId);
-      const updatedClub = {
-        ...state.club,
-        footballSquad: [...state.club.footballSquad, player],
-        footballBench: canJoinBench ? [...state.club.footballBench, player.id] : state.club.footballBench,
-        fanMood: Math.min(100, state.club.fanMood + 5),
-        finances: {
-          ...state.club.finances,
-          coins: state.club.finances.coins - finalPrice,
-          reputation: state.club.finances.reputation + 25,
-        },
-      };
+      let clubManagement = state.clubManagement;
+      if (clubManagement) {
+        clubManagement = recordPlayerPurchase(
+          clubManagement,
+          finalPrice,
+          deriveGameWeekFromSave(buildPartialSave(state)),
+          state.livingWorld.currentSeason,
+          new Date().toISOString(),
+        );
+      }
+      const updatedClub = clubManagement
+        ? syncClubFromClubManagement(
+            {
+              ...state.club,
+              footballSquad: [...state.club.footballSquad, player],
+              footballBench: canJoinBench ? [...state.club.footballBench, player.id] : state.club.footballBench,
+              fanMood: Math.min(100, state.club.fanMood + 5),
+              finances: {
+                ...state.club.finances,
+                coins: clubManagement.finance.coins,
+                reputation: state.club.finances.reputation + 25,
+              },
+            },
+            clubManagement,
+          )
+        : {
+            ...state.club,
+            footballSquad: [...state.club.footballSquad, player],
+            footballBench: canJoinBench ? [...state.club.footballBench, player.id] : state.club.footballBench,
+            fanMood: Math.min(100, state.club.fanMood + 5),
+            finances: {
+              ...state.club.finances,
+              coins: state.club.finances.coins - finalPrice,
+              reputation: state.club.finances.reputation + 25,
+            },
+          };
       const updatedScoutMarket = state.scoutMarket.filter(p => p.id !== player.id);
       const updatedVipPoints = state.vipPoints + 40;
 
       set({
         club: updatedClub,
+        clubManagement: clubManagement ?? state.clubManagement,
         activeNegotiations: updatedNegotiations,
         scoutMarket: updatedScoutMarket,
         vipPoints: updatedVipPoints,
       });
-      saveToStorage({ club: updatedClub, activeNegotiations: updatedNegotiations, scoutMarket: updatedScoutMarket, vipPoints: updatedVipPoints });
+      saveToStorage({
+        club: updatedClub,
+        clubManagement: clubManagement ?? state.clubManagement,
+        activeNegotiations: updatedNegotiations,
+        scoutMarket: updatedScoutMarket,
+        vipPoints: updatedVipPoints,
+      });
 
       return {
         success: true,
@@ -1659,7 +1894,7 @@ export const useGameStore = create<GameState>((set, get) => {
 
     upgradeFacility: (facility) => {
       const state = get();
-      const currentLevel = state.club.facilities[facility];
+      const currentLevel = state.club.facilities[facility] ?? 1;
       if (currentLevel >= 10) return false;
       if (state.pendingFacilityUpgrades.some(p => p.facility === facility)) return false;
 
@@ -1780,7 +2015,11 @@ export const useGameStore = create<GameState>((set, get) => {
 
     buyPlayer: (player) => {
       const state = get();
-      if (state.club.finances.coins < player.marketValue) return false;
+      const buyCheck = sharedLegacySpendCheck(state.clubManagement, state.club, player.marketValue, {
+        addedWeeklyWage: player.wage,
+        gameWeek: deriveGameWeekFromSave(buildPartialSave(state)),
+      });
+      if (!buyCheck.valid) return false;
 
       soundEffects.playFanfare();
       confetti({ particleCount: 50, spread: 70 });
@@ -1837,23 +2076,34 @@ export const useGameStore = create<GameState>((set, get) => {
       if (!player) return;
 
       soundEffects.playTap();
+      const proceeds = Math.round(player.marketValue * 0.9);
+      let clubManagement = state.clubManagement;
+      if (clubManagement) {
+        clubManagement = recordPlayerSale(
+          clubManagement,
+          proceeds,
+          deriveGameWeekFromSave(buildPartialSave(state)),
+          state.livingWorld.currentSeason,
+          new Date().toISOString(),
+        );
+      }
+      const nextClubBase = {
+        ...state.club,
+        footballSquad: state.club.footballSquad.filter(p => p.id !== playerId),
+        footballLineup: state.club.footballLineup.map(id => (id === playerId ? EMPTY_SLOT : id)),
+        footballBench: state.club.footballBench.filter(id => id !== playerId),
+        finances: {
+          ...state.club.finances,
+          coins: (clubManagement?.finance.coins ?? state.club.finances.coins + proceeds),
+        },
+      };
+      const updatedClub = clubManagement
+        ? syncClubFromClubManagement(nextClubBase, clubManagement)
+        : nextClubBase;
       set({
         vipPoints: state.vipPoints + 20,
-        club: {
-          ...state.club,
-          footballSquad: state.club.footballSquad.filter(p => p.id !== playerId),
-          // A sold starter's slot becomes empty rather than shifting everyone
-          // after him left (that used to silently move every later slot's
-          // label — e.g. the real RB into what the UI still called the LB
-          // slot). The squad domain (createSquadState) already treats '' as
-          // an empty starting slot.
-          footballLineup: state.club.footballLineup.map(id => (id === playerId ? EMPTY_SLOT : id)),
-          footballBench: state.club.footballBench.filter(id => id !== playerId),
-          finances: {
-            ...state.club.finances,
-            coins: state.club.finances.coins + Math.round(player.marketValue * 0.9),
-          },
-        },
+        club: updatedClub,
+        clubManagement: clubManagement ?? state.clubManagement,
       });
       saveToStorage(undefined, true);
     },
@@ -2202,7 +2452,7 @@ export const useGameStore = create<GameState>((set, get) => {
         const pts = won ? 3 : (drawn ? 1 : 0);
 
         soundEffects.playWhistle(false);
-        const matchIncome = state.club.finances.ticketPrice * 5200 + state.club.finances.sponsorIncomePerMatch;
+        const matchIncome = computeUserMatchIncome(state);
 
         const updatedStandings = state.leagueStandings.map(s => {
           if (s.clubId === state.club.id) {
@@ -2310,26 +2560,31 @@ export const useGameStore = create<GameState>((set, get) => {
         const boardPenalty = Math.round(3 * mitigationFactor);
         const fanPenalty = Math.round(4 * mitigationFactor);
 
-        let updatedClub = {
-          ...playerLifePost.club,
-          boardTrust: Math.min(100, Math.max(0, state.club.boardTrust + (won ? 4 : (drawn ? 0 : -boardPenalty)))),
-          fanMood: Math.min(100, Math.max(0, state.club.fanMood + (won ? 6 : (drawn ? 1 : -fanPenalty)))),
-          finances: {
-            ...playerLifePost.club.finances,
-            coins: state.club.finances.coins + matchIncome,
-            reputation: state.club.finances.reputation + (won ? 35 : 10),
-          },
-        };
+        const economy = applyMatchEconomy(
+          state,
+          playerLifePost.club,
+          matchIncome,
+          won,
+          drawn,
+          boardPenalty,
+          fanPenalty,
+        );
+        let updatedClub = economy.club;
+        let clubManagementNext = economy.clubManagement;
 
         ensureDefaultHandlersRegistered();
         let livingWorldNext = playerLifePost.livingWorld;
         let squadNext = updatedClub.footballSquad;
+        const oppMult = state.clubManagement
+          ? getClubModifiersForSave(buildPartialSave(state), state.club).oppositionAnalysisMult
+          : 1;
         const postLw = buildPostMatchLivingWorldResult(
           livingWorldNext,
           updatedClub,
           finalRecord,
           finalRecord.awayClubId,
           finalRecord.date,
+          oppMult,
         );
         const lwApplied = applyStateChanges(
           { livingWorld: livingWorldNext, players: squadNext },
@@ -2364,10 +2619,12 @@ export const useGameStore = create<GameState>((set, get) => {
           postMatchAnalyst: analystFeedback,
           club: updatedClub,
           livingWorld: livingWorldNext,
+          clubManagement: clubManagementNext,
         });
         saveToStorage({
           club: updatedClub,
           livingWorld: livingWorldNext,
+          clubManagement: clubManagementNext,
           dailyMissions: updatedMissions,
           leagueStandings: updatedStandings,
           leagueFixtures: updatedFixtures,
@@ -2575,10 +2832,9 @@ export const useGameStore = create<GameState>((set, get) => {
 
       // Update standings & finances (50% revenue deduction for skipping/instant simulate)
       const pts = won ? 3 : (drawn ? 1 : 0);
-      const baseMatchIncome = state.club.finances.ticketPrice * 5200 + state.club.finances.sponsorIncomePerMatch;
       let __curLevel = 1; for (const __t of VIP_LEVELS) { if (state.vipPoints >= __t.pointsRequired) __curLevel = __t.level; }
       const __curTier = VIP_LEVELS.find(t => t.level === __curLevel) || VIP_LEVELS[0];
-      const matchIncome = __curTier.hasFullInstantSimRewards ? Math.round(baseMatchIncome) : Math.round(baseMatchIncome * 0.5);
+      const matchIncome = computeUserMatchIncome(state, __curTier.hasFullInstantSimRewards ? 1 : 0.5);
 
       const updatedStandings = state.leagueStandings.map(s => {
         if (s.clubId === state.club.id) {
@@ -2677,16 +2933,16 @@ export const useGameStore = create<GameState>((set, get) => {
       const boardPenalty = Math.round(3 * mitigationFactor);
       const fanPenalty = Math.round(4 * mitigationFactor);
 
-      const updatedClub = {
-        ...playerLifePost.club,
-        boardTrust: Math.min(100, Math.max(0, state.club.boardTrust + (won ? 4 : (drawn ? 0 : -boardPenalty)))),
-        fanMood: Math.min(100, Math.max(0, state.club.fanMood + (won ? 6 : (drawn ? 1 : -fanPenalty)))),
-        finances: {
-          ...playerLifePost.club.finances,
-          coins: state.club.finances.coins + matchIncome,
-          reputation: state.club.finances.reputation + (won ? 35 : 10),
-        },
-      };
+      const economy = applyMatchEconomy(
+        state,
+        playerLifePost.club,
+        matchIncome,
+        won,
+        drawn,
+        boardPenalty,
+        fanPenalty,
+      );
+      const updatedClub = economy.club;
 
       const analystFeedback = generatePostMatchCharacter(finalRecord, updatedClub, state.language === 'ar');
 
@@ -2705,10 +2961,12 @@ export const useGameStore = create<GameState>((set, get) => {
         postMatchAnalyst: analystFeedback,
         club: updatedClub,
         livingWorld: playerLifePost.livingWorld,
+        clubManagement: economy.clubManagement,
       });
 
       saveToStorage({
         club: updatedClub,
+        clubManagement: economy.clubManagement,
         dailyMissions: updatedMissions,
         leagueStandings: updatedStandings,
         leagueFixtures: updatedFixtures,
@@ -2766,10 +3024,9 @@ export const useGameStore = create<GameState>((set, get) => {
       soundEffects.playWhistle(false);
 
       // 50% revenue deduction for skipping match
-      const baseMatchIncome = state.club.finances.ticketPrice * 5200 + state.club.finances.sponsorIncomePerMatch;
       let __curLevel = 1; for (const __t of VIP_LEVELS) { if (state.vipPoints >= __t.pointsRequired) __curLevel = __t.level; }
       const __curTier = VIP_LEVELS.find(t => t.level === __curLevel) || VIP_LEVELS[0];
-      const matchIncome = __curTier.hasFullInstantSimRewards ? Math.round(baseMatchIncome) : Math.round(baseMatchIncome * 0.5);
+      const matchIncome = computeUserMatchIncome(state, __curTier.hasFullInstantSimRewards ? 1 : 0.5);
 
       const updatedStandings = state.leagueStandings.map(s => {
         if (s.clubId === state.club.id) {
@@ -2861,16 +3118,16 @@ export const useGameStore = create<GameState>((set, get) => {
       const boardPenalty = Math.round(3 * mitigationFactor);
       const fanPenalty = Math.round(4 * mitigationFactor);
 
-      const updatedClub = {
-        ...playerLifePost.club,
-        boardTrust: Math.min(100, Math.max(0, state.club.boardTrust + (won ? 4 : (drawn ? 0 : -boardPenalty)))),
-        fanMood: Math.min(100, Math.max(0, state.club.fanMood + (won ? 6 : (drawn ? 1 : -fanPenalty)))),
-        finances: {
-          ...playerLifePost.club.finances,
-          coins: state.club.finances.coins + matchIncome,
-          reputation: state.club.finances.reputation + (won ? 35 : 10),
-        },
-      };
+      const economy = applyMatchEconomy(
+        state,
+        playerLifePost.club,
+        matchIncome,
+        won,
+        drawn,
+        boardPenalty,
+        fanPenalty,
+      );
+      const updatedClub = economy.club;
 
       const analystFeedback = generatePostMatchCharacter(finalRecord, updatedClub, state.language === 'ar');
 
@@ -2890,10 +3147,12 @@ export const useGameStore = create<GameState>((set, get) => {
         postMatchAnalyst: analystFeedback,
         club: updatedClub,
         livingWorld: playerLifePost.livingWorld,
+        clubManagement: economy.clubManagement,
       });
 
       saveToStorage({
         club: updatedClub,
+        clubManagement: economy.clubManagement,
         dailyMissions: updatedMissions,
         leagueStandings: updatedStandings,
         leagueFixtures: updatedFixtures,
@@ -3865,10 +4124,16 @@ export const useGameStore = create<GameState>((set, get) => {
       if (!res.success || !res.data) {
         return { success: false, message: res.message };
       }
-      const data = res.data;
+      const data = ensureClubManagementV6(res.data);
       const importedHydrated = hydrateLivingWorldFromClub(data.club, data.livingWorld);
+      const importedClub = data.clubManagement
+        ? syncClubFromClubManagement(importedHydrated.club, data.clubManagement)
+        : importedHydrated.club;
       set({
-        club: importedHydrated.club,
+        club: importedClub,
+        clubManagement: data.clubManagement!,
+        saveId: data.saveId,
+        recruitmentWorld: data.recruitmentWorld ?? get().recruitmentWorld,
         currentSport: data.currentSport,
         language: data.language,
         soundEnabled: data.soundEnabled,
@@ -3918,8 +4183,50 @@ export const useGameStore = create<GameState>((set, get) => {
     resetCareer: () => {
       persistenceService.clearStorage();
       const resetHydrated = hydrateLivingWorldFromClub(REAL_INITIAL_PLAYER_CLUB);
+      const resetSave = ensureClubManagementV6(
+        ensureRecruitmentV5({
+          saveVersion: 6,
+          saveId: `save_${Date.now()}`,
+          savedAt: new Date().toISOString(),
+          appVersion: '2.1.0',
+          currentSport: 'football',
+          language: 'ar',
+          soundEnabled: true,
+          hasSelectedInitialClub: false,
+          isGuest: true,
+          hasClaimedLoginBonus: false,
+          club: resetHydrated.club,
+          energy: 100,
+          lastEnergyUpdate: Date.now(),
+          vipPoints: 0,
+          lastVipClaimDate: null,
+          claimedVipUpgradeChests: [1],
+          missionSkipUsedDate: null,
+          checkInStreak: 0,
+          lastCheckInDate: null,
+          savedTacticalPlans: [],
+          pendingFacilityUpgrades: [],
+          activeNegotiations: [],
+          academyDiscoveries: [],
+          scoutMarket: REAL_INITIAL_SCOUT_MARKET,
+          dailyMissions: INITIAL_DAILY_MISSIONS,
+          storyMissions: STORY_CHAPTER_1_MISSIONS,
+          leagueStandings: REAL_INITIAL_STANDINGS,
+          leagueFixtures: [],
+          matchHistory: [],
+          tournamentStats: [],
+          simulatedMatchdays: [],
+          matchScoutReports: {},
+          unlockedSpeed2x: false,
+          livingWorld: resetHydrated.livingWorld,
+        }),
+      );
       set({
-        club: resetHydrated.club,
+        club: resetSave.clubManagement
+          ? syncClubFromClubManagement(resetHydrated.club, resetSave.clubManagement)
+          : resetHydrated.club,
+        clubManagement: resetSave.clubManagement!,
+        recruitmentWorld: resetSave.recruitmentWorld!,
         vipPoints: 0,
         energy: 100,
         checkInStreak: 0,

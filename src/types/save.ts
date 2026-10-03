@@ -32,7 +32,7 @@ import {
  * Increment this whenever a non-backward-compatible change is introduced
  * and provide a corresponding migration function in persistenceService.ts.
  */
-export const CURRENT_SAVE_VERSION = 5;
+export const CURRENT_SAVE_VERSION = 6;
 
 /**
  * Full Canonical Game Save Schema (Version 2)
@@ -96,6 +96,9 @@ export interface GameSaveData {
 
   /** Phase D recruitment slice (knowledge, sparse world truth, transfer windows). */
   recruitmentWorld?: RecruitmentWorldState;
+
+  /** Phase E club management (finance ledger, staff, board, fans, delegation). */
+  clubManagement?: import('../domain/clubManagement/types').ClubManagementState;
 
   /**
    * Unknown root-level JSON keys preserved across migrate/export/import.

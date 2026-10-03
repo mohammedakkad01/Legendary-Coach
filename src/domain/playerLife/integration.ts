@@ -38,12 +38,17 @@ export function runPostMatchPlayerLife(
       medicalCenterLevel: tick.medicalCenterLevel,
       recentMatchesIn7Days: tick.recentMatchesIn7Days,
       minutesThisMatch: s.minutes,
+      medicalInjuryRiskMult: tick.medicalInjuryRiskMult,
     });
     if (rng.nextChance(prob)) {
       const injChange = injuryStateChangeFromMatch(
         player,
         s.minutes,
-        { medicalCenterLevel: tick.medicalCenterLevel, recentMatchesIn7Days: tick.recentMatchesIn7Days },
+        {
+          medicalCenterLevel: tick.medicalCenterLevel,
+          recentMatchesIn7Days: tick.recentMatchesIn7Days,
+          medicalDiagnosisMult: tick.medicalDiagnosisMult,
+        },
         rng,
       );
       if (injChange) {

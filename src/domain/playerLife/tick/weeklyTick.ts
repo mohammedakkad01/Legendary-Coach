@@ -29,7 +29,11 @@ export function buildWeeklyPlayerLifeChanges(
 
     let injuryPatch = life?.condition.injury;
     if (injuryPatch) {
-      const next = advanceInjuryWeek(injuryPatch, tick.medicalCenterLevel);
+      const next = advanceInjuryWeek(
+        injuryPatch,
+        tick.medicalCenterLevel,
+        tick.medicalRecoveryMult ?? 1,
+      );
       injuryPatch = next ?? undefined;
     }
 
@@ -55,7 +59,12 @@ export function buildWeeklyPlayerLifeChanges(
       },
     });
 
-    const dev = weeklyDevelopmentProgress(player, minutesLast, tick.trainingGroundLevel);
+    const dev = weeklyDevelopmentProgress(
+      player,
+      minutesLast,
+      tick.trainingGroundLevel,
+      tick.staffDevelopmentMult ?? 1,
+    );
     if (dev.overallDelta > 0 || dev.devPatch.momentum !== undefined) {
       changes.push({
         kind: 'patchPlayerLife',

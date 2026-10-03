@@ -40,6 +40,7 @@ export interface BuildReportInput {
   truth: TrueWorldPlayer;
   currentConfidencePct: number;
   reportId: string;
+  scoutReportQualityMult?: number;
 }
 
 export function buildScoutingReport(input: BuildReportInput): ScoutingReport {
@@ -76,7 +77,8 @@ export function buildScoutingReport(input: BuildReportInput): ScoutingReport {
   const matchBonus =
     input.assignment.matchesWatched * T.scouting.confidencePerMatchWatched;
   const reportBonus = T.scouting.confidencePerReport;
-  const qualityBonus = Math.round((quality - 50) / 10);
+  const scoutReportQualityMult = input.scoutReportQualityMult ?? 1;
+  const qualityBonus = Math.round(((quality - 50) / 10) * scoutReportQualityMult);
   const confidenceDeltaApplied = reportBonus + matchBonus + qualityBonus;
 
   return {

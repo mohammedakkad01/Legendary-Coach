@@ -11,6 +11,8 @@ import { ensureLivingWorldV3 } from '../../domain/livingWorld/migrateLivingWorld
 import { ensureFootballSimulationV4 } from '../../domain/tactics/migrateFootballSimulation';
 import { ensurePlayerLifeV4 } from '../../domain/playerLife/migratePlayerLife';
 import { ensureRecruitmentV5 } from '../../domain/recruitment/migration/migrateRecruitmentV5';
+import { ensureClubManagementV6 } from '../../domain/clubManagement/migration/migrateClubManagementV6';
+import { syncClubFromClubManagement } from '../../domain/clubManagement/syncLegacyClub';
 import { attachPassthrough } from './savePassthrough';
 import { Club, Fixture, LeagueStanding, DailyMission, StoryMission } from '../../types/game';
 import { REAL_INITIAL_PLAYER_CLUB, REAL_INITIAL_STANDINGS, REAL_INITIAL_SCOUT_MARKET } from '../../data/realFootballData';
@@ -116,7 +118,11 @@ export class MigrationService {
     const withFootball = ensureFootballSimulationV4(withWorld);
     const withPlayerLife = ensurePlayerLifeV4(withFootball);
     const withRecruitment = ensureRecruitmentV5(withPlayerLife);
-    return attachPassthrough(withRecruitment, raw);
+    const withClubManagement = ensureClubManagementV6(withRecruitment);
+    const syncedClub = withClubManagement.clubManagement
+      ? syncClubFromClubManagement(withClubManagement.club, withClubManagement.clubManagement)
+      : withClubManagement.club;
+    return attachPassthrough({ ...withClubManagement, club: syncedClub }, raw);
   }
 }
 

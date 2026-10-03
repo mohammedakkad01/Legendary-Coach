@@ -145,6 +145,11 @@ export interface ManagerCareerState {
   reputationLedger: ManagerReputationLedgerEntry[];
   tacticalIdentity?: TacticalIdentitySnapshot;
   tacticalUsageHistory?: TacticalUsageSample[];
+  /** Phase E — controlled dismissal handoff (optional on old saves). */
+  employmentStatus?: 'employed' | 'dismissed';
+  employedClubId?: string;
+  dismissedFromClubId?: string;
+  dismissedAtSeason?: number;
 }
 
 export type EventSeverity = 'low' | 'medium' | 'high' | 'critical';

@@ -67,6 +67,7 @@ export function resolveSetPiece(
   attackPlan: SetPiecePlan | undefined,
   defendPlan: SetPiecePlan | undefined,
   rng: SeededRandom,
+  setPieceQualityMult = 1,
 ): SetPieceOutcome {
   const defaultTaker =
     type === 'corner_attack'
@@ -102,11 +103,13 @@ export function resolveSetPiece(
     if (p) blockBonus += attr(p, 'physical') * 0.02;
   }
 
+  const quality = Math.max(0.5, Math.min(1.5, setPieceQualityMult));
   const attackScore =
-    delivery * SIM_WEIGHTS.setPieceDeliveryWeight +
-    attackAerial * SIM_WEIGHTS.setPieceAerialWeight +
-    blockBonus +
-    (100 - defAerial) * (1 - SIM_WEIGHTS.setPieceDeliveryWeight - SIM_WEIGHTS.setPieceAerialWeight);
+    (delivery * SIM_WEIGHTS.setPieceDeliveryWeight +
+      attackAerial * SIM_WEIGHTS.setPieceAerialWeight +
+      blockBonus +
+      (100 - defAerial) * (1 - SIM_WEIGHTS.setPieceDeliveryWeight - SIM_WEIGHTS.setPieceAerialWeight)) *
+    quality;
 
   const onTarget = rng.nextFloat() < Math.min(0.55, Math.max(0.18, 0.22 + attackScore / 400));
   const ratio = attackScore / Math.max(40, defAerial);

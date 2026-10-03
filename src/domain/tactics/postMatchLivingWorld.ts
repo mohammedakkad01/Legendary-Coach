@@ -25,6 +25,7 @@ export function buildPostMatchLivingWorldResult(
   record: MatchRecord,
   opponentClubId: string,
   nowIso: string,
+  oppositionAnalysisMult = 1,
 ): PostMatchLivingWorldResult {
   const changes: StateChange[] = [];
   const events: GameEvent[] = [];
@@ -73,15 +74,21 @@ export function buildPostMatchLivingWorldResult(
     const leftShare = attTotal > 0 ? Math.round((a.homeAttLeft / attTotal) * 100) : 33;
     const rightShare = attTotal > 0 ? Math.round((a.homeAttRight / attTotal) * 100) : 33;
     const prev = livingWorld.opponentTacticalScouting?.[opponentClubId];
-    const entry = mergeScouting(prev, opponentClubId, {
-      attackLeftShare: leftShare,
-      attackRightShare: rightShare,
-      possession: record.stats.homePossession,
-      pressSuccessRate:
-        a.homePressAttempts > 0
-          ? Math.round((a.homePressSuccess / Math.max(1, a.homePressAttempts)) * 100)
-          : 0,
-    });
+    const sampleCap = Math.min(12, Math.max(4, Math.round(8 * oppositionAnalysisMult)));
+    const entry = mergeScouting(
+      prev,
+      opponentClubId,
+      {
+        attackLeftShare: leftShare,
+        attackRightShare: rightShare,
+        possession: record.stats.homePossession,
+        pressSuccessRate:
+          a.homePressAttempts > 0
+            ? Math.round((a.homePressSuccess / Math.max(1, a.homePressAttempts)) * 100)
+            : 0,
+      },
+      sampleCap,
+    );
     changes.push({ kind: 'mergeOpponentScouting', entry });
   }
 

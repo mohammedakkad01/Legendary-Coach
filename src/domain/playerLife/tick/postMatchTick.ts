@@ -85,11 +85,19 @@ export function buildPostMatchPlayerLifeChanges(
 export function injuryStateChangeFromMatch(
   player: Player,
   minutes: number,
-  ctx: { medicalCenterLevel: number; recentMatchesIn7Days: number },
+  ctx: {
+    medicalCenterLevel: number;
+    recentMatchesIn7Days: number;
+    medicalDiagnosisMult?: number;
+  },
   rng: SeededRandom,
 ): StateChange | null {
   if (minutes < 15) return null;
-  const injury = rollInjury(rng, { medicalCenterLevel: ctx.medicalCenterLevel, fatigueInjury: player.fatigue > 75 });
+  const injury = rollInjury(rng, {
+    medicalCenterLevel: ctx.medicalCenterLevel,
+    fatigueInjury: player.fatigue > 75,
+    medicalDiagnosisMult: ctx.medicalDiagnosisMult,
+  });
   return {
     kind: 'patchPlayerLife',
     playerId: player.id,

@@ -128,8 +128,25 @@ export {
   syncRecruitmentCalendarFromSave,
   runRecruitmentCalendarSync,
   applyScoutingPatchesToSave,
+  runWeeklyRecruitmentTickOnSave,
 } from './integration';
-export type { RecruitmentIntegrationResult } from './integration';
+export type {
+  RecruitmentIntegrationResult,
+  WeeklyRecruitmentTickSaveInput,
+  WeeklyRecruitmentTickSaveResult,
+} from './integration';
+
+export {
+  runWeeklyRecruitmentTick,
+  shouldRunAcademyIntakeForCalendarWeek,
+} from './tick/weeklyRecruitmentTick';
+export type {
+  RecruitmentWeeklyTickInput,
+  RecruitmentWeeklyTickResult,
+  WeeklyRecruitmentTickSkipReason,
+} from './tick/weeklyRecruitmentTick';
+
+export type { RecruitmentWeeklyTickState } from './types';
 
 export type {
   TransferMotivationSignalContext,

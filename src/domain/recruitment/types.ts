@@ -20,7 +20,12 @@ import type {
   RecruitmentFocusConfig,
 } from './academy/academyTypes';
 
-export const RECRUITMENT_WORLD_SCHEMA_VERSION = 8 as const;
+export const RECRUITMENT_WORLD_SCHEMA_VERSION = 9 as const;
+
+export interface RecruitmentWeeklyTickState {
+  /** Highest game week for which `runWeeklyRecruitmentTick` has been applied. */
+  lastProcessedGameWeek: number;
+}
 
 export type TransferWindowPhase = 'closed' | 'summer' | 'winter';
 
@@ -86,6 +91,7 @@ export interface RecruitmentWorldState {
   rumorThrottle: RumorThrottleState;
   academyFocusByClubId: Record<string, RecruitmentFocusConfig>;
   academyIntakeRecords: AcademyIntakeRecord[];
+  weeklyTick: RecruitmentWeeklyTickState;
 }
 
 export interface RecruitmentTickContext {
@@ -109,4 +115,5 @@ export type RecruitmentPatch =
   | { kind: 'setRumorThrottle'; throttle: RumorThrottleState }
   | { kind: 'setAcademyFocus'; clubId: string; focus: RecruitmentFocusConfig }
   | { kind: 'upsertWorldPlayer'; player: import('./trueProfile/types').TrueWorldPlayer }
-  | { kind: 'appendAcademyIntakeRecord'; record: AcademyIntakeRecord };
+  | { kind: 'appendAcademyIntakeRecord'; record: AcademyIntakeRecord }
+  | { kind: 'setWeeklyTickState'; weeklyTick: RecruitmentWeeklyTickState };

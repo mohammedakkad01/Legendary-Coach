@@ -73,27 +73,26 @@ const clubCtx = (clubId: string) => ({
   regionCode: 'SA',
 });
 
-section('Migration bumps recruitment schema to v8');
+section('Migration bumps recruitment schema to v9');
 {
   const save = baseSave();
-  assertEqual(save.recruitmentWorld!.schemaVersion, 8, 'schema v8');
-  assertEqual(RECRUITMENT_WORLD_SCHEMA_VERSION, 8, 'constant v8');
+  assertEqual(save.recruitmentWorld!.schemaVersion, 9, 'schema v9');
+  assertEqual(RECRUITMENT_WORLD_SCHEMA_VERSION, 9, 'constant v9');
   assertEqual(Object.keys(save.recruitmentWorld!.academyFocusByClubId).length, 0, 'empty focus map');
   assertEqual(save.recruitmentWorld!.academyIntakeRecords.length, 0, 'empty intake history');
   const twice = ensureRecruitmentV5(clone(save));
   assertEqual(JSON.stringify(save.recruitmentWorld), JSON.stringify(twice.recruitmentWorld), 'idempotent');
 }
 
-section('v7 → v8 upgrade');
+section('v8 → v9 upgrade (academy fields from v7 chain)');
 {
   const save = baseSave();
-  const v7 = clone(save.recruitmentWorld!);
-  v7.schemaVersion = 7;
-  delete (v7 as { academyFocusByClubId?: unknown }).academyFocusByClubId;
-  delete (v7 as { academyIntakeRecords?: unknown }).academyIntakeRecords;
-  const up = ensureRecruitmentV5({ ...save, recruitmentWorld: v7 as GameSaveData['recruitmentWorld'] });
-  assertEqual(up.recruitmentWorld!.schemaVersion, 8, 'v7→v8');
-  assertEqual(up.recruitmentWorld!.academyIntakeRecords.length, 0, 'records init');
+  const v8 = clone(save.recruitmentWorld!);
+  v8.schemaVersion = 8;
+  delete (v8 as { weeklyTick?: unknown }).weeklyTick;
+  const up = ensureRecruitmentV5({ ...save, recruitmentWorld: v8 as GameSaveData['recruitmentWorld'] });
+  assertEqual(up.recruitmentWorld!.schemaVersion, 9, 'v8→v9');
+  assertEqual(up.recruitmentWorld!.weeklyTick.lastProcessedGameWeek, 0, 'weeklyTick init');
 }
 
 section('Recruitment focus normalization & position pools');

@@ -10,6 +10,11 @@ import type { RecruitmentPatch, RecruitmentWorldState } from './types';
 import { applyRecruitmentPatches } from './reducer';
 import { calendarWeekFromGameWeek, deriveGameWeekFromSave } from './world/gameWeek';
 import { buildTransferWindowState } from './world/transferWindow';
+import {
+  runWeeklyRecruitmentTick,
+  type RecruitmentWeeklyTickInput,
+  type RecruitmentWeeklyTickResult,
+} from './tick/weeklyRecruitmentTick';
 
 export interface RecruitmentIntegrationResult {
   save: GameSaveData;
@@ -61,4 +66,42 @@ export function applyScoutingPatchesToSave(
   patches: readonly RecruitmentPatch[],
 ): RecruitmentIntegrationResult {
   return applyRecruitmentToSave(save, patches);
+}
+
+export type WeeklyRecruitmentTickSaveInput = Omit<
+  RecruitmentWeeklyTickInput,
+  'worldSeed' | 'gameWeek' | 'userClubId'
+> & {
+  gameWeek?: number;
+  userClubId?: string;
+};
+
+export interface WeeklyRecruitmentTickSaveResult extends RecruitmentWeeklyTickResult {
+  save: GameSaveData;
+  recruitmentWorld: RecruitmentWorldState;
+}
+
+/** Apply one weekly recruitment tick and persist patches on save (store hook point). */
+export function runWeeklyRecruitmentTickOnSave(
+  save: GameSaveData,
+  input: WeeklyRecruitmentTickSaveInput,
+): WeeklyRecruitmentTickSaveResult {
+  const base = save.recruitmentWorld;
+  if (!base) {
+    throw new Error('recruitmentWorld missing — run ensureRecruitmentV5 first');
+  }
+  const gameWeek = input.gameWeek ?? deriveGameWeekFromSave(save);
+  const userClubId = input.userClubId ?? save.club.id;
+  const tick = runWeeklyRecruitmentTick(base, {
+    ...input,
+    worldSeed: base.worldSeed,
+    gameWeek,
+    userClubId,
+  });
+  const recruitmentWorld = applyRecruitmentPatches(base, tick.patches);
+  return {
+    save: { ...save, recruitmentWorld },
+    recruitmentWorld,
+    ...tick,
+  };
 }

@@ -29,8 +29,9 @@ type LegacyRecruitmentWorld = Omit<
   | 'rumorThrottle'
   | 'academyFocusByClubId'
   | 'academyIntakeRecords'
+  | 'weeklyTick'
 > & {
-  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+  schemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
   negotiations?: RecruitmentWorldState['negotiations'];
   aiClubProfiles?: RecruitmentWorldState['aiClubProfiles'];
   transferRumors?: RecruitmentWorldState['transferRumors'];
@@ -38,6 +39,7 @@ type LegacyRecruitmentWorld = Omit<
   rumorThrottle?: RecruitmentWorldState['rumorThrottle'];
   academyFocusByClubId?: RecruitmentWorldState['academyFocusByClubId'];
   academyIntakeRecords?: RecruitmentWorldState['academyIntakeRecords'];
+  weeklyTick?: RecruitmentWorldState['weeklyTick'];
 };
 
 type AnyRecruitmentWorld = LegacyRecruitmentWorld;
@@ -72,6 +74,7 @@ function upgradeToCurrentSchema(save: GameSaveData, world: LegacyRecruitmentWorl
     rumorThrottle: world.rumorThrottle ?? emptyRumorThrottleState(),
     academyFocusByClubId: world.academyFocusByClubId ?? {},
     academyIntakeRecords: world.academyIntakeRecords ?? [],
+    weeklyTick: world.weeklyTick ?? { lastProcessedGameWeek: 0 },
   };
   return attachAiClubProfiles(upgraded, save);
 }
@@ -135,6 +138,7 @@ function buildFreshRecruitmentWorld(save: GameSaveData): RecruitmentWorldState {
     rumorThrottle: emptyRumorThrottleState(),
     academyFocusByClubId: {},
     academyIntakeRecords: [],
+    weeklyTick: { lastProcessedGameWeek: 0 },
   };
   return attachAiClubProfiles(baseWorld, save);
 }

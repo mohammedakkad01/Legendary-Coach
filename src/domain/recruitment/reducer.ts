@@ -114,6 +114,8 @@ function applyOne(state: RecruitmentWorldState, patch: RecruitmentPatch): Recrui
           academyIntakeRecords.length > max ? academyIntakeRecords.slice(-max) : academyIntakeRecords,
       };
     }
+    case 'setWeeklyTickState':
+      return { ...state, weeklyTick: patch.weeklyTick };
     default: {
       const _exhaustive: never = patch;
       return _exhaustive;

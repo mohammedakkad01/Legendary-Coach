@@ -190,6 +190,11 @@ export const RECRUITMENT_TUNING = {
     },
   },
 
+  weeklyTick: {
+    /** Calendar weeks (1–52) when user-club academy intake runs during weekly tick. */
+    intakeCalendarWeeks: [2, 28] as const,
+  },
+
   academy: {
     baseProspectsPerIntake: bounded(2, 1, 4),
     prospectsPerAcademyLevel: bounded(0.35, 0.1, 0.6),

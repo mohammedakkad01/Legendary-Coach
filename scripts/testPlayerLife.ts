@@ -26,7 +26,7 @@ import { frustrationFromMinutesShortfall } from '../src/domain/playerLife/playin
 import { rollInjury, advanceInjuryWeek } from '../src/domain/playerLife/injuryLifecycle';
 import { computeInMatchInjuryProbability } from '../src/domain/playerLife/injuryRisk';
 import { createEmptyLivingWorld } from '../src/domain/livingWorld';
-import { LIVING_WORLD_SCHEMA_VERSION_V2 } from '../src/domain/livingWorld/types';
+import { LIVING_WORLD_SCHEMA_VERSION_V2, LIVING_WORLD_SCHEMA_VERSION_V3 } from '../src/domain/livingWorld/types';
 import { CURRENT_SAVE_VERSION } from '../src/types/save';
 import { persistenceService } from '../src/services/persistenceService';
 import type { Player } from '../src/types/game';
@@ -252,7 +252,11 @@ section('Save migration v3 → v4 idempotent');
   const twice = persistenceService.migrate(once);
   assertEqual(once.saveVersion, CURRENT_SAVE_VERSION, 'migrated to v4');
   assert(once.club.footballSquad.every((p) => p.playerLife !== undefined), 'playerLife on all players');
-  assertEqual(once.livingWorld?.schemaVersion, LIVING_WORLD_SCHEMA_VERSION_V2, 'livingWorld v2');
+  assert(
+    once.livingWorld?.schemaVersion === LIVING_WORLD_SCHEMA_VERSION_V2 ||
+      once.livingWorld?.schemaVersion === LIVING_WORLD_SCHEMA_VERSION_V3,
+    'livingWorld v2 or v3 after migration',
+  );
   assertEqual(JSON.stringify(once.livingWorld?.dressingRoom), JSON.stringify(twice.livingWorld?.dressingRoom), 'idempotent dressingRoom');
 }
 

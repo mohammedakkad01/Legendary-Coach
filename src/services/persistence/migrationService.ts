@@ -12,6 +12,7 @@ import { ensureFootballSimulationV4 } from '../../domain/tactics/migrateFootball
 import { ensurePlayerLifeV4 } from '../../domain/playerLife/migratePlayerLife';
 import { ensureRecruitmentV5 } from '../../domain/recruitment/migration/migrateRecruitmentV5';
 import { ensureClubManagementV6 } from '../../domain/clubManagement/migration/migrateClubManagementV6';
+import { ensureLivingWorldPhaseF } from '../../domain/livingWorld/migrateLivingWorldPhaseF';
 import { syncClubFromClubManagement } from '../../domain/clubManagement/syncLegacyClub';
 import { attachPassthrough } from './savePassthrough';
 import { Club, Fixture, LeagueStanding, DailyMission, StoryMission } from '../../types/game';
@@ -119,10 +120,11 @@ export class MigrationService {
     const withPlayerLife = ensurePlayerLifeV4(withFootball);
     const withRecruitment = ensureRecruitmentV5(withPlayerLife);
     const withClubManagement = ensureClubManagementV6(withRecruitment);
-    const syncedClub = withClubManagement.clubManagement
-      ? syncClubFromClubManagement(withClubManagement.club, withClubManagement.clubManagement)
-      : withClubManagement.club;
-    return attachPassthrough({ ...withClubManagement, club: syncedClub }, raw);
+    const withPhaseF = ensureLivingWorldPhaseF(withClubManagement);
+    const syncedClub = withPhaseF.clubManagement
+      ? syncClubFromClubManagement(withPhaseF.club, withPhaseF.clubManagement)
+      : withPhaseF.club;
+    return attachPassthrough({ ...withPhaseF, club: syncedClub }, raw);
   }
 }
 

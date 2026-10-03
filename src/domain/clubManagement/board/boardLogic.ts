@@ -65,6 +65,8 @@ export function applyResultToBoardTrust(
 export function evaluateBoardConsequenceLadder(
   board: BoardSlice,
   gameWeek: number,
+  season: number,
+  clubId: string,
 ): { board: BoardSlice; events: GameEvent[]; changes: ClubManagementChange[] } {
   const events: GameEvent[] = [];
   const changes: ClubManagementChange[] = [];
@@ -82,7 +84,7 @@ export function evaluateBoardConsequenceLadder(
   const cooldownOk = gameWeek - next.lastMessageWeek >= BOARD_TUNING.messageCooldownWeeks;
 
   if (level === 'warning' && cooldownOk && next.consequenceLevel !== 'warning') {
-    events.push(boardEvent('board.warning', gameWeek, 'medium', { level: 'warning' }));
+    events.push(boardEvent('board.warning', gameWeek, season, clubId, 'medium', { level: 'warning' }));
     next = { ...next, consequenceLevel: 'warning', lastMessageWeek: gameWeek };
   }
 
@@ -93,7 +95,7 @@ export function evaluateBoardConsequenceLadder(
     next.consequenceLevel !== 'transfer_restricted'
   ) {
     const until = gameWeek + BOARD_TUNING.transferRestrictionWeeks;
-    events.push(boardEvent('board.ultimatum', gameWeek, 'high', { restrictedUntilWeek: until }));
+    events.push(boardEvent('board.ultimatum', gameWeek, season, clubId, 'high', { restrictedUntilWeek: until }));
     next = {
       ...next,
       consequenceLevel: 'transfer_restricted',
@@ -107,7 +109,7 @@ export function evaluateBoardConsequenceLadder(
   }
 
   if (level === 'dismissed' && next.consequenceLevel !== 'dismissed') {
-    events.push(boardEvent('board.dismissed', gameWeek, 'critical', {}));
+    events.push(boardEvent('board.dismissed', gameWeek, season, clubId, 'critical', {}));
     next = { ...next, consequenceLevel: 'dismissed', lastMessageWeek: gameWeek };
   }
 
@@ -118,14 +120,17 @@ export function evaluateBoardConsequenceLadder(
 function boardEvent(
   type: string,
   gameWeek: number,
+  season: number,
+  clubId: string,
   severity: GameEvent['severity'],
   context: Record<string, string | number | boolean>,
 ): GameEvent {
   return {
-    id: `evt_${type}_${gameWeek}_${Date.now()}`,
+    id: `evt_${type}_${gameWeek}_${season}`,
     type,
     timestamp: new Date().toISOString(),
-    season: 1,
+    season,
+    clubId,
     severity,
     context: { gameWeek, ...context },
   };

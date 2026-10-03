@@ -4,6 +4,8 @@
  */
 
 import type { GameEvent, ReducerInput, StateChange, PlayerMentalStateDelta } from '../types';
+import { LIVING_WORLD_TUNING } from '../config/livingWorldTuning';
+import { handlerChangesFromReputationEvent } from '../manager/reputationCatalog';
 export type GameEventHandler = (event: GameEvent, input: ReducerInput) => StateChange[];
 
 const handlers = new Map<string, GameEventHandler>();
@@ -70,6 +72,10 @@ export function registerDefaultHandlers(): void {
       },
     ];
   });
+
+  for (const key of Object.keys(LIVING_WORLD_TUNING.reputation.deltas) as (keyof typeof LIVING_WORLD_TUNING.reputation.deltas)[]) {
+    registerHandler(`manager.reputation.${key}`, (event) => handlerChangesFromReputationEvent(event));
+  }
 
   registerHandler('manager.tactical_identity_shift', (event) => {
     const tags = String(event.context.tags ?? '');

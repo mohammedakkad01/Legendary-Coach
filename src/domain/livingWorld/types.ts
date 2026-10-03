@@ -143,6 +143,8 @@ export interface TacticalUsageSample {
 export interface ManagerCareerState {
   reputation: number;
   reputationLedger: ManagerReputationLedgerEntry[];
+  /** Phase F — media-facing reputation (presentation systems). */
+  mediaReputation?: number;
   tacticalIdentity?: TacticalIdentitySnapshot;
   tacticalUsageHistory?: TacticalUsageSample[];
   /** Phase E — controlled dismissal handoff (optional on old saves). */
@@ -150,6 +152,8 @@ export interface ManagerCareerState {
   employedClubId?: string;
   dismissedFromClubId?: string;
   dismissedAtSeason?: number;
+  /** Phase F — offers when dismissed (domain only; no club-switch UX). */
+  pendingJobOffers?: import('./manager/jobOffers').ManagerJobOffer[];
 }
 
 export type EventSeverity = 'low' | 'medium' | 'high' | 'critical';
@@ -190,7 +194,7 @@ export interface NotificationThrottleState {
 }
 
 export interface LivingWorldState {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   currentSeason: number;
   managerCareer: ManagerCareerState;
   clubMemory: ClubMemoryEntry[];
@@ -206,10 +210,13 @@ export interface LivingWorldState {
   captaincyHistory?: CaptaincyHistoryEntry[];
   /** Opponent → compact scouting tendencies (Phase B). */
   opponentTacticalScouting?: Record<string, OpponentTacticalScoutingCompact>;
+  /** Phase F — bounded history/story/news/press/narrative cache (not a derived dump). */
+  phaseF?: import('./phaseF/types').LivingWorldPhaseFState;
 }
 
 export const LIVING_WORLD_SCHEMA_VERSION = 1 as const;
 export const LIVING_WORLD_SCHEMA_VERSION_V2 = 2 as const;
+export const LIVING_WORLD_SCHEMA_VERSION_V3 = 3 as const;
 export const MAX_PLAYER_MEMORIES = 24;
 export const MAX_CLUB_MEMORIES = 48;
 export const MAX_RELATIONSHIPS_PER_PLAYER = 6;
@@ -282,7 +289,15 @@ export type StateChange =
   | { kind: 'appendCaptaincyHistory'; entry: CaptaincyHistoryEntry }
   | { kind: 'setManagerTacticalIdentity'; identity: TacticalIdentitySnapshot }
   | { kind: 'appendTacticalUsage'; sample: TacticalUsageSample }
-  | { kind: 'mergeOpponentScouting'; entry: OpponentTacticalScoutingCompact };
+  | { kind: 'mergeOpponentScouting'; entry: OpponentTacticalScoutingCompact }
+  | {
+      kind: 'patchPhaseF';
+      clubId: string;
+      patch: Partial<import('./phaseF/types').LivingWorldPhaseFState> & {
+        clubHistory?: Partial<import('./phaseF/types').ClubHistoryState>;
+        pressCooldowns?: Partial<import('./phaseF/types').PressCooldownState>;
+      };
+    };
 
 export interface ReducerInput {
   livingWorld: LivingWorldState;

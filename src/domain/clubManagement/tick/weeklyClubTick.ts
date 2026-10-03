@@ -114,7 +114,7 @@ export function runWeeklyClubManagementTick(input: WeeklyClubTickInput): WeeklyC
     cm = applyClubManagementChanges(cm, [{ kind: 'patchBoard', patch: board }]);
   }
 
-  const ladder = evaluateBoardConsequenceLadder(cm.board, input.gameWeek);
+  const ladder = evaluateBoardConsequenceLadder(cm.board, input.gameWeek, season, input.club.id);
   cm = applyClubManagementChanges(cm, ladder.changes);
   events.push(...ladder.events);
 

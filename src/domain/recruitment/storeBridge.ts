@@ -8,9 +8,7 @@
 import type { Club, LeagueStanding, Player } from '../../types/game';
 import type { GameSaveData } from '../../types/save';
 import type { GameEvent, LivingWorldState } from '../livingWorld/types';
-import { applyStateChanges } from '../livingWorld/reducer';
-import { deriveNotificationsFromEvent } from '../livingWorld/notifications/derive';
-import { filterNotificationsByThrottle } from '../livingWorld/notifications/throttle';
+import { ingestGameEventBatch } from '../livingWorld/events/ingest';
 import type { ReducerInput } from '../livingWorld/types';
 import type { AiClubWeeklyBatchEntry } from './aiClubs/weeklyAiTransferBatch';
 import type { TransferTargetCandidate } from './aiClubs/clubProfileTypes';
@@ -220,24 +218,12 @@ export function buildWeeklyRecruitmentTickInputFromSave(
 export function dispatchRecruitmentEventsToLivingWorld(
   input: ReducerInput,
   events: readonly GameEvent[],
+  options?: { gameWeek?: number; clubId?: string },
 ): ReducerInput {
-  let acc = input;
-  for (const event of events) {
-    const notifs = deriveNotificationsFromEvent(event);
-    const { accepted, throttle } = filterNotificationsByThrottle(
-      acc.livingWorld.notificationThrottle,
-      notifs,
-    );
-    acc = applyStateChanges(acc, [
-      { kind: 'appendGameEvent', event },
-      ...accepted.map((n) => ({ kind: 'addNotification' as const, notification: n })),
-    ]);
-    acc = {
-      ...acc,
-      livingWorld: { ...acc.livingWorld, notificationThrottle: throttle },
-    };
-  }
-  return acc;
+  return ingestGameEventBatch(input, events, {
+    gameWeek: options?.gameWeek,
+    clubId: options?.clubId,
+  });
 }
 
 export interface WeeklyRecruitmentStoreResult {
@@ -306,6 +292,7 @@ export function applyUserWeeklyRecruitment(params: {
     const dispatched = dispatchRecruitmentEventsToLivingWorld(
       { livingWorld, players: club.footballSquad },
       tick.events,
+      { clubId: club.id, gameWeek: tickInput.gameWeek },
     );
     livingWorld = dispatched.livingWorld;
     club = { ...club, footballSquad: dispatched.players };

@@ -253,8 +253,18 @@ export function applyPostMatchFanUpdate(
   drawn: boolean,
   ticketPrice: number,
   gameWeek: number,
+  season: number,
+  clubId: string,
 ): ClubManagementState {
-  const { fans, changes } = applyMatchResultToFans(cm.fans, won, drawn, ticketPrice, gameWeek);
+  const { fans, changes } = applyMatchResultToFans(
+    cm.fans,
+    won,
+    drawn,
+    ticketPrice,
+    gameWeek,
+    season,
+    clubId,
+  );
   return applyClubManagementChanges(cm, changes);
 }
 

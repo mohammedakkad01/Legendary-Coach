@@ -24,6 +24,8 @@ export function applyMatchResultToFans(
   drawn: boolean,
   ticketPrice: number,
   gameWeek: number,
+  season: number,
+  clubId: string,
 ): { fans: FansSlice; events: GameEvent[]; changes: ClubManagementChange[] } {
   let delta = FANS_TUNING.moodFromDraw;
   if (won) delta = FANS_TUNING.moodFromWin;
@@ -40,10 +42,11 @@ export function applyMatchResultToFans(
   const events: GameEvent[] = [];
   if (Math.abs(delta) >= 3) {
     events.push({
-      id: `evt_fans_mood_${gameWeek}`,
+      id: `evt_fans_mood_${gameWeek}_${season}`,
       type: 'fans.mood_shift',
       timestamp: new Date().toISOString(),
-      season: 1,
+      season,
+      clubId,
       severity: 'low',
       context: {
         delta,

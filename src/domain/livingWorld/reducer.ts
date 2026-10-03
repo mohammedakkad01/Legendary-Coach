@@ -19,6 +19,8 @@ import { createDefaultPlayerLife } from '../playerLife/migratePlayerLife';
 import { mergePlayerLife, syncLegacyFromPlayerLife } from '../playerLife/syncLegacy';
 import { clamp100, clampForm } from '../playerLife/math';
 import { PLAYER_LIFE as PL } from '../../config/gameTuning';
+import { applyPhaseFPatch } from './phaseF/applyPatch';
+import { LIVING_WORLD_TUNING } from './config/livingWorldTuning';
 
 function updatePlayer(players: Player[], playerId: string, updater: (p: Player) => Player): Player[] {
   return players.map((p) => (p.id === playerId ? updater(p) : p));
@@ -128,19 +130,31 @@ function applyOne(input: ReducerInput, change: StateChange): ReducerInput {
         },
         players,
       };
-    case 'changeManagerReputation':
+    case 'changeManagerReputation': {
+      const nextCareer = applyManagerReputationChange(livingWorld.managerCareer, change.delta, {
+        eventType: change.eventType,
+        delta: change.delta,
+        gameEventId: change.gameEventId,
+        season: change.season,
+      });
+      const ledgerCap = LIVING_WORLD_TUNING.reputation.ledgerMaxEntries;
+      const reputationLedger =
+        nextCareer.reputationLedger.length > ledgerCap
+          ? nextCareer.reputationLedger.slice(nextCareer.reputationLedger.length - ledgerCap)
+          : nextCareer.reputationLedger;
+      const mediaReputation = clamp(
+        (livingWorld.managerCareer.mediaReputation ?? nextCareer.reputation) + change.delta * 0.5,
+        0,
+        100,
+      );
       return {
         livingWorld: {
           ...livingWorld,
-          managerCareer: applyManagerReputationChange(livingWorld.managerCareer, change.delta, {
-            eventType: change.eventType,
-            delta: change.delta,
-            gameEventId: change.gameEventId,
-            season: change.season,
-          }),
+          managerCareer: { ...nextCareer, reputationLedger, mediaReputation },
         },
         players,
       };
+    }
     case 'addRelationship': {
       const rel = change.relationship;
       if (findRelationship(livingWorld.relationships, rel.playerAId, rel.playerBId)) {
@@ -330,6 +344,17 @@ function applyOne(input: ReducerInput, change: StateChange): ReducerInput {
         },
         players,
       };
+    case 'patchPhaseF': {
+      const phaseF = applyPhaseFPatch(livingWorld, change.clubId, change.patch);
+      return {
+        livingWorld: {
+          ...livingWorld,
+          schemaVersion: 3,
+          phaseF,
+        },
+        players,
+      };
+    }
     default: {
       const _exhaustive: never = change;
       return _exhaustive;

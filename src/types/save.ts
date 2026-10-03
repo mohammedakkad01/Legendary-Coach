@@ -32,7 +32,7 @@ import {
  * Increment this whenever a non-backward-compatible change is introduced
  * and provide a corresponding migration function in persistenceService.ts.
  */
-export const CURRENT_SAVE_VERSION = 6;
+export const CURRENT_SAVE_VERSION = 7;
 
 /**
  * Full Canonical Game Save Schema (Version 2)

@@ -112,7 +112,13 @@ import {
   type DispatchResult,
 } from '../domain/livingWorld/events/dispatch';
 import { ensureDefaultHandlersRegistered } from '../domain/livingWorld/events/registry';
+import { ingestGameEvent } from '../domain/livingWorld/events/ingest';
 import type { GameEvent, LivingWorldState } from '../domain/livingWorld/types';
+import {
+  buildMatchCompletedEvent,
+  recentUserResultsFromHistory,
+  runSeasonEndLivingWorld,
+} from '../domain/livingWorld/tick/livingWorldTick';
 import { applyUserPostMatchPlayerLife, applyUserWeeklyPlayerLife } from '../domain/playerLife/storeBridge';
 import { applyUserWeeklyRecruitment } from '../domain/recruitment/storeBridge';
 import { ensureRecruitmentV5 } from '../domain/recruitment/migration/migrateRecruitmentV5';
@@ -714,7 +720,15 @@ export const useGameStore = create<GameState>((set, get) => {
         season: state.livingWorld.currentSeason,
         timestampIso: new Date().toISOString(),
       });
-      cm = applyPostMatchFanUpdate(cm, won, drawn, state.club.finances.ticketPrice, gw);
+      cm = applyPostMatchFanUpdate(
+        cm,
+        won,
+        drawn,
+        state.club.finances.ticketPrice,
+        gw,
+        state.livingWorld.currentSeason,
+        state.club.id,
+      );
       cm = applyClubManagementChanges(cm, [
         { kind: 'patchBoard', patch: applyResultToBoardTrust(cm.board, won, drawn) },
       ]);
@@ -2622,11 +2636,38 @@ export const useGameStore = create<GameState>((set, get) => {
           const dispatched = runLivingWorldDispatch(
             { livingWorld: livingWorldNext, players: squadNext },
             evt,
+            {
+              clubId: updatedClub.id,
+              gameWeek: deriveGameWeekFromSave(buildPartialSave(state)),
+              recentUserResults: recentUserResultsFromHistory(updatedClub.id, state.matchHistory),
+            },
           );
           if (dispatched.applied) {
             livingWorldNext = dispatched.result.livingWorld;
             squadNext = dispatched.result.players;
           }
+        }
+        const matchEvt = buildMatchCompletedEvent(
+          finalRecord,
+          updatedClub,
+          finalRecord.date,
+          livingWorldNext.currentSeason,
+        );
+        const matchIngest = ingestGameEvent(
+          { livingWorld: livingWorldNext, players: squadNext },
+          matchEvt,
+          {
+            clubId: updatedClub.id,
+            gameWeek: deriveGameWeekFromSave(buildPartialSave(state)),
+            recentUserResults: recentUserResultsFromHistory(updatedClub.id, [
+              finalRecord,
+              ...state.matchHistory,
+            ]),
+          },
+        );
+        if (matchIngest.applied) {
+          livingWorldNext = matchIngest.result.livingWorld;
+          squadNext = matchIngest.result.players;
         }
         updatedClub = { ...updatedClub, footballSquad: squadNext };
 
@@ -3285,6 +3326,16 @@ export const useGameStore = create<GameState>((set, get) => {
       const rankIdx = sorted.findIndex(s => s.clubId === state.club.id);
       const position = rankIdx >= 0 ? rankIdx + 1 : 1;
 
+      ensureDefaultHandlersRegistered();
+      const seasonEnd = runSeasonEndLivingWorld({
+        livingWorld: state.livingWorld,
+        club: state.club,
+        leagueStandings: state.leagueStandings,
+        finalRank: position,
+        timestampIso: new Date().toISOString(),
+        players: state.club.footballSquad,
+      });
+
       // Prize money
       const prizeCoins = position === 1 ? 500000 : position <= 4 ? 300000 : 150000;
       const prizeDiamonds = position === 1 ? 100 : position <= 4 ? 50 : 25;
@@ -3305,6 +3356,7 @@ export const useGameStore = create<GameState>((set, get) => {
 
       set({
         club: updatedClub,
+        livingWorld: seasonEnd.livingWorld,
         leagueFixtures: freshFixtures,
         leagueStandings: freshStandings,
         tournamentStats: [],
@@ -3317,6 +3369,7 @@ export const useGameStore = create<GameState>((set, get) => {
 
       saveToStorage({
         club: updatedClub,
+        livingWorld: seasonEnd.livingWorld,
         leagueFixtures: freshFixtures,
         leagueStandings: freshStandings,
         tournamentStats: [],

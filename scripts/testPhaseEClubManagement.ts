@@ -25,6 +25,7 @@ import { createDefaultManagerCareer } from '../src/domain/livingWorld/managerCar
 import { computeMatchGateReceipt } from '../src/domain/clubManagement/tick/weeklyClubTick';
 import { FACILITY_TUNING } from '../src/domain/clubManagement/config/clubManagementTuning';
 import type { GameSaveData } from '../src/types/save';
+import { CURRENT_SAVE_VERSION } from '../src/types/save';
 import type { Player } from '../src/types/game';
 import { SeededRandom } from '../src/engine/prng';
 
@@ -82,7 +83,7 @@ function testMigrationIdempotent(): void {
   const twice = ensureClubManagementV6(once);
   assert(twice.clubManagement!.finance.coins === coinsBefore, 'opening coins preserved');
   assert(twice.clubManagement!.finance.ledger.length === once.clubManagement!.finance.ledger.length, 'idempotent ledger');
-  assert(twice.saveVersion === 6, 'save version 6');
+  assert(twice.saveVersion === CURRENT_SAVE_VERSION, 'save version current after club management migration');
 }
 
 function reasonCodesEqual(a: readonly string[], b: readonly string[]): boolean {
@@ -335,7 +336,7 @@ function testStadiumIncomeBounded(): void {
 function testBoardLadder(): void {
   const save = baseSave(100_000);
   let board = { ...save.clubManagement!.board, trust: 5, consequenceLevel: 'none' as const, lastMessageWeek: 0 };
-  const ladder = evaluateBoardConsequenceLadder(board, 10);
+  const ladder = evaluateBoardConsequenceLadder(board, 10, 1, save.club.id);
   assert(ladder.board.consequenceLevel === 'dismissed' || ladder.events.some((e) => e.type === 'board.dismissed'), 'dismissal event');
 }
 

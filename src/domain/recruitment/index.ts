@@ -262,3 +262,11 @@ export {
 } from './academy/runAcademyIntake';
 
 export { ensureRecruitmentV5 } from './migration/migrateRecruitmentV5';
+
+export {
+  applyUserWeeklyRecruitment,
+  buildWeeklyRecruitmentTickInputFromSave,
+  buildTransferMotivationSignalsFromPlayer,
+  dispatchRecruitmentEventsToLivingWorld,
+} from './storeBridge';
+export type { WeeklyRecruitmentStoreResult } from './storeBridge';

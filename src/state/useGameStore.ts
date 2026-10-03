@@ -114,6 +114,9 @@ import {
 import { ensureDefaultHandlersRegistered } from '../domain/livingWorld/events/registry';
 import type { GameEvent, LivingWorldState } from '../domain/livingWorld/types';
 import { applyUserPostMatchPlayerLife, applyUserWeeklyPlayerLife } from '../domain/playerLife/storeBridge';
+import { applyUserWeeklyRecruitment } from '../domain/recruitment/storeBridge';
+import { ensureRecruitmentV5 } from '../domain/recruitment/migration/migrateRecruitmentV5';
+import type { RecruitmentWorldState } from '../domain/recruitment';
 import {
   legacyDrillToPlan,
   stateChangesForTrainingSession,
@@ -220,6 +223,8 @@ interface GameState {
   scoutMarket: Player[];
 
   livingWorld: LivingWorldState;
+  recruitmentWorld: RecruitmentWorldState;
+  saveId: string;
   savePassthrough: Record<string, unknown>;
 
   // Actions
@@ -879,15 +884,30 @@ export const useGameStore = create<GameState>((set, get) => {
     const simulatedMatchdays = [...done].sort((a, b) => a - b);
     let weeklyClub = state.club;
     let weeklyWorld = state.livingWorld;
+    let weeklyRecruitmentWorld = state.recruitmentWorld;
     if (summary) {
       const weekly = applyUserWeeklyPlayerLife({
         club: weeklyClub,
         livingWorld: weeklyWorld,
-        saveId: state.club.id,
+        saveId: state.saveId,
         matchday: summary.matchday,
       });
       weeklyClub = weekly.club;
       weeklyWorld = weekly.livingWorld;
+
+      const recruitment = applyUserWeeklyRecruitment({
+        club: weeklyClub,
+        livingWorld: weeklyWorld,
+        scoutMarket: state.scoutMarket,
+        leagueStandings: standings,
+        simulatedMatchdays,
+        activeNegotiations: state.activeNegotiations,
+        recruitmentWorld: weeklyRecruitmentWorld,
+        saveId: state.saveId,
+      });
+      weeklyClub = recruitment.club;
+      weeklyWorld = recruitment.livingWorld;
+      weeklyRecruitmentWorld = recruitment.recruitmentWorld;
     }
     set({
       leagueStandings: standings,
@@ -896,8 +916,16 @@ export const useGameStore = create<GameState>((set, get) => {
       lastRoundSummary: summary,
       club: weeklyClub,
       livingWorld: weeklyWorld,
+      recruitmentWorld: weeklyRecruitmentWorld,
     });
-    saveToStorage({ leagueStandings: standings, tournamentStats: stats, simulatedMatchdays });
+    saveToStorage({
+      leagueStandings: standings,
+      tournamentStats: stats,
+      simulatedMatchdays,
+      club: weeklyClub,
+      livingWorld: weeklyWorld,
+      recruitmentWorld: weeklyRecruitmentWorld,
+    });
     return summary;
   };
 
@@ -915,6 +943,45 @@ export const useGameStore = create<GameState>((set, get) => {
   };
 
   const initialSave = loadSavedState();
+  const initialRecruitmentWorld: RecruitmentWorldState =
+    initialSave?.recruitmentWorld ??
+    ensureRecruitmentV5(
+      initialSave ?? {
+        saveVersion: 5,
+        saveId: `save_${Date.now()}`,
+        savedAt: new Date().toISOString(),
+        appVersion: '2.1.0',
+        currentSport: 'football',
+        language: 'ar',
+        soundEnabled: true,
+        hasSelectedInitialClub: false,
+        isGuest: true,
+        hasClaimedLoginBonus: false,
+        club: REAL_INITIAL_PLAYER_CLUB,
+        energy: 100,
+        lastEnergyUpdate: Date.now(),
+        vipPoints: 0,
+        lastVipClaimDate: null,
+        claimedVipUpgradeChests: [1],
+        missionSkipUsedDate: null,
+        checkInStreak: 0,
+        lastCheckInDate: null,
+        savedTacticalPlans: [],
+        pendingFacilityUpgrades: [],
+        activeNegotiations: [],
+        academyDiscoveries: [],
+        scoutMarket: REAL_INITIAL_SCOUT_MARKET,
+        dailyMissions: INITIAL_DAILY_MISSIONS,
+        storyMissions: STORY_CHAPTER_1_MISSIONS,
+        leagueStandings: REAL_INITIAL_STANDINGS,
+        leagueFixtures: [],
+        matchHistory: [],
+        tournamentStats: [],
+        simulatedMatchdays: [],
+        matchScoutReports: {},
+        unlockedSpeed2x: false,
+      },
+    ).recruitmentWorld!;
   const initialClubSelected = initialSave?.hasSelectedInitialClub ?? false;
   const initialHydrated = hydrateLivingWorldFromClub(
     initialSave?.club ?? REAL_INITIAL_PLAYER_CLUB,
@@ -1009,6 +1076,8 @@ export const useGameStore = create<GameState>((set, get) => {
     scoutMarket: initialSave?.scoutMarket || REAL_INITIAL_SCOUT_MARKET,
 
     livingWorld: initialHydrated.livingWorld,
+    recruitmentWorld: initialRecruitmentWorld,
+    saveId: initialSave?.saveId ?? `save_${Date.now()}`,
     savePassthrough: initialSave?.savePassthrough ?? {},
 
     setIsGuest: (val: boolean) => {

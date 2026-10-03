@@ -161,6 +161,7 @@ export class SaveService {
 
       unlockedSpeed2x: Boolean(state.unlockedSpeed2x),
       livingWorld: state.livingWorld as GameSaveData['livingWorld'],
+      recruitmentWorld: state.recruitmentWorld as GameSaveData['recruitmentWorld'],
       savePassthrough:
         state.savePassthrough && typeof state.savePassthrough === 'object'
           ? (state.savePassthrough as Record<string, unknown>)

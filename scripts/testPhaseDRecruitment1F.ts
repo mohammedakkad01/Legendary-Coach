@@ -97,14 +97,14 @@ section('Migration initializes rumor slices (schema v7)');
   assertEqual(JSON.stringify(save.recruitmentWorld), JSON.stringify(twice.recruitmentWorld), 'idempotent');
 }
 
-section('v5 → v6 upgrade preserves AI profiles');
+section('v5 world upgrades through chain to current schema');
 {
   const save = baseSave();
   const v5 = clone(save.recruitmentWorld!);
   v5.schemaVersion = 5;
   delete (v5 as { transferRumors?: unknown }).transferRumors;
   const up = ensureRecruitmentV5({ ...save, recruitmentWorld: v5 as GameSaveData['recruitmentWorld'] });
-  assertEqual(up.recruitmentWorld!.schemaVersion, 7, 'v6→v7');
+  assertEqual(up.recruitmentWorld!.schemaVersion, 7, 'v5→v7');
   assert(!!up.recruitmentWorld!.aiClubProfiles['club_man_city'], 'profiles kept');
 }
 

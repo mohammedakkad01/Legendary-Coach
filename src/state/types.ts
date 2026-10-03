@@ -262,4 +262,18 @@ export interface GameState {
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
   runCustomTrainingPlan: (plan: import('../domain/playerLife/types').TrainingSessionPlan) => boolean;
+
+  // Phase E Club Management Actions
+  applyClubManagementChanges: (changes: import('../domain/clubManagement').ClubManagementChange[]) => void;
+  hireStaffMember: (candidate: import('../domain/clubManagement').StaffMember) => { success: boolean; message: string };
+  fireStaffMember: (staffId: string) => { success: boolean; message: string };
+  updateDelegationTask: (
+    task: import('../domain/clubManagement').DelegationTask,
+    mode: import('../domain/clubManagement').DelegationMode,
+    assigneeStaffId?: string,
+  ) => void;
+  submitBoardRequest: (
+    request: import('../domain/clubManagement').BoardRequestKind,
+  ) => { approved: boolean; message: string; reasonCodes: string[] };
+  upgradeAnalyticsDepartment: () => { success: boolean; message: string };
 }

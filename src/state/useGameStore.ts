@@ -118,7 +118,19 @@ import { applyUserWeeklyRecruitment } from '../domain/recruitment/storeBridge';
 import { ensureRecruitmentV5 } from '../domain/recruitment/migration/migrateRecruitmentV5';
 import type { RecruitmentWorldState } from '../domain/recruitment';
 import { ensureClubManagementV6 } from '../domain/clubManagement/migration/migrateClubManagementV6';
-import type { ClubManagementState } from '../domain/clubManagement/types';
+import type {
+  ClubManagementState,
+  ClubManagementChange,
+  StaffMember,
+  DelegationTask,
+  DelegationMode,
+} from '../domain/clubManagement/types';
+import type { BoardRequestKind } from '../domain/clubManagement/influence/computeInfluence';
+import {
+  computeStaffWeeklyWages,
+  postFinanceTransaction,
+} from '../domain/clubManagement/finance/financeLedger';
+import { evaluateBoardRequest } from '../domain/clubManagement/influence/computeInfluence';
 import type { GameSaveData } from '../types/save';
 import {
   applyUserWeeklyClubManagement,
@@ -361,6 +373,20 @@ interface GameState {
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
   runCustomTrainingPlan: (plan: import('../domain/playerLife/types').TrainingSessionPlan) => boolean;
+
+  // Phase E Club Management Actions
+  applyClubManagementChanges: (changes: ClubManagementChange[]) => void;
+  hireStaffMember: (candidate: StaffMember) => { success: boolean; message: string };
+  fireStaffMember: (staffId: string) => { success: boolean; message: string };
+  updateDelegationTask: (
+    task: DelegationTask,
+    mode: DelegationMode,
+    assigneeStaffId?: string,
+  ) => void;
+  submitBoardRequest: (
+    request: BoardRequestKind,
+  ) => { approved: boolean; message: string; reasonCodes: string[] };
+  upgradeAnalyticsDepartment: () => { success: boolean; message: string };
 }
 
 export const useGameStore = create<GameState>((set, get) => {
@@ -4113,6 +4139,341 @@ export const useGameStore = create<GameState>((set, get) => {
       });
       saveToStorage(undefined, false);
       return true;
+    },
+
+    applyClubManagementChanges: (changes: ClubManagementChange[]) => {
+      const state = get();
+      if (!state.clubManagement) return;
+      const nextCm = applyClubManagementChanges(state.clubManagement, changes);
+      const nextClub = syncClubFromClubManagement(state.club, nextCm);
+      set({ clubManagement: nextCm, club: nextClub });
+      saveToStorage({ clubManagement: nextCm, club: nextClub });
+    },
+
+    hireStaffMember: (candidate: StaffMember) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      if (!state.clubManagement) return { success: false, message: 'Club management not initialized' };
+
+      const currentStaffWages = computeStaffWeeklyWages(state.clubManagement.staff.members.map((m) => m.weeklyWage));
+      const squadWages = state.club.footballSquad.map((p) => p.wage).reduce((a, b) => a + b, 0);
+      const totalWages = currentStaffWages + squadWages + candidate.weeklyWage;
+      if (totalWages > state.clubManagement.finance.wageBudgetWeekly * 1.35) {
+        soundEffects.playBuzz();
+        return {
+          success: false,
+          message: isAr
+            ? `⚠️ سقف الرواتب الأسبوعي لا يسمح بالتعاقد مع ${candidate.name} (الراتب: ${candidate.weeklyWage.toLocaleString()} كوينز).`
+            : `⚠️ Weekly wage ceiling exceeded for ${candidate.name} (Wage: ${candidate.weeklyWage.toLocaleString()} coins).`,
+        };
+      }
+
+      const signingFee = candidate.weeklyWage * 2;
+      if (state.clubManagement.finance.coins < signingFee) {
+        soundEffects.playBuzz();
+        return {
+          success: false,
+          message: isAr
+            ? `❌ الرصيد المالي غير كافٍ لدفع رسوم توقيع العقد (${signingFee.toLocaleString()} كوينز).`
+            : `❌ Insufficient coins to pay signing fee (${signingFee.toLocaleString()} coins).`,
+        };
+      }
+
+      const updatedFinance = postFinanceTransaction(state.clubManagement.finance, {
+        amount: -signingFee,
+        category: 'staff_wages',
+        reasonCode: 'staff_hiring_fee',
+        gameWeek: deriveGameWeekFromSave(buildPartialSave(state)),
+        season: state.livingWorld.currentSeason,
+        timestampIso: new Date().toISOString(),
+        entryId: `ledger_staff_hire_${Date.now()}`,
+      });
+
+      const changes: ClubManagementChange[] = [
+        { kind: 'patchFinance', patch: updatedFinance },
+        { kind: 'upsertStaffMember', member: candidate },
+      ];
+
+      const nextCm = applyClubManagementChanges(state.clubManagement, changes);
+      const nextClub = syncClubFromClubManagement(state.club, nextCm);
+
+      get().dispatchLivingWorldEvent({
+        id: `evt_staff_hire_${candidate.id}_${Date.now()}`,
+        type: 'staff.hired',
+        timestamp: new Date().toISOString(),
+        season: state.livingWorld.currentSeason,
+        severity: 'medium',
+        context: {
+          staffId: candidate.id,
+          name: candidate.name,
+          category: candidate.category,
+          weeklyWage: candidate.weeklyWage,
+        },
+      });
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 50, spread: 60 });
+
+      set({ clubManagement: nextCm, club: nextClub });
+      saveToStorage({ clubManagement: nextCm, club: nextClub });
+
+      return {
+        success: true,
+        message: isAr
+          ? `✅ تم التعاقد بنجاح مع ${candidate.name} بعقد يمتد لموسمين!`
+          : `✅ Successfully hired ${candidate.name} on a 2-season contract!`,
+      };
+    },
+
+    fireStaffMember: (staffId: string) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      if (!state.clubManagement) return { success: false, message: 'Club management not initialized' };
+
+      const member = state.clubManagement.staff.members.find((m) => m.id === staffId);
+      if (!member) return { success: false, message: 'Staff member not found' };
+
+      const severance = member.weeklyWage * 4;
+      const updatedFinance = postFinanceTransaction(state.clubManagement.finance, {
+        amount: -severance,
+        category: 'staff_wages',
+        reasonCode: 'staff_severance',
+        gameWeek: deriveGameWeekFromSave(buildPartialSave(state)),
+        season: state.livingWorld.currentSeason,
+        timestampIso: new Date().toISOString(),
+        entryId: `ledger_severance_${Date.now()}`,
+      });
+
+      const delegationPatch: Partial<typeof state.clubManagement.delegation> = {
+        assigneeByTask: { ...state.clubManagement.delegation.assigneeByTask },
+      };
+      for (const [task, assignee] of Object.entries(delegationPatch.assigneeByTask || {})) {
+        if (assignee === staffId) {
+          delete delegationPatch.assigneeByTask![task as import('../domain/clubManagement').DelegationTask];
+        }
+      }
+
+      const changes: ClubManagementChange[] = [
+        { kind: 'patchFinance', patch: updatedFinance },
+        { kind: 'removeStaffMember', staffId },
+        { kind: 'patchDelegation', patch: delegationPatch },
+      ];
+
+      const nextCm = applyClubManagementChanges(state.clubManagement, changes);
+      const nextClub = syncClubFromClubManagement(state.club, nextCm);
+
+      get().dispatchLivingWorldEvent({
+        id: `evt_staff_fire_${staffId}_${Date.now()}`,
+        type: 'staff.fired',
+        timestamp: new Date().toISOString(),
+        season: state.livingWorld.currentSeason,
+        severity: 'medium',
+        context: {
+          staffId,
+          name: member.name,
+          category: member.category,
+          severance,
+        },
+      });
+
+      soundEffects.playTap();
+
+      set({ clubManagement: nextCm, club: nextClub });
+      saveToStorage({ clubManagement: nextCm, club: nextClub });
+
+      return {
+        success: true,
+        message: isAr
+          ? `تم إنهاء خدمات ${member.name} ودفع مستحقات نهاية الخدمة (${severance.toLocaleString()} كوينز).`
+          : `Dismissed ${member.name} with severance settlement of ${severance.toLocaleString()} coins.`,
+      };
+    },
+
+    updateDelegationTask: (task: DelegationTask, mode: DelegationMode, assigneeStaffId?: string) => {
+      const state = get();
+      if (!state.clubManagement) return;
+
+      const currentDelegation = state.clubManagement.delegation;
+      const patch: Partial<typeof currentDelegation> = {
+        modes: { ...currentDelegation.modes, [task]: mode },
+        assigneeByTask: { ...currentDelegation.assigneeByTask, [task]: assigneeStaffId || undefined },
+      };
+
+      const nextCm = applyClubManagementChanges(state.clubManagement, [
+        { kind: 'patchDelegation', patch },
+      ]);
+      const nextClub = syncClubFromClubManagement(state.club, nextCm);
+
+      soundEffects.playTap();
+      set({ clubManagement: nextCm, club: nextClub });
+      saveToStorage({ clubManagement: nextCm, club: nextClub });
+    },
+
+    submitBoardRequest: (request: BoardRequestKind) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      if (!state.clubManagement) {
+        return { approved: false, message: 'Not initialized', reasonCodes: [] };
+      }
+
+      const { influence, board } = state.clubManagement;
+      const evaluation = evaluateBoardRequest(influence, board.trust, board.patience, request);
+
+      const requestLabels: Record<BoardRequestKind, { ar: string; en: string }> = {
+        raise_transfer_budget: { ar: 'زيادة ميزانية الانتقالات', en: 'Raise Transfer Budget' },
+        hire_staff: { ar: 'استقدام طاقم فني إضافي', en: 'Hire Additional Staff' },
+        upgrade_facility: { ar: 'تسريع تطوير مرافق النادي', en: 'Accelerate Facility Upgrade' },
+        academy_focus_change: { ar: 'تغيير تركيز استقطاب الأكاديمية', en: 'Change Academy Recruitment Focus' },
+        release_player: { ar: 'فسخ عقد لاعب بالتراضي', en: 'Mutual Contract Termination' },
+      };
+
+      const label = requestLabels[request] || { ar: request, en: request };
+
+      if (evaluation.approved) {
+        soundEffects.playFanfare();
+        confetti({ particleCount: 50, spread: 60 });
+
+        const changes: ClubManagementChange[] = [];
+
+        if (request === 'raise_transfer_budget') {
+          const boost = Math.round(state.clubManagement.finance.coins * 0.25);
+          changes.push({
+            kind: 'patchFinance',
+            patch: { transferBudget: state.clubManagement.finance.transferBudget + boost },
+          });
+        } else if (request === 'hire_staff') {
+          changes.push({
+            kind: 'patchBoard',
+            patch: { patience: Math.min(100, board.patience + 10) },
+          });
+        }
+
+        changes.push({
+          kind: 'patchBoard',
+          patch: {
+            patience: Math.max(10, board.patience - 15),
+          },
+        });
+
+        const nextCm = applyClubManagementChanges(state.clubManagement, changes);
+        const nextClub = syncClubFromClubManagement(state.club, nextCm);
+
+        get().dispatchLivingWorldEvent({
+          id: `evt_board_req_${request}_${Date.now()}`,
+          type: 'board.request_resolved',
+          timestamp: new Date().toISOString(),
+          season: state.livingWorld.currentSeason,
+          severity: 'medium',
+          context: {
+            request,
+            approved: true,
+            reasons: evaluation.reasonCodes.join(','),
+          },
+        });
+
+        set({ clubManagement: nextCm, club: nextClub });
+        saveToStorage({ clubManagement: nextCm, club: nextClub });
+
+        return {
+          approved: true,
+          reasonCodes: evaluation.reasonCodes,
+          message: isAr
+            ? `✅ وافق مجلس الإدارة على طلبك (${label.ar}) بناءً على رصيد نفوذك وثقة الإدارة!`
+            : `✅ The board approved your request for (${label.en}) based on your managerial influence!`,
+        };
+      } else {
+        soundEffects.playBuzz();
+
+        const reasonExplainAr: Record<string, string> = {
+          influence_too_low: 'مستوى نفوذ المدرب غير كافٍ لفرض هذا الطلب',
+          board_trust_low: 'ثقة مجلس الإدارة منخفضة حالياً، يُرجى تحسين نتائج المباريات',
+          influence_staff_locked: 'صلاحية قرارات الطاقم الفني مقفلة وتتطلب نفوذاً أعلى',
+          board_impatient: 'صبر مجلس الإدارة نفد بسبب المطالب المتكررة',
+          influence_infra_locked: 'صلاحية طلبات البنية التحتية مقفلة',
+          influence_academy_locked: 'صلاحية قرارات الأكاديمية مقفلة',
+          influence_player_authority_locked: 'صلاحية فسخ عقود اللاعبين مقفلة',
+        };
+
+        const firstReason = evaluation.reasonCodes[0];
+        const reasonText = isAr
+          ? (reasonExplainAr[firstReason] || 'رفضت الإدارة الطلب في الوقت الراهن.')
+          : `The board rejected the request (${firstReason || 'insufficient influence'}).`;
+
+        get().dispatchLivingWorldEvent({
+          id: `evt_board_req_${request}_${Date.now()}`,
+          type: 'board.request_resolved',
+          timestamp: new Date().toISOString(),
+          season: state.livingWorld.currentSeason,
+          severity: 'low',
+          context: {
+            request,
+            approved: false,
+            reasons: evaluation.reasonCodes.join(','),
+          },
+        });
+
+        return {
+          approved: false,
+          reasonCodes: evaluation.reasonCodes,
+          message: isAr
+            ? `❌ رفض مجلس الإدارة طلب (${label.ar}): ${reasonText}`
+            : `❌ Board rejected request (${label.en}): ${reasonText}`,
+        };
+      }
+    },
+
+    upgradeAnalyticsDepartment: () => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      if (!state.clubManagement) return { success: false, message: 'Not initialized' };
+
+      const currentLevel = state.clubManagement.facilities.analyticsDepartmentLevel;
+      if (currentLevel >= 10) {
+        return {
+          success: false,
+          message: isAr ? 'قسم التحليل الرياضي وصل للحد الأقصى (المستوى 10)!' : 'Analytics Department is at max level (10)!',
+        };
+      }
+
+      const cost = currentLevel * 30000;
+      if (state.clubManagement.finance.coins < cost) {
+        soundEffects.playBuzz();
+        return {
+          success: false,
+          message: isAr
+            ? `رصيد الكوينز غير كافٍ! تحتاج إلى ${cost.toLocaleString()} كوينز 💰.`
+            : `Insufficient coins! Need ${cost.toLocaleString()} coins 💰.`,
+        };
+      }
+
+      const updatedFinance = postFinanceTransaction(state.clubManagement.finance, {
+        amount: -cost,
+        category: 'facility_running',
+        reasonCode: 'analytics_upgrade',
+        gameWeek: deriveGameWeekFromSave(buildPartialSave(state)),
+        season: state.livingWorld.currentSeason,
+        timestampIso: new Date().toISOString(),
+        entryId: `ledger_analytics_upgrade_${Date.now()}`,
+      });
+
+      const nextCm = applyClubManagementChanges(state.clubManagement, [
+        { kind: 'patchFinance', patch: updatedFinance },
+        { kind: 'setAnalyticsLevel', level: currentLevel + 1 },
+      ]);
+      const nextClub = syncClubFromClubManagement(state.club, nextCm);
+
+      soundEffects.playFanfare();
+      confetti({ particleCount: 60, spread: 70 });
+
+      set({ clubManagement: nextCm, club: nextClub });
+      saveToStorage({ clubManagement: nextCm, club: nextClub });
+
+      return {
+        success: true,
+        message: isAr
+          ? `🚀 تم تطوير قسم التحليل الرياضي والبيانات إلى المستوى ${currentLevel + 1}!`
+          : `🚀 Upgraded Analytics Department to Level ${currentLevel + 1}!`,
+      };
     },
 
     exportGameData: () => {

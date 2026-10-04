@@ -14,6 +14,7 @@ import { DashboardPromotionBanners } from './dashboard/DashboardPromotionBanners
 import { DashboardReadinessTrio } from './dashboard/DashboardReadinessTrio';
 import { DashboardDailyActivities } from './dashboard/DashboardDailyActivities';
 import { DashboardStoryAndTiles } from './dashboard/DashboardStoryAndTiles';
+import { DashboardAiRecommendationsWidget } from './dashboard/DashboardAiRecommendationsWidget';
 
 export const DashboardView: React.FC = () => {
   const {
@@ -102,6 +103,8 @@ export const DashboardView: React.FC = () => {
           }
         }}
       />
+
+      <DashboardAiRecommendationsWidget isAr={isAr} onOpenTactics={() => setActiveTab('tactics')} />
 
       {/* 7-Day Check-in & Daily VIP Chest */}
       <DashboardDailyActivities

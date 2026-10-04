@@ -5,7 +5,7 @@
 
 import type { AssistantPersistedPreferences } from '../../types/assistantSave';
 import type { AssistantState } from '../../domain/assistant/types';
-import { createEmptyAssistantState } from '../../domain/assistant/cache';
+import { createEmptyAssistantState } from '../../domain/assistant/runtimeState';
 
 const MAX_PERSISTED_ASSISTANT_IDS = 200;
 

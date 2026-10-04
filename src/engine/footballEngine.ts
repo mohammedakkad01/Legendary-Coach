@@ -594,6 +594,21 @@ export class FootballMatchEngine {
     return this.referee;
   }
 
+  /**
+   * Read-only snapshot of in-match analytics (zones, press, set pieces, etc.).
+   * Does not alter scores, events, or simulation RNG — same accumulator read path
+   * as full-time analytics, without generating conclusions.
+   */
+  public getPartialAnalytics(): import('../domain/match/matchAnalytics').MatchAnalyticsSummary {
+    this.analytics.exportPressStats(
+      this.homePressAttempts,
+      this.homePressSuccess,
+      this.awayPressAttempts,
+      this.awayPressSuccess,
+    );
+    return this.analytics.finalize();
+  }
+
   public getMatchAnalytics() {
     this.analytics.exportPressStats(
       this.homePressAttempts,

@@ -15,7 +15,8 @@
     "scripts/testVar.ts",
     "scripts/testLivingWorldFoundation.ts",
     "scripts/testPhaseBFootballSim.ts",
-    "scripts/testSaveSystem.ts"
+    "scripts/testSaveSystem.ts",
+    "scripts/testPhaseGAssistant.ts"
   ],
   "exclude": ["src/data/auditClubData.ts"]
 }

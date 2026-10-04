@@ -28,6 +28,7 @@ import {
   SyncService,
   OFFICIAL_LEAGUES_CONFIG,
 } from './server/index.ts';
+import { handleNarrativeEnhancement } from './server/geminiNarrative.ts';
 
 dotenv.config();
 
@@ -192,6 +193,27 @@ app.post('/api/football/sync-squad', async (req, res) => {
       error: error.message,
     });
   }
+});
+
+/**
+ * POST /api/narrative/enhance
+ * Server-side Gemini narrative enrichment endpoint.
+ * Accepts NarrativeRequest, calls Gemini with model 'gemini-3.8-flash', validates, and returns NarrativeResult.
+ */
+app.post('/api/narrative/enhance', async (req, res) => {
+  const request = req.body;
+  if (!request || !request.context || !request.requestId) {
+    return res.status(400).json({ error: 'Invalid NarrativeRequest body' });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  const outcome = await handleNarrativeEnhancement(request, apiKey);
+
+  if (!outcome.ok) {
+    return res.status(outcome.status).json({ error: outcome.error });
+  }
+
+  return res.json(outcome.result);
 });
 
 // Vite Middleware for Dev, Static serving for Production

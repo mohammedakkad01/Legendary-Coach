@@ -107,6 +107,7 @@ import { buildPostMatchLivingWorldResult } from '../domain/tactics/postMatchLivi
 import { applyStateChanges } from '../domain/livingWorld/reducer';
 import { SaveStatus } from '../types/save';
 import { hydrateLivingWorldFromClub } from '../domain/livingWorld/migrateLivingWorld';
+import { ensurePhaseFState, withPhaseF } from '../domain/livingWorld/phaseF/ensurePhaseF';
 import {
   dispatchGameEvent as runLivingWorldDispatch,
   type DispatchResult,
@@ -159,6 +160,10 @@ import {
 import { resolveInteraction } from '../domain/playerLife/integration';
 import { captaincyChangeConsequences } from '../domain/playerLife/captaincy';
 import { assignMentoringPair } from '../domain/playerLife/mentoring';
+import { resolvePressAnswer } from '../domain/livingWorld/press/resolver';
+import type { PressQuestion, PressAnswerOption } from '../domain/livingWorld/press/types';
+import { mergeNarrativeCache } from '../domain/livingWorld/narrative/cache';
+import type { NarrativeCacheEntry } from '../domain/livingWorld/phaseF/types';
 
 export type GameTab = 
   | 'dashboard' 
@@ -177,7 +182,8 @@ export type GameTab =
   | 'football_api'
   | 'admin'
   | 'tactical_duel'
-  | 'round_summary';
+  | 'round_summary'
+  | 'living_world';
 
 interface GameState {
   currentSport: SportType;
@@ -393,6 +399,20 @@ interface GameState {
     request: BoardRequestKind,
   ) => { approved: boolean; message: string; reasonCodes: string[] };
   upgradeAnalyticsDepartment: () => { success: boolean; message: string };
+
+  // Phase F Living World & Narrative Actions
+  aiNarrationEnabled: boolean;
+  setAiNarrationEnabled: (enabled: boolean) => void;
+  submitPressConferenceAnswer: (
+    question: PressQuestion,
+    answer: PressAnswerOption,
+  ) => {
+    success: boolean;
+    visibleMessageAr: string;
+    visibleMessageEn: string;
+    cohesionDelta: number;
+  };
+  storeNarrativeCacheEntry: (entry: NarrativeCacheEntry) => void;
 }
 
 export const useGameStore = create<GameState>((set, get) => {
@@ -1175,6 +1195,8 @@ export const useGameStore = create<GameState>((set, get) => {
     initialSave?.club ?? REAL_INITIAL_PLAYER_CLUB,
     initialSave?.livingWorld
   );
+  const initialPhaseF = ensurePhaseFState(initialHydrated.livingWorld, initialHydrated.club.id);
+  const initialWorldWithPhaseF = withPhaseF(initialHydrated.livingWorld, initialPhaseF);
   const initialClubManagement: ClubManagementState =
     initialSave?.clubManagement ??
     ensureClubManagementV6(
@@ -1305,11 +1327,16 @@ export const useGameStore = create<GameState>((set, get) => {
 
     scoutMarket: initialSave?.scoutMarket || REAL_INITIAL_SCOUT_MARKET,
 
-    livingWorld: initialHydrated.livingWorld,
+    livingWorld: initialWorldWithPhaseF,
     recruitmentWorld: initialRecruitmentWorld,
     clubManagement: initialClubManagement,
     saveId: initialSave?.saveId ?? `save_${Date.now()}`,
     savePassthrough: initialSave?.savePassthrough ?? {},
+
+    aiNarrationEnabled: true,
+    setAiNarrationEnabled: (enabled: boolean) => {
+      set({ aiNarrationEnabled: enabled });
+    },
 
     setIsGuest: (val: boolean) => {
       set({ isGuest: val });
@@ -4527,6 +4554,75 @@ export const useGameStore = create<GameState>((set, get) => {
           ? `🚀 تم تطوير قسم التحليل الرياضي والبيانات إلى المستوى ${currentLevel + 1}!`
           : `🚀 Upgraded Analytics Department to Level ${currentLevel + 1}!`,
       };
+    },
+
+    submitPressConferenceAnswer: (question: PressQuestion, answer: PressAnswerOption) => {
+      const state = get();
+      const clubId = state.club.id;
+      const gameWeek = Math.max(1, (state.matchHistory || []).length + 1);
+      const timestampIso = new Date().toISOString();
+
+      const resolved = resolvePressAnswer({
+        question,
+        answer,
+        season: state.livingWorld.currentSeason,
+        clubId,
+        gameWeek,
+        timestampIso,
+      });
+
+      // Apply returned StateChanges via authoritative domain reducer
+      const nextReducer = applyStateChanges(
+        { livingWorld: state.livingWorld, players: state.club.footballSquad },
+        resolved.changes
+      );
+
+      // Ingest returned events through livingWorld event pipeline
+      for (const ev of resolved.events) {
+        state.dispatchLivingWorldEvent(ev);
+      }
+
+      set({ livingWorld: nextReducer.livingWorld });
+      saveToStorage({ livingWorld: nextReducer.livingWorld });
+
+      const cohesionDelta = answer.tone === 'support' ? 2 : answer.tone === 'attack' ? -3 : 0;
+      const isAr = state.language === 'ar';
+
+      const visibleMessageAr =
+        answer.tone === 'support'
+          ? 'أظهرت دعماً علنياً للاعبي الفريق، مما عزز من معنويات وتماسك غرفة الملابس.'
+          : answer.tone === 'attack'
+          ? 'أثارت تصريحاتك الحادة استياءً وتوتراً ملحوظاً داخل غرفة الملابس.'
+          : 'اتسمت إجابتك بالدبلوماسية والهدوء المعتاد أمام وسائل الإعلام.';
+
+      const visibleMessageEn =
+        answer.tone === 'support'
+          ? 'You publicly backed your squad, boosting dressing room morale and cohesion.'
+          : answer.tone === 'attack'
+          ? 'Your critical stance created friction and unease in the dressing room.'
+          : 'Your calm, professional response neutralized media speculation.';
+
+      return {
+        success: true,
+        visibleMessageAr,
+        visibleMessageEn,
+        cohesionDelta,
+      };
+    },
+
+    storeNarrativeCacheEntry: (entry: NarrativeCacheEntry) => {
+      const state = get();
+      const clubId = state.club.id;
+      const phaseF = ensurePhaseFState(state.livingWorld, clubId);
+      const updatedCache = mergeNarrativeCache(phaseF.narrativeCache, entry);
+
+      const nextReducer = applyStateChanges(
+        { livingWorld: state.livingWorld, players: state.club.footballSquad },
+        [{ kind: 'patchPhaseF', clubId, patch: { narrativeCache: updatedCache } }]
+      );
+
+      set({ livingWorld: nextReducer.livingWorld });
+      saveToStorage({ livingWorld: nextReducer.livingWorld });
     },
 
     exportGameData: () => {

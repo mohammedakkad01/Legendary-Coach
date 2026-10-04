@@ -276,4 +276,18 @@ export interface GameState {
     request: import('../domain/clubManagement').BoardRequestKind,
   ) => { approved: boolean; message: string; reasonCodes: string[] };
   upgradeAnalyticsDepartment: () => { success: boolean; message: string };
+
+  // Phase F Living World & Narrative Actions
+  aiNarrationEnabled: boolean;
+  setAiNarrationEnabled: (enabled: boolean) => void;
+  submitPressConferenceAnswer: (
+    question: import('../domain/livingWorld/press/types').PressQuestion,
+    answer: import('../domain/livingWorld/press/types').PressAnswerOption,
+  ) => {
+    success: boolean;
+    visibleMessageAr: string;
+    visibleMessageEn: string;
+    cohesionDelta: number;
+  };
+  storeNarrativeCacheEntry: (entry: import('../domain/livingWorld/phaseF/types').NarrativeCacheEntry) => void;
 }

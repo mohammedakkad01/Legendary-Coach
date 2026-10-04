@@ -23,7 +23,8 @@ import {
   Trophy, 
   Crown,
   Server,
-  Lock
+  Lock,
+  Globe
 } from 'lucide-react';
 
 interface NavItem {
@@ -48,6 +49,7 @@ export const Navigation: React.FC = () => {
     { id: 'transfers', labelAr: 'الانتقالات', labelEn: 'Transfers', icon: ArrowLeftRight },
     { id: 'training', labelAr: 'التدريب', labelEn: 'Training', icon: Dumbbell },
     { id: 'club', labelAr: 'النادي', labelEn: 'Club', icon: Building2 },
+    { id: 'living_world', labelAr: 'عالم اللعبة', labelEn: 'Living World', icon: Globe },
     { id: 'league', labelAr: 'الدوري', labelEn: 'League', icon: Trophy },
     { id: 'vip', labelAr: 'VIP', labelEn: 'VIP', icon: Crown },
   ];

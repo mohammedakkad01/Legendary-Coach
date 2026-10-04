@@ -66,7 +66,7 @@ export const DashboardStoryAndTiles: React.FC<DashboardStoryAndTilesProps> = ({
       )}
 
       {/* Quick Access Tiles */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <button
           onClick={() => onNavigateTab('tactics')}
           className="bg-slate-900 p-4 rounded-2xl border border-slate-800 hover:border-sky-500/50 text-left sm:text-right space-y-1 transition-all group cursor-pointer"
@@ -113,8 +113,23 @@ export const DashboardStoryAndTiles: React.FC<DashboardStoryAndTilesProps> = ({
         </button>
 
         <button
+          onClick={() => onNavigateTab('living_world')}
+          className="bg-slate-900 p-4 rounded-2xl border border-slate-800 hover:border-indigo-500/50 text-left sm:text-right space-y-1 transition-all group cursor-pointer"
+        >
+          <div className="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-lg mb-2 group-hover:scale-110 transition-transform">
+            📰
+          </div>
+          <h4 className="font-heading font-black text-sm text-white">
+            {isAr ? 'عالم اللعبة والأخبار' : 'Living World & News'}
+          </h4>
+          <p className="text-xs text-slate-400">
+            {isAr ? 'المؤتمرات وقاعة الأساطير' : 'Press & Legends'}
+          </p>
+        </button>
+
+        <button
           onClick={() => onNavigateTab('league')}
-          className="bg-slate-900 p-4 rounded-2xl border border-slate-800 hover:border-purple-500/50 text-left sm:text-right space-y-1 transition-all group cursor-pointer"
+          className="bg-slate-900 p-4 rounded-2xl border border-slate-800 hover:border-purple-500/50 text-left sm:text-right space-y-1 transition-all group cursor-pointer col-span-2 sm:col-span-1"
         >
           <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center text-lg mb-2 group-hover:scale-110 transition-transform">
             🏆
@@ -123,7 +138,7 @@ export const DashboardStoryAndTiles: React.FC<DashboardStoryAndTilesProps> = ({
             {isAr ? 'جدول ترتيب الدوري' : 'League Standings'}
           </h4>
           <p className="text-xs text-slate-400">
-            {isAr ? 'المركز الثاني (10 نقاط)' : '2nd place (10 pts)'}
+            {isAr ? 'الترتيب والإحصائيات' : 'Standings & Stats'}
           </p>
         </button>
       </div>

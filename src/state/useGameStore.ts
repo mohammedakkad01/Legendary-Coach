@@ -99,6 +99,24 @@ import { EMPTY_SLOT } from '../domain/squad/squadTypes';
 import { applyRecommendation } from '../domain/tactics/bestTactics/applyRecommendation';
 import type { ApplyBestTacticsError } from '../domain/tactics/bestTactics/applyRecommendation';
 import type { BestTacticsRecommendation } from '../domain/tactics/bestTactics/types';
+import { deriveOpponentProfile } from '../domain/tactics/bestTactics/opponentProfile';
+import {
+  createEmptyAssistantState,
+  mergeAssistantExplanationCache,
+  generatePreMatchAnalysis,
+  generatePostMatchAnalysis,
+  evaluateLiveMatch,
+  getExplainableBestTactics,
+  tacticsPatchFromAssistantChanges,
+  requiresBestTacticsApply,
+} from '../domain/assistant';
+import type {
+  AssistantRecommendation,
+  AssistantState,
+  PreMatchAnalysis,
+  LiveMatchAnalysis,
+  PostMatchAnalysis,
+} from '../domain/assistant/types';
 import type { Result } from '../domain/shared/result';
 import { deriveSyntheticOpponentTactics, opponentTacticsWithRoles } from '../domain/tactics/deriveSyntheticOpponentTactics';
 import { assignLineupToFormation } from '../domain/squad/assignFormationLineup';
@@ -266,6 +284,7 @@ interface GameState {
   livingWorld: LivingWorldState;
   recruitmentWorld: RecruitmentWorldState;
   clubManagement: ClubManagementState;
+  assistant: AssistantState;
   saveId: string;
   savePassthrough: Record<string, unknown>;
 
@@ -413,6 +432,20 @@ interface GameState {
     cohesionDelta: number;
   };
   storeNarrativeCacheEntry: (entry: NarrativeCacheEntry) => void;
+
+  // Phase G AI Assistant & Tactical Analyst
+  ignoreAssistantRecommendation: (id: string) => void;
+  applyAssistantRecommendation: (
+    recommendation: AssistantRecommendation,
+  ) => { success: boolean; message: string };
+  cacheAssistantExplanation: (
+    key: string,
+    data: { explanation: string; keyPoints: string[]; timestamp: string },
+  ) => void;
+  getPreMatchAnalysis: () => PreMatchAnalysis | null;
+  getLiveMatchAnalysis: () => LiveMatchAnalysis | null;
+  getPostMatchAnalysis: () => PostMatchAnalysis | null;
+  getExplainableTacticsRecommendation: () => AssistantRecommendation | null;
 }
 
 export const useGameStore = create<GameState>((set, get) => {
@@ -1330,6 +1363,7 @@ export const useGameStore = create<GameState>((set, get) => {
     livingWorld: initialWorldWithPhaseF,
     recruitmentWorld: initialRecruitmentWorld,
     clubManagement: initialClubManagement,
+    assistant: createEmptyAssistantState(),
     saveId: initialSave?.saveId ?? `save_${Date.now()}`,
     savePassthrough: initialSave?.savePassthrough ?? {},
 
@@ -4163,6 +4197,128 @@ export const useGameStore = create<GameState>((set, get) => {
         },
       });
       saveToStorage(undefined, false);
+    },
+
+    ignoreAssistantRecommendation: (id) => {
+      const state = get();
+      if (state.assistant.ignoredRecommendationIds.includes(id)) return;
+      set({
+        assistant: {
+          ...state.assistant,
+          ignoredRecommendationIds: [...state.assistant.ignoredRecommendationIds, id],
+          activeRecommendations: state.assistant.activeRecommendations.filter((r) => r.id !== id),
+        },
+      });
+      saveToStorage(undefined, false);
+    },
+
+    cacheAssistantExplanation: (key, data) => {
+      const state = get();
+      set({
+        assistant: {
+          ...state.assistant,
+          explanationCache: mergeAssistantExplanationCache(state.assistant.explanationCache, key, data),
+        },
+      });
+      saveToStorage(undefined, false);
+    },
+
+    getPreMatchAnalysis: () => {
+      const state = get();
+      const preview = state.preMatchPreview ?? state.nextMatchInsight;
+      if (!preview) return null;
+      const analyticsLevel = state.clubManagement.facilities.analyticsDepartmentLevel ?? 0;
+      const oppositionDelegated =
+        state.clubManagement.delegation.modes.opposition_analysis === 'delegate';
+      const compact = state.livingWorld.opponentTacticalScouting?.[preview.opponentClub.id];
+      return generatePreMatchAnalysis({
+        userClub: state.club,
+        opponentClub: preview.opponentClub,
+        fixture: preview.fixture,
+        isScouted: preview.isScouted,
+        scoutAccuracy: preview.scoutAccuracy,
+        analyticsLevel,
+        oppositionAnalysisDelegated: oppositionDelegated,
+        opponentScoutingCompact: compact,
+      });
+    },
+
+    getLiveMatchAnalysis: () => {
+      const state = get();
+      if (!state.isMatchLive || !state.activeMatchRecord || !state.activeEngine) return null;
+      const record = state.activeMatchRecord;
+      const isHome = record.homeClubId === state.club.id;
+      return evaluateLiveMatch({
+        currentMinute: state.currentMatchMinute,
+        events: record.events,
+        analytics: record.analytics,
+        userTactics: state.activeMatchHomeTactics ?? state.club.footballTactics,
+        userSquad: state.club.footballSquad,
+        userLineup: state.club.footballLineup,
+        userBench: state.club.footballBench,
+        isHome,
+        cooldowns: state.assistant.liveTriggerCooldowns,
+        ignoredIds: state.assistant.ignoredRecommendationIds,
+      });
+    },
+
+    getPostMatchAnalysis: () => {
+      const state = get();
+      const last = state.matchHistory[state.matchHistory.length - 1];
+      if (!last || !last.isFinished) return null;
+      return generatePostMatchAnalysis(last, state.club);
+    },
+
+    getExplainableTacticsRecommendation: () => {
+      const state = get();
+      const preview = state.preMatchPreview ?? state.nextMatchInsight;
+      const opponent = preview?.opponentClub;
+      const result = getExplainableBestTactics({
+        club: state.club,
+        opponent: deriveOpponentProfile(opponent),
+        maxSubstitutes: getMaxBenchSlots(state.vipPoints),
+      });
+      return result?.assistantRecommendation ?? null;
+    },
+
+    applyAssistantRecommendation: (recommendation) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      if (state.assistant.ignoredRecommendationIds.includes(recommendation.id)) {
+        return {
+          success: false,
+          message: isAr ? 'تم تجاهل هذا التوصية مسبقاً.' : 'This recommendation was already ignored.',
+        };
+      }
+      const changes = recommendation.suggestedChanges;
+      if (requiresBestTacticsApply(changes) && changes?.bestTacticsRec) {
+        const bt = get().applyBestTactics(changes.bestTacticsRec);
+        if (!bt.ok) {
+          return {
+            success: false,
+            message: isAr ? 'تعذر تطبيق التشكيل الموصى به (تحقق من جاهزية اللاعبين).' : 'Could not apply recommended lineup (check player availability).',
+          };
+        }
+      } else {
+        const patch = tacticsPatchFromAssistantChanges(changes);
+        if (Object.keys(patch).length > 0) {
+          get().updateFootballTactics(patch);
+        }
+      }
+
+      set({
+        assistant: {
+          ...state.assistant,
+          appliedRecommendationIds: [...state.assistant.appliedRecommendationIds, recommendation.id],
+          activeRecommendations: state.assistant.activeRecommendations.filter((r) => r.id !== recommendation.id),
+        },
+      });
+      saveToStorage();
+      soundEffects.playTap();
+      return {
+        success: true,
+        message: isAr ? 'تم تطبيق توصية المساعد التكتيكي.' : 'Assistant recommendation applied.',
+      };
     },
 
     markNotificationRead: (id) => {

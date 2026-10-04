@@ -13,3 +13,5 @@ export * from './liveMatchAnalyst';
 export * from './postMatchAnalyst';
 export * from './explainableBestTactics';
 export * from './scoutingSummary';
+export * from './applyTacticalChanges';
+export * from './playerRating';

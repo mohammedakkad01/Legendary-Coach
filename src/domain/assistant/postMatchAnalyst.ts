@@ -56,8 +56,8 @@ export function generatePostMatchAnalysis(match: MatchRecord, userClub: Club): P
           `تسريع الإيقاع يجبر دفاع الخصم على التحرك وفتح مساحات بينية`,
         ],
         suggestedChanges: {
-          passing: 'direct',
-          tempo: 'fast',
+          passing: 'direct_counter',
+          tempo: 'fast_electric',
         },
         expiryMatchday: match.matchDay + 1,
         status: 'pending',
@@ -83,7 +83,7 @@ export function generatePostMatchAnalysis(match: MatchRecord, userClub: Club): P
           `التفوق البدني عنصر حاسم لحسم مباريات الدوري`,
         ],
         suggestedChanges: {
-          pressing: 'high',
+          pressing: 'high_press',
         },
         expiryMatchday: match.matchDay + 1,
         status: 'pending',
@@ -129,7 +129,7 @@ export function generatePostMatchAnalysis(match: MatchRecord, userClub: Club): P
         reasonDetailsEn: [`PPDA value of ${c.value} indicates a low engagement block`],
         reasonDetailsAr: [`قيمة PPDA تبلغ ${c.value} تشير إلى تراجع دفاعي غير ضاغط`],
         suggestedChanges: {
-          pressing: 'high',
+          pressing: 'high_press',
         },
         expiryMatchday: match.matchDay + 1,
         status: 'pending',

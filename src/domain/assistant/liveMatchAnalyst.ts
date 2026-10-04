@@ -255,8 +255,8 @@ export function evaluateLiveMatch(input: LiveMatchAnalystInput): LiveMatchAnalys
           `التمرير المباشر يتجاوز مصيدة ضغط الخصم`,
         ],
         suggestedChanges: {
-          passing: 'direct',
-          tempo: 'fast',
+          passing: 'direct_counter',
+          tempo: 'fast_electric',
         },
         expiryMinute: currentMinute + 15,
         status: 'pending',

@@ -32,6 +32,7 @@ import {
   Gem
 } from 'lucide-react';
 import { formatFixtureDate } from '../utils/fixtureDate';
+import { AssistantRecommendationsPanel } from './assistant/AssistantRecommendationsPanel';
 
 export const PreMatchView: React.FC = () => {
   const { 
@@ -388,6 +389,10 @@ export const PreMatchView: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="mt-5">
+          <AssistantRecommendationsPanel isAr={isAr} compact />
         </div>
 
         {/* Action Buttons */}

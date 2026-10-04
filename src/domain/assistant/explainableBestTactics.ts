@@ -13,7 +13,7 @@
 import type { Club, Player } from '../../types/game';
 import { recommendBestTactics } from '../tactics/bestTactics/recommendBestTactics';
 import type { BestTacticsInput, BestTacticsPlayer, BestTacticsRecommendation } from '../tactics/bestTactics/types';
-import type { OpponentProfile } from '../tactics/bestTactics/opponentProfile';
+import type { OpponentProfile } from '../tactics/bestTactics/types';
 import type { AssistantRecommendation, TacticalChangesDiff } from './types';
 
 export interface ExplainableTacticsInput {
@@ -34,7 +34,7 @@ export function getExplainableBestTactics(input: ExplainableTacticsInput): Expla
   const squad: BestTacticsPlayer[] = club.footballSquad.map((p) => ({
     id: p.id,
     position: p.position,
-    overall: p.overall ?? p.rating,
+    overall: p.overall,
     secondaryPositions: p.secondaryPositions,
     fatigue: p.fatigue ?? 0,
     morale: p.morale ?? 75,
@@ -63,7 +63,7 @@ export function getExplainableBestTactics(input: ExplainableTacticsInput): Expla
 
   // Build lineup swaps diff
   const currentLineupIds = club.footballLineup;
-  const recommendedLineupIds = rec.lineup;
+  const recommendedPlacements = rec.lineup;
   const playerMap = new Map<string, Player>(club.footballSquad.map((p) => [p.id, p]));
 
   const lineupSwaps: Array<{
@@ -75,9 +75,9 @@ export function getExplainableBestTactics(input: ExplainableTacticsInput): Expla
     reasonAr: string;
   }> = [];
 
-  for (let i = 0; i < recommendedLineupIds.length; i++) {
+  for (let i = 0; i < recommendedPlacements.length; i++) {
     const curId = currentLineupIds[i];
-    const recId = recommendedLineupIds[i];
+    const recId = recommendedPlacements[i]?.playerId;
     if (curId && recId && curId !== recId) {
       const outP = playerMap.get(curId);
       const inP = playerMap.get(recId);

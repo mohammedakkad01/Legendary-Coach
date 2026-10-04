@@ -19,6 +19,20 @@ import { createRefereeFromSeed } from '../referee/createRefereeFromSeed';
 import type { OpponentTacticalScoutingCompact } from '../livingWorld/types';
 import type { PreMatchAnalysis, AssistantRecommendation, TacticalChangesDiff } from './types';
 import { clamp } from '../shared/math';
+import { positionGroupOf } from '../squad/positionTaxonomy';
+import { effectivePlayerOverall } from './playerRating';
+import type { PositionGroup } from '../squad/positionTaxonomy';
+
+function squadInGroup(players: Player[], group: PositionGroup): Player[] {
+  return players.filter((p) => {
+    if (positionGroupOf(p.position) === group) return true;
+    return (p.secondaryPositions ?? []).some((sp) => positionGroupOf(sp) === group);
+  });
+}
+
+function wideDefenders(players: Player[]): Player[] {
+  return players.filter((p) => p.position === 'LB' || p.position === 'RB');
+}
 
 export interface PreMatchAnalystInput {
   userClub: Club;
@@ -82,22 +96,34 @@ export function generatePreMatchAnalysis(input: PreMatchAnalystInput): PreMatchA
 
   const squadToAnalyze = starters.length >= 11 ? starters : opponentClub.footballSquad;
 
-  const defenders = squadToAnalyze.filter((p) => p.position === 'CB' || p.position === 'LB' || p.position === 'RB' || p.position === 'LWB' || p.position === 'RWB');
-  const midfielders = squadToAnalyze.filter((p) => p.position === 'CM' || p.position === 'CDM' || p.position === 'CAM' || p.position === 'LM' || p.position === 'RM');
-  const attackers = squadToAnalyze.filter((p) => p.position === 'ST' || p.position === 'CF' || p.position === 'LW' || p.position === 'RW');
+  const defenders = squadInGroup(squadToAnalyze, 'DEF');
+  const midfielders = squadInGroup(squadToAnalyze, 'MID');
+  const attackers = squadInGroup(squadToAnalyze, 'ATT');
 
-  const avgDefRating = defenders.length > 0 ? Math.round(defenders.reduce((sum, p) => sum + p.rating, 0) / defenders.length) : 70;
-  const avgMidRating = midfielders.length > 0 ? Math.round(midfielders.reduce((sum, p) => sum + p.rating, 0) / midfielders.length) : 70;
-  const avgAttRating = attackers.length > 0 ? Math.round(attackers.reduce((sum, p) => sum + p.rating, 0) / attackers.length) : 70;
+  const avgDefRating =
+    defenders.length > 0
+      ? Math.round(defenders.reduce((sum, p) => sum + effectivePlayerOverall(p), 0) / defenders.length)
+      : 70;
+  const avgMidRating =
+    midfielders.length > 0
+      ? Math.round(midfielders.reduce((sum, p) => sum + effectivePlayerOverall(p), 0) / midfielders.length)
+      : 70;
+  const avgAttRating =
+    attackers.length > 0
+      ? Math.round(attackers.reduce((sum, p) => sum + effectivePlayerOverall(p), 0) / attackers.length)
+      : 70;
 
   // Identify Main Threat
-  const topAttacker = [...attackers, ...midfielders].sort((a, b) => b.rating - a.rating)[0] || squadToAnalyze[0];
+  const topAttacker =
+    [...attackers, ...midfielders].sort((a, b) => effectivePlayerOverall(b) - effectivePlayerOverall(a))[0] ||
+    squadToAnalyze[0];
+  const topRating = topAttacker ? effectivePlayerOverall(topAttacker) : 75;
   const mainThreat = {
     playerId: topAttacker?.id,
     playerName: topAttacker ? topAttacker.name : 'Opponent Key Striker',
     role: topAttacker?.position || 'ST',
-    threatReasonEn: `Rated ${topAttacker?.rating || 75} with high offensive awareness and goal contribution.`,
-    threatReasonAr: `تقييم ${topAttacker?.rating || 75} مع فاعلية هجومية وخطورة دائمة أمام المرمى.`,
+    threatReasonEn: `Rated ${topRating} with high offensive awareness and goal contribution.`,
+    threatReasonAr: `تقييم ${topRating} مع فاعلية هجومية وخطورة دائمة أمام المرمى.`,
   };
 
   // Strengths and Weaknesses
@@ -106,21 +132,21 @@ export function generatePreMatchAnalysis(input: PreMatchAnalystInput): PreMatchA
 
   const oppTactics = opponentClub.footballTactics;
 
-  if (avgAttRating >= 78 || oppTactics.mentality === 'attacking' || oppTactics.mentality === 'ultra_attacking') {
+  if (avgAttRating >= 78 || oppTactics.mentality === 'attacking' || oppTactics.mentality === 'all_out_attack') {
     strengths.push({
       labelEn: `High offensive firepower (${avgAttRating} avg forward rating) with proactive attacking posture`,
       labelAr: `قوة هجومية ضاربة (متوسط هجوم ${avgAttRating}) مع نهج هجومي مبادر`,
       confidence: overallConfidence,
     });
   }
-  if (avgMidRating >= 77 || oppTactics.pressing === 'high') {
+  if (avgMidRating >= 77 || oppTactics.pressing === 'high_press' || oppTactics.pressing === 'gegenpress') {
     strengths.push({
       labelEn: `Aggressive midfield press and quick central recoveries`,
       labelAr: `ضغط مكثف في خط الوسط واستعادة سريعة للكرة في العمق`,
       confidence: Math.round(overallConfidence * 0.95),
     });
   }
-  if (oppTactics.tempo === 'fast' && (oppTactics.formation.includes('3') || oppTactics.formation.includes('4-3-3'))) {
+  if (oppTactics.tempo === 'fast_electric' && (oppTactics.formation.includes('3') || oppTactics.formation.includes('4-3-3'))) {
     strengths.push({
       labelEn: `Rapid wide transitions exploiting space behind advanced fullbacks`,
       labelAr: `تحولات هجومية سريعة عبر الأجنحة واستغلال المساحات خلف الأظهرة`,
@@ -136,10 +162,16 @@ export function generatePreMatchAnalysis(input: PreMatchAnalystInput): PreMatchA
   }
 
   // Weaknesses
-  const leftDefenders = defenders.filter((p) => p.position === 'LB' || p.position === 'LWB');
-  const rightDefenders = defenders.filter((p) => p.position === 'RB' || p.position === 'RWB');
-  const leftAvg = leftDefenders.length > 0 ? leftDefenders.reduce((s, p) => s + p.rating, 0) / leftDefenders.length : 70;
-  const rightAvg = rightDefenders.length > 0 ? rightDefenders.reduce((s, p) => s + p.rating, 0) / rightDefenders.length : 70;
+  const leftDefenders = wideDefenders(defenders).filter((p) => p.position === 'LB');
+  const rightDefenders = wideDefenders(defenders).filter((p) => p.position === 'RB');
+  const leftAvg =
+    leftDefenders.length > 0
+      ? leftDefenders.reduce((s, p) => s + effectivePlayerOverall(p), 0) / leftDefenders.length
+      : 70;
+  const rightAvg =
+    rightDefenders.length > 0
+      ? rightDefenders.reduce((s, p) => s + effectivePlayerOverall(p), 0) / rightDefenders.length
+      : 70;
 
   if (avgDefRating < 74) {
     weaknesses.push({
@@ -161,7 +193,7 @@ export function generatePreMatchAnalysis(input: PreMatchAnalystInput): PreMatchA
       confidence: Math.round(overallConfidence * 0.9),
     });
   }
-  if (oppTactics.pressing === 'low' || oppTactics.mentality === 'defensive') {
+  if (oppTactics.pressing === 'low_block' || oppTactics.mentality === 'defensive') {
     weaknesses.push({
       labelEn: `Passive defensive block surrenders possession and territory`,
       labelAr: `تكتل دفاعي منخفض يمنحك السيطرة والاستحواذ في الثلث الأخير`,
@@ -201,7 +233,7 @@ export function generatePreMatchAnalysis(input: PreMatchAnalystInput): PreMatchA
   }
 
   // Set-Piece Danger
-  const aerialScore = Math.round((avgDefRating * 0.5) + (topAttacker?.rating || 70) * 0.5);
+  const aerialScore = Math.round(avgDefRating * 0.5 + topRating * 0.5);
   const setPieceDanger = {
     riskLevel: aerialScore >= 78 ? ('high' as const) : aerialScore >= 72 ? ('medium' as const) : ('low' as const),
     aerialPower: aerialScore,
@@ -223,8 +255,13 @@ export function generatePreMatchAnalysis(input: PreMatchAnalystInput): PreMatchA
     .map((p) => ({
       name: p.name,
       position: p.position,
-      ratingEst: p.rating,
-      formTrend: p.rating >= 78 ? ('hot' as const) : p.rating <= 71 ? ('cold' as const) : ('normal' as const),
+      ratingEst: effectivePlayerOverall(p),
+      formTrend:
+        effectivePlayerOverall(p) >= 78
+          ? ('hot' as const)
+          : effectivePlayerOverall(p) <= 71
+            ? ('cold' as const)
+            : ('normal' as const),
     }));
 
   // Referee Profile Analysis
@@ -251,7 +288,7 @@ export function generatePreMatchAnalysis(input: PreMatchAnalystInput): PreMatchA
   // Recommendation A: Tactical exploitation of flank vulnerability
   const weakFlank = leftAvg <= rightAvg ? 'left' : 'right';
   const recChanges: TacticalChangesDiff = {
-    width: weakFlank === 'left' ? 'wide' : 'balanced',
+    width: weakFlank === 'left' ? 'wide' : 'standard',
     passing: 'mixed',
   };
 
@@ -302,7 +339,7 @@ export function generatePreMatchAnalysis(input: PreMatchAnalystInput): PreMatchA
         `أي طرد مبكر سيهدد التوازن التكتيكي للمباراة`,
       ],
       suggestedChanges: {
-        pressing: 'low',
+        pressing: 'low_block',
       },
       expiryMatchday: fixture.matchday,
       status: 'pending',

@@ -1,1 +1,173 @@
-{"seed":42424242,"homeScore":0,"awayScore":2,"referee":{"id":"ref_6b36a174","name":"Slavko Vinčić","nameEn":"Slavko Vinicic","strictness":10,"foulSensitivity":93,"cardTendency":76,"penaltyTendency":44,"advantageTendency":4,"varTendency":11},"stats":{"homePossession":51,"awayPossession":49,"homeShots":2,"awayShots":7,"homeShotsOnTarget":0,"awayShotsOnTarget":4,"homeCorners":0,"awayCorners":1,"homeFouls":1,"awayFouls":3,"homeYellowCards":0,"awayYellowCards":0,"homeRedCards":1,"awayRedCards":0,"homeXg":0.16,"awayXg":0.56},"events":[{"minute":10,"sport":"football","type":"goal","team":"away","playerId":"rp_6","playerName":"أردا غولر","textAr":"⚽ هـــــــــــدف رائع! أردا غولر يسدد كرة قوية تستقر في الشباك بالدقيقة 10! (0 - 1)","textEn":"⚽ GOAL! Arda Güler fires a clinical shot into the net at min 10! (0 - 1)","homeScore":0,"awayScore":1},{"minute":32,"sport":"football","type":"red_card","team":"home","playerId":"rp_4","playerName":"ريكو لويس","textAr":"🟥 بطاقة حمراء مباشرة لـ ريكو لويس (الدقيقة 32)","textEn":"🟥 Straight red for Rico Lewis (min 32)","homeScore":0,"awayScore":1},{"minute":35,"sport":"football","type":"interactive_moment","team":"home","textAr":"فرصة تكتيكية حاسمة في الدقيقة 35: لاحظت ثغرة في دفاع المنافس! ما هي تعليماتك الفورية للفريق؟","textEn":"Crucial tactical moment at min 35: You spot a weakness in the opponent defense! What are your orders?","homeScore":0,"awayScore":1,"interactiveOptions":[{"id":"press_now","titleAr":"الضغط العالي السريع وتكثيف الهجوم","titleEn":"High Press & Flood The Box","descriptionAr":"زيادة الخطورة الهجومية مع استنزاف بدني أكبر","descriptionEn":"Increases scoring chance with higher fatigue risk","tacticEffect":{"mentality":"attacking","pressing":"high_press","staminaCost":5,"riskLevel":"medium"}},{"id":"counter_trap","titleAr":"نصب مصيدة التسلل والارتداد السريع","titleEn":"Offside Trap & Swift Counters","descriptionAr":"استغلال تقدم المنافس لشن مرتدات قاتلة","descriptionEn":"Exploit opponent high line with swift direct passes","tacticEffect":{"mentality":"balanced","riskLevel":"safe"}},{"id":"lock_down","titleAr":"تهدئة وتيرة اللعب والتحكم بالكرة","titleEn":"Slow Tempo & Ball Retention","descriptionAr":"حرمان الخصم من الاستحواذ وتأمين المناطق الخلفية","descriptionEn":"Starve opponent of possession and protect backline","tacticEffect":{"mentality":"defensive","tempo":"slow_patient","riskLevel":"safe"}}]},{"minute":38,"sport":"football","type":"goal","team":"away","playerId":"rp_4","playerName":"ريكو لويس","textAr":"⚽ هـــــــــــدف رائع! ريكو لويس يسدد كرة قوية تستقر في الشباك بالدقيقة 38! (0 - 2)","textEn":"⚽ GOAL! Rico Lewis fires a clinical shot into the net at min 38! (0 - 2)","homeScore":0,"awayScore":2},{"minute":45,"sport":"football","type":"save","team":"home","textAr":"🧤 تصدٍ خيالي من الحارس يحرم ريكو لويس من هدف محقق في الدقيقة 45!","textEn":"🧤 Sensational save by the keeper denying Rico Lewis in minute 45!","homeScore":0,"awayScore":2},{"minute":72,"sport":"football","type":"save","team":"home","textAr":"🧤 تصدٍ خيالي من الحارس يحرم وارن زائير-إيمري من هدف محقق في الدقيقة 72!","textEn":"🧤 Sensational save by the keeper denying Warren Zaïre-Emery in minute 72!","homeScore":0,"awayScore":2}]}
+{
+  "seed": 42424242,
+  "homeScore": 0,
+  "awayScore": 2,
+  "referee": {
+    "id": "ref_6b36a174",
+    "name": "Slavko Vinčić",
+    "nameEn": "Slavko Vinicic",
+    "strictness": 10,
+    "foulSensitivity": 93,
+    "cardTendency": 76,
+    "penaltyTendency": 44,
+    "advantageTendency": 4,
+    "varTendency": 11
+  },
+  "stats": {
+    "homePossession": 51,
+    "awayPossession": 49,
+    "homeShots": 5,
+    "awayShots": 7,
+    "homeShotsOnTarget": 3,
+    "awayShotsOnTarget": 4,
+    "homeCorners": 0,
+    "awayCorners": 1,
+    "homeFouls": 1,
+    "awayFouls": 3,
+    "homeYellowCards": 0,
+    "awayYellowCards": 0,
+    "homeRedCards": 1,
+    "awayRedCards": 0,
+    "homeXg": 0.7,
+    "awayXg": 0.56
+  },
+  "events": [
+    {
+      "minute": 10,
+      "sport": "football",
+      "type": "goal",
+      "team": "away",
+      "playerId": "rp_6",
+      "playerName": "أردا غولر",
+      "textAr": "⚽ هـــــــــــدف رائع! أردا غولر يسدد كرة قوية تستقر في الشباك بالدقيقة 10! (0 - 1)",
+      "textEn": "⚽ GOAL! Arda Güler fires a clinical shot into the net at min 10! (0 - 1)",
+      "homeScore": 0,
+      "awayScore": 1
+    },
+    {
+      "minute": 12,
+      "sport": "football",
+      "type": "save",
+      "team": "away",
+      "textAr": "🧤 تصدٍ من ركلة ثابتة (throw_in) — الدقيقة 12",
+      "textEn": "🧤 Set-piece save (throw_in) — min 12",
+      "homeScore": 0,
+      "awayScore": 1,
+      "setPieceKind": "throw_in"
+    },
+    {
+      "minute": 13,
+      "sport": "football",
+      "type": "save",
+      "team": "away",
+      "textAr": "🧤 تصدٍ من ركلة ثابتة (throw_in) — الدقيقة 13",
+      "textEn": "🧤 Set-piece save (throw_in) — min 13",
+      "homeScore": 0,
+      "awayScore": 1,
+      "setPieceKind": "throw_in"
+    },
+    {
+      "minute": 32,
+      "sport": "football",
+      "type": "red_card",
+      "team": "home",
+      "playerId": "rp_4",
+      "playerName": "ريكو لويس",
+      "textAr": "🟥 بطاقة حمراء مباشرة لـ ريكو لويس (الدقيقة 32)",
+      "textEn": "🟥 Straight red for Rico Lewis (min 32)",
+      "homeScore": 0,
+      "awayScore": 1
+    },
+    {
+      "minute": 35,
+      "sport": "football",
+      "type": "interactive_moment",
+      "team": "home",
+      "textAr": "فرصة تكتيكية حاسمة في الدقيقة 35: لاحظت ثغرة في دفاع المنافس! ما هي تعليماتك الفورية للفريق؟",
+      "textEn": "Crucial tactical moment at min 35: You spot a weakness in the opponent defense! What are your orders?",
+      "homeScore": 0,
+      "awayScore": 1,
+      "interactiveOptions": [
+        {
+          "id": "press_now",
+          "titleAr": "الضغط العالي السريع وتكثيف الهجوم",
+          "titleEn": "High Press & Flood The Box",
+          "descriptionAr": "زيادة الخطورة الهجومية مع استنزاف بدني أكبر",
+          "descriptionEn": "Increases scoring chance with higher fatigue risk",
+          "tacticEffect": {
+            "mentality": "attacking",
+            "pressing": "high_press",
+            "staminaCost": 5,
+            "riskLevel": "medium"
+          }
+        },
+        {
+          "id": "counter_trap",
+          "titleAr": "نصب مصيدة التسلل والارتداد السريع",
+          "titleEn": "Offside Trap & Swift Counters",
+          "descriptionAr": "استغلال تقدم المنافس لشن مرتدات قاتلة",
+          "descriptionEn": "Exploit opponent high line with swift direct passes",
+          "tacticEffect": {
+            "mentality": "balanced",
+            "riskLevel": "safe"
+          }
+        },
+        {
+          "id": "lock_down",
+          "titleAr": "تهدئة وتيرة اللعب والتحكم بالكرة",
+          "titleEn": "Slow Tempo & Ball Retention",
+          "descriptionAr": "حرمان الخصم من الاستحواذ وتأمين المناطق الخلفية",
+          "descriptionEn": "Starve opponent of possession and protect backline",
+          "tacticEffect": {
+            "mentality": "defensive",
+            "tempo": "slow_patient",
+            "riskLevel": "safe"
+          }
+        }
+      ]
+    },
+    {
+      "minute": 38,
+      "sport": "football",
+      "type": "save",
+      "team": "away",
+      "textAr": "🧤 تصدٍ من ركلة ثابتة (throw_in) — الدقيقة 38",
+      "textEn": "🧤 Set-piece save (throw_in) — min 38",
+      "homeScore": 0,
+      "awayScore": 1,
+      "setPieceKind": "throw_in"
+    },
+    {
+      "minute": 38,
+      "sport": "football",
+      "type": "goal",
+      "team": "away",
+      "playerId": "rp_4",
+      "playerName": "ريكو لويس",
+      "textAr": "⚽ هـــــــــــدف رائع! ريكو لويس يسدد كرة قوية تستقر في الشباك بالدقيقة 38! (0 - 2)",
+      "textEn": "⚽ GOAL! Rico Lewis fires a clinical shot into the net at min 38! (0 - 2)",
+      "homeScore": 0,
+      "awayScore": 2
+    },
+    {
+      "minute": 45,
+      "sport": "football",
+      "type": "save",
+      "team": "home",
+      "textAr": "🧤 تصدٍ خيالي من الحارس يحرم ريكو لويس من هدف محقق في الدقيقة 45!",
+      "textEn": "🧤 Sensational save by the keeper denying Rico Lewis in minute 45!",
+      "homeScore": 0,
+      "awayScore": 2
+    },
+    {
+      "minute": 72,
+      "sport": "football",
+      "type": "save",
+      "team": "home",
+      "textAr": "🧤 تصدٍ خيالي من الحارس يحرم وارن زائير-إيمري من هدف محقق في الدقيقة 72!",
+      "textEn": "🧤 Sensational save by the keeper denying Warren Zaïre-Emery in minute 72!",
+      "homeScore": 0,
+      "awayScore": 2
+    }
+  ]
+}

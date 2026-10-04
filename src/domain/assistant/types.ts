@@ -6,7 +6,9 @@
  * Pure TypeScript domain definitions (no React / DOM dependencies).
  */
 
-import type { FootballTactics, MatchMentality, PressingStyle, TeamTempo, PassingStyle, DefensiveWidth } from '../../types/game';
+import type { FootballTactics, MatchMentality, PressingStyle, TeamTempo, PassingStyle } from '../../types/game';
+
+export type TacticalWidth = FootballTactics['width'];
 import type { BestTacticsRecommendation } from '../tactics/bestTactics/types';
 import type { AnalyticsConclusion } from '../match/analyticsConclusions';
 
@@ -25,7 +27,7 @@ export interface TacticalChangesDiff {
   pressing?: PressingStyle;
   tempo?: TeamTempo;
   passing?: PassingStyle;
-  width?: DefensiveWidth;
+  width?: TacticalWidth;
   lineupSwaps?: Array<{
     playerOutId: string;
     playerOutName: string;

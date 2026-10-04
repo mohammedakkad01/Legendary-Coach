@@ -183,6 +183,12 @@ export interface GameState {
   moveSquadEntity: (playerId: string, target: MoveTarget) => MoveResult;
   /** Applies a Best Tactics recommendation (XI + substitutes + tactics) in ONE update — only from an explicit user "Apply". The store is untouched on Err. */
   applyBestTactics: (rec: BestTacticsRecommendation) => Result<Club, ApplyBestTacticsError>;
+  /** Phase G — apply a structured assistant recommendation via validated store actions only. */
+  applyAssistantRecommendation: (
+    rec: import('../domain/assistant').Recommendation,
+  ) => { ok: boolean; error?: string };
+  /** Phase G — persist ignore via livingWorld.eventLog (no ingest pipeline). */
+  dismissAssistantRecommendation: (rec: import('../domain/assistant').Recommendation) => void;
   setFootballRoles: (roles: { captainId?: string; penaltyTakerId?: string; freeKickTakerId?: string; cornerTakerId?: string }) => void;
 
   // Training & Facilities

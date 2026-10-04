@@ -28,7 +28,8 @@ import {
   SyncService,
   OFFICIAL_LEAGUES_CONFIG,
 } from './server/index.ts';
-import { handleNarrativeEnhancement } from './server/geminiNarrative.ts';
+import { handleNarrativeEnhancement, validateIncomingNarrativeRequest } from './server/geminiNarrative.ts';
+import { GEMINI_NARRATIVE_CONFIG } from './server/narrativeConfig.ts';
 
 dotenv.config();
 
@@ -40,6 +41,23 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
+
+// In-memory IP rate limiter for /api/narrative/enhance
+const narrativeIpRateBuckets = new Map<string, { count: number; windowStart: number }>();
+
+function checkNarrativeIpRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const bucket = narrativeIpRateBuckets.get(ip);
+  if (!bucket || now - bucket.windowStart > GEMINI_NARRATIVE_CONFIG.rateLimitWindowMs) {
+    narrativeIpRateBuckets.set(ip, { count: 1, windowStart: now });
+    return true;
+  }
+  if (bucket.count >= GEMINI_NARRATIVE_CONFIG.maxRequestsPerMinute) {
+    return false;
+  }
+  bucket.count += 1;
+  return true;
+}
 
 // Initialize Repositories and Services
 const footballRepo = new FootballDataRepository();
@@ -198,16 +216,35 @@ app.post('/api/football/sync-squad', async (req, res) => {
 /**
  * POST /api/narrative/enhance
  * Server-side Gemini narrative enrichment endpoint.
- * Accepts NarrativeRequest, calls Gemini with model 'gemini-3.8-flash', validates, and returns NarrativeResult.
+ * Hardened with:
+ * - Content-length payload guard (<= 16 KB)
+ * - Per-IP rate limiting (20 req/min)
+ * - Strict structural schema validation of input NarrativeRequest
+ * - Never echoes raw Gemini exceptions or internal stack traces to client
  */
 app.post('/api/narrative/enhance', async (req, res) => {
-  const request = req.body;
-  if (!request || !request.context || !request.requestId) {
-    return res.status(400).json({ error: 'Invalid NarrativeRequest body' });
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown_ip';
+
+  // 1. IP rate limit guard
+  if (!checkNarrativeIpRateLimit(clientIp)) {
+    return res.status(429).json({ error: 'Too many requests. Please slow down.' });
   }
 
+  // 2. Payload size guard
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  if (contentLength > GEMINI_NARRATIVE_CONFIG.maxPayloadBytes) {
+    return res.status(413).json({ error: 'Payload exceeds maximum allowed size' });
+  }
+
+  // 3. Schema validation guard
+  const validation = validateIncomingNarrativeRequest(req.body);
+  if (!validation.ok) {
+    return res.status(400).json({ error: validation.error });
+  }
+
+  // 4. Safe AI execution
   const apiKey = process.env.GEMINI_API_KEY;
-  const outcome = await handleNarrativeEnhancement(request, apiKey);
+  const outcome = await handleNarrativeEnhancement(validation.data, apiKey);
 
   if (!outcome.ok) {
     return res.status(outcome.status).json({ error: outcome.error });

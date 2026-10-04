@@ -36,8 +36,19 @@ export interface EnrichedNarrativeText {
 
 // Session call counters (transient memory only)
 let sessionCallCount = 0;
-const MAX_SESSION_CALLS = 15;
-const MAX_DAILY_CALLS = 40;
+export const MAX_SESSION_CALLS = 15;
+export const MAX_DAILY_CALLS = 40;
+
+export function _resetNarrativeCapsForTest(): void {
+  sessionCallCount = 0;
+  try {
+    localStorage.removeItem('narrative_daily_calls');
+  } catch {}
+}
+
+export function _setSessionCallCountForTest(count: number): void {
+  sessionCallCount = count;
+}
 
 function getDailyCount(): number {
   try {

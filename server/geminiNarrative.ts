@@ -2,14 +2,17 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * Server-side Gemini narrative handler.
- * Consumes @google/genai with model 'gemini-3.8-flash'.
- * Enforces structured schema output, low temperature, and server-side domain validation.
+ * Server-side Gemini narrative handler with production hardening:
+ * - Single config-driven model name (GEMINI_NARRATIVE_CONFIG.model)
+ * - Safe server-side error logging (model name, status code, error type, NO prompts, NO secrets)
+ * - Strict schema validation of input NarrativeRequest
+ * - Never echoes raw Gemini exceptions or stack traces to client
  */
 
 import { GoogleGenAI, Type, Schema } from '@google/genai';
 import type { NarrativeRequest, NarrativeResult } from '../src/domain/livingWorld/narrative/contracts.ts';
 import { validateNarrativeResult } from '../src/domain/livingWorld/narrative/validate.ts';
+import { GEMINI_NARRATIVE_CONFIG } from './narrativeConfig.ts';
 
 const narrativeResponseSchema: Schema = {
   type: Type.OBJECT,
@@ -28,13 +31,52 @@ const narrativeResponseSchema: Schema = {
   required: ['requestId', 'presentation'],
 };
 
+export function validateIncomingNarrativeRequest(payload: unknown): { ok: true; data: NarrativeRequest } | { ok: false; error: string } {
+  if (!payload || typeof payload !== 'object') {
+    return { ok: false, error: 'Request body must be a JSON object' };
+  }
+
+  const r = payload as Record<string, unknown>;
+  if (typeof r.requestId !== 'string' || !r.requestId.trim()) {
+    return { ok: false, error: 'Missing or invalid requestId' };
+  }
+  if (r.schemaVersion !== 1) {
+    return { ok: false, error: 'Invalid schemaVersion (expected 1)' };
+  }
+  if (!r.context || typeof r.context !== 'object') {
+    return { ok: false, error: 'Missing context object' };
+  }
+
+  const ctx = r.context as Record<string, unknown>;
+  if (ctx.locale !== 'en' && ctx.locale !== 'ar') {
+    return { ok: false, error: 'locale must be "en" or "ar"' };
+  }
+  if (typeof ctx.season !== 'number') {
+    return { ok: false, error: 'season must be a number' };
+  }
+  if (typeof ctx.clubId !== 'string' || !ctx.clubId.trim()) {
+    return { ok: false, error: 'clubId must be a non-empty string' };
+  }
+  if (!Array.isArray(ctx.subjectIds)) {
+    return { ok: false, error: 'subjectIds must be an array' };
+  }
+  if (!Array.isArray(ctx.factKeys)) {
+    return { ok: false, error: 'factKeys must be an array' };
+  }
+
+  return { ok: true, data: payload as NarrativeRequest };
+}
+
 export async function handleNarrativeEnhancement(
   request: NarrativeRequest,
   apiKey: string | undefined
 ): Promise<{ ok: boolean; status: number; result?: NarrativeResult; error?: string }> {
   if (!apiKey) {
-    return { ok: false, status: 503, error: 'GEMINI_API_KEY not configured on server' };
+    console.warn('[GeminiNarrative] GEMINI_API_KEY is not configured on server.');
+    return { ok: false, status: 503, error: 'AI narrative service is temporarily unavailable' };
   }
+
+  const modelName = GEMINI_NARRATIVE_CONFIG.model;
 
   try {
     const ai = new GoogleGenAI({ apiKey });
@@ -59,7 +101,7 @@ Rules:
 - Request ID: ${request.requestId}`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: modelName,
       contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
       config: {
         systemInstruction: systemPrompt,
@@ -72,14 +114,16 @@ Rules:
 
     const text = response.text?.trim();
     if (!text) {
-      return { ok: false, status: 502, error: 'Empty output from Gemini model' };
+      console.warn(`[GeminiNarrative] Model '${modelName}' returned empty output for req ${request.requestId}`);
+      return { ok: false, status: 502, error: 'AI provider returned an empty response' };
     }
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
     } catch {
-      return { ok: false, status: 502, error: 'Malformed JSON from Gemini model' };
+      console.warn(`[GeminiNarrative] Model '${modelName}' returned non-JSON output for req ${request.requestId}`);
+      return { ok: false, status: 502, error: 'AI provider returned invalid JSON' };
     }
 
     // Server-side validation pass
@@ -87,10 +131,11 @@ Rules:
     const validation = validateNarrativeResult(request, parsed, { knownIds });
 
     if (!validation.ok || !validation.sanitized) {
+      console.warn(`[GeminiNarrative] Validation rejected output for req ${request.requestId}:`, validation.errors);
       return {
         ok: false,
         status: 422,
-        error: `Validation failed: ${validation.errors.join(', ')}`,
+        error: 'Generated narrative failed verification standards',
       };
     }
 
@@ -100,10 +145,16 @@ Rules:
       result: validation.sanitized,
     };
   } catch (err: any) {
+    // Log server-side diagnostic without leaking secrets or full prompts
+    const errMessage = err?.message || String(err);
+    const errStatus = err?.status || err?.statusCode || 500;
+    console.error(`[GeminiNarrative] Model '${modelName}' call failed (Status: ${errStatus}): ${errMessage}`);
+
+    // Return sanitized message to client - never echo raw Gemini stack or internals
     return {
       ok: false,
       status: 500,
-      error: err.message || 'Internal server error while calling Gemini',
+      error: 'Failed to generate narrative enrichment',
     };
   }
 }

@@ -147,6 +147,8 @@ export interface GameState {
   /** Phase D recruitment slice (persisted; domain-only truth stays internal). */
   recruitmentWorld: RecruitmentWorldState;
   clubManagement: ClubManagementState;
+  /** Phase G AI Assistant state */
+  assistant: import('../domain/assistant/types').AssistantState;
   saveId: string;
   /** Persistence-only unknown root JSON keys (never read by gameplay). */
   savePassthrough: Record<string, unknown>;
@@ -290,4 +292,18 @@ export interface GameState {
     cohesionDelta: number;
   };
   storeNarrativeCacheEntry: (entry: import('../domain/livingWorld/phaseF/types').NarrativeCacheEntry) => void;
+
+  // Phase G AI Assistant & Tactical Analyst Actions
+  ignoreAssistantRecommendation: (id: string) => void;
+  applyAssistantRecommendation: (
+    recommendation: import('../domain/assistant/types').AssistantRecommendation
+  ) => { success: boolean; message: string };
+  cacheAssistantExplanation: (
+    key: string,
+    data: { explanation: string; keyPoints: string[]; timestamp: string }
+  ) => void;
+  getPreMatchAnalysis: () => import('../domain/assistant/types').PreMatchAnalysis | null;
+  getLiveMatchAnalysis: () => import('../domain/assistant/types').LiveMatchAnalysis | null;
+  getPostMatchAnalysis: () => import('../domain/assistant/types').PostMatchAnalysis | null;
+  getExplainableTacticsRecommendation: () => import('../domain/assistant/types').AssistantRecommendation | null;
 }

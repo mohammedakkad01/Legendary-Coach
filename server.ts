@@ -29,6 +29,7 @@ import {
   OFFICIAL_LEAGUES_CONFIG,
 } from './server/index.ts';
 import { handleNarrativeEnhancement, validateIncomingNarrativeRequest } from './server/geminiNarrative.ts';
+import { handleAssistantExplanation, validateIncomingAssistantRequest } from './server/geminiAssistant.ts';
 import { GEMINI_NARRATIVE_CONFIG } from './server/narrativeConfig.ts';
 
 dotenv.config();
@@ -251,6 +252,42 @@ app.post('/api/narrative/enhance', async (req, res) => {
   }
 
   return res.json(outcome.result);
+});
+
+/**
+ * POST /api/assistant/explain
+ * Server-side Gemini AI Assistant explanation endpoint.
+ * Hardened with:
+ * - Content-length payload guard (<= 16 KB)
+ * - Per-IP rate limiting (20 req/min)
+ * - Strict schema validation
+ * - Server-side validation rejecting state mutation attempts
+ */
+app.post('/api/assistant/explain', async (req, res) => {
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown_ip';
+
+  if (!checkNarrativeIpRateLimit(clientIp)) {
+    return res.status(429).json({ error: 'Too many requests. Please slow down.' });
+  }
+
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  if (contentLength > GEMINI_NARRATIVE_CONFIG.maxPayloadBytes) {
+    return res.status(413).json({ error: 'Payload exceeds maximum allowed size' });
+  }
+
+  const validation = validateIncomingAssistantRequest(req.body);
+  if (!validation.ok) {
+    return res.status(400).json({ error: validation.error });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  const outcome = await handleAssistantExplanation(validation.data, apiKey);
+
+  if (!outcome.ok) {
+    return res.status(outcome.status).json({ error: outcome.error });
+  }
+
+  return res.json({ success: true, data: outcome.result });
 });
 
 // Vite Middleware for Dev, Static serving for Production

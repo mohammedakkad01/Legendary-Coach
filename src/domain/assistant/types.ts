@@ -1,176 +1,102 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- *
- * Phase G — AI Assistant & Tactical Analyst domain types.
- * Pure TypeScript domain definitions (no React / DOM dependencies).
  */
 
-import type { FootballTactics, MatchMentality, PressingStyle, TeamTempo, PassingStyle, DefensiveWidth } from '../../types/game';
+import type { FootballTactics } from '../../types/game';
 import type { BestTacticsRecommendation } from '../tactics/bestTactics/types';
-import type { AnalyticsConclusion } from '../match/analyticsConclusions';
+import type { MoveTarget } from '../squad/squadTypes';
 
-export type AssistantSource =
-  | 'pre_match'
-  | 'live_match'
-  | 'post_match'
+export type AssistantSource = 'pre_match' | 'live' | 'post_match' | 'best_tactics' | 'scouting';
+
+export type RecommendationSeverity = 'info' | 'warning' | 'critical';
+
+export type SuggestedChangeKind =
   | 'tactics'
-  | 'scouting';
+  | 'lineup'
+  | 'live_tactics'
+  | 'best_tactics_apply';
 
-export type RecommendationSeverity = 'low' | 'medium' | 'high' | 'critical';
-
-export interface TacticalChangesDiff {
-  formation?: string;
-  mentality?: MatchMentality;
-  pressing?: PressingStyle;
-  tempo?: TeamTempo;
-  passing?: PassingStyle;
-  width?: DefensiveWidth;
-  lineupSwaps?: Array<{
-    playerOutId: string;
-    playerOutName: string;
-    playerInId: string;
-    playerInName: string;
-    reasonEn: string;
-    reasonAr: string;
-  }>;
-  bestTacticsRec?: BestTacticsRecommendation;
+export interface SuggestedChange {
+  readonly kind: SuggestedChangeKind;
+  readonly patch?: Partial<FootballTactics>;
+  readonly lineupMoves?: readonly { readonly playerId: string; readonly target: MoveTarget }[];
+  readonly bestTacticsRec?: BestTacticsRecommendation;
 }
 
-export interface AssistantRecommendation {
-  id: string;
-  source: AssistantSource;
-  severity: RecommendationSeverity;
-  /** 0-100 score reflecting confidence derived from data quality, sample size, and scouting accuracy. */
-  confidence: number;
-  titleEn: string;
-  titleAr: string;
-  summaryEn: string;
-  summaryAr: string;
-  reasonCodes: string[];
-  reasonDetailsEn?: string[];
-  reasonDetailsAr?: string[];
-  suggestedChanges?: TacticalChangesDiff;
-  expiryMinute?: number;
-  expiryMatchday?: number;
-  status: 'pending' | 'applied' | 'ignored';
-  createdAt: string;
+export interface Recommendation {
+  readonly id: string;
+  readonly dedupeKey: string;
+  readonly source: AssistantSource;
+  readonly severity: RecommendationSeverity;
+  readonly confidence: number;
+  readonly reasonCodes: readonly string[];
+  readonly reasonParams?: Readonly<Record<string, string | number>>;
+  readonly titleEn: string;
+  readonly titleAr: string;
+  readonly summaryEn: string;
+  readonly summaryAr: string;
+  readonly suggestedChanges: readonly SuggestedChange[];
+  readonly expiryMinute?: number;
+  readonly fixtureMatchday?: number;
+  readonly importance: number;
+}
+
+export interface AnalysisFinding {
+  readonly code: string;
+  readonly confidence: number;
+  readonly params?: Readonly<Record<string, string | number>>;
 }
 
 export interface PreMatchAnalysis {
-  opponentClubId: string;
-  opponentFormation: string;
-  strengths: Array<{ labelEn: string; labelAr: string; confidence: number }>;
-  weaknesses: Array<{ labelEn: string; labelAr: string; confidence: number }>;
-  mainThreat: {
-    playerId?: string;
-    playerName: string;
-    role: string;
-    threatReasonEn: string;
-    threatReasonAr: string;
+  readonly opponentFormation: string;
+  readonly strengths: readonly AnalysisFinding[];
+  readonly weaknesses: readonly AnalysisFinding[];
+  readonly mainThreat: AnalysisFinding | null;
+  readonly defensiveVulnerabilities: readonly AnalysisFinding[];
+  readonly setPieceDanger: { readonly level: 'low' | 'medium' | 'high'; readonly confidence: number };
+  readonly keyPlayers: readonly { readonly playerId: string; readonly reasonCode: string; readonly confidence: number }[];
+  readonly recentForm: { readonly w: number; readonly d: number; readonly l: number; readonly sampleSize: number };
+  readonly tendencies: readonly AnalysisFinding[];
+  readonly refereeMode: 'generic' | 'assigned';
+  readonly refereeProfile?: {
+    readonly strictness: number;
+    readonly cardTendency: number;
+    readonly penaltyTendency: number;
+    readonly foulSensitivity: number;
   };
-  defensiveVulnerabilities: Array<{
-    zone: 'left' | 'center' | 'right';
-    detailEn: string;
-    detailAr: string;
-  }>;
-  setPieceDanger: {
-    riskLevel: 'low' | 'medium' | 'high';
-    aerialPower: number;
-    noteEn: string;
-    noteAr: string;
-  };
-  keyPlayers: Array<{
-    name: string;
-    position: string;
-    ratingEst: number;
-    formTrend: 'hot' | 'normal' | 'cold';
-  }>;
-  refereeProfile?: {
-    name: string;
-    strictness: string;
-    cardTendency: string;
-    penaltyTendency: string;
-    adviceEn: string;
-    adviceAr: string;
-  };
-  overallConfidence: number;
-  dataQualityNoticeEn: string;
-  dataQualityNoticeAr: string;
-  recommendations: AssistantRecommendation[];
-}
-
-export interface LiveMatchAnalysis {
-  minute: number;
-  zonesSummary: {
-    leftAttacks: number;
-    centerAttacks: number;
-    rightAttacks: number;
-    dominantThreatZone: 'left' | 'center' | 'right' | null;
-  };
-  midfieldControl: {
-    duelWinRate: number;
-    possessionPct: number;
-    ppda: number;
-    verdictEn: string;
-    verdictAr: string;
-  };
-  pressingEffectiveness: 'dominant' | 'adequate' | 'failing';
-  fatigueWarnings: Array<{
-    playerId: string;
-    playerName: string;
-    stamina: number;
-    recommendation: 'sub_off' | 'rest_in_possession';
-  }>;
-  opponentTacticalShift?: {
-    descriptionEn: string;
-    descriptionAr: string;
-    detectedAtMinute: number;
-  };
-  activeAlerts: AssistantRecommendation[];
+  readonly overallConfidence: number;
+  readonly uncertaintyNoteCode?: string;
 }
 
 export interface PostMatchAnalysis {
-  matchRecordId: string;
-  summaryEn: string;
-  summaryAr: string;
-  keyConclusions: AnalyticsConclusion[];
-  actionableTakeaways: AssistantRecommendation[];
+  readonly conclusionCodes: readonly string[];
+  readonly recommendations: readonly Recommendation[];
+  readonly overallConfidence: number;
 }
 
 export interface ScoutingSummary {
-  playerId: string;
-  confidencePct: number;
-  ratingBand: string;
-  potentialBand: string;
-  estimatedValueFormatted: string;
-  strengthsEn: string[];
-  strengthsAr: string[];
-  risksEn: string[];
-  risksAr: string[];
-  tacticalFitEn: string;
-  tacticalFitAr: string;
-  recommendation: AssistantRecommendation;
+  readonly playerId: string;
+  readonly headlineEn: string;
+  readonly headlineAr: string;
+  readonly bulletCodes: readonly string[];
+  readonly confidencePct: number;
 }
 
-export interface AssistantExplanation {
-  recommendationId: string;
-  explanation: string;
-  keyPoints: string[];
-  isAiEnhanced: boolean;
-  cached: boolean;
+export interface LiveAnalystInput {
+  readonly minute: number;
+  readonly events: readonly import('../../types/game').MatchEvent[];
+  readonly stats: import('../../types/game').MatchStats;
+  readonly analytics: import('../match/matchAnalytics').MatchAnalyticsSummary;
+  readonly cooldowns: Readonly<Record<string, number>>;
+  readonly alertsEmitted: number;
+  readonly avgSquadFatigueAtKickoff: number | null;
 }
 
-export interface AssistantState {
-  ignoredRecommendationIds: string[];
-  appliedRecommendationIds: string[];
-  liveTriggerCooldowns: Record<string, number>;
-  activeRecommendations: AssistantRecommendation[];
-  explanationCache: Record<string, {
-    explanation: string;
-    keyPoints: string[];
-    timestamp: string;
-  }>;
+export interface LiveAnalystResult {
+  readonly recommendations: readonly Recommendation[];
+  readonly cooldowns: Readonly<Record<string, number>>;
+  readonly alertsEmitted: number;
 }
 
-export const ASSISTANT_SCHEMA_VERSION = 1 as const;
+export const ASSISTANT_DISMISS_EVENT_TYPE = 'assistant.advice_dismissed' as const;

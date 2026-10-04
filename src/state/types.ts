@@ -147,8 +147,6 @@ export interface GameState {
   /** Phase D recruitment slice (persisted; domain-only truth stays internal). */
   recruitmentWorld: RecruitmentWorldState;
   clubManagement: ClubManagementState;
-  /** Phase G AI Assistant state */
-  assistant: import('../domain/assistant/types').AssistantState;
   saveId: string;
   /** Persistence-only unknown root JSON keys (never read by gameplay). */
   savePassthrough: Record<string, unknown>;
@@ -185,6 +183,12 @@ export interface GameState {
   moveSquadEntity: (playerId: string, target: MoveTarget) => MoveResult;
   /** Applies a Best Tactics recommendation (XI + substitutes + tactics) in ONE update — only from an explicit user "Apply". The store is untouched on Err. */
   applyBestTactics: (rec: BestTacticsRecommendation) => Result<Club, ApplyBestTacticsError>;
+  /** Phase G — apply a structured assistant recommendation via validated store actions only. */
+  applyAssistantRecommendation: (
+    rec: import('../domain/assistant').Recommendation,
+  ) => { ok: boolean; error?: string };
+  /** Phase G — persist ignore via livingWorld.eventLog (no ingest pipeline). */
+  dismissAssistantRecommendation: (rec: import('../domain/assistant').Recommendation) => void;
   setFootballRoles: (roles: { captainId?: string; penaltyTakerId?: string; freeKickTakerId?: string; cornerTakerId?: string }) => void;
 
   // Training & Facilities
@@ -292,18 +296,4 @@ export interface GameState {
     cohesionDelta: number;
   };
   storeNarrativeCacheEntry: (entry: import('../domain/livingWorld/phaseF/types').NarrativeCacheEntry) => void;
-
-  // Phase G AI Assistant & Tactical Analyst Actions
-  ignoreAssistantRecommendation: (id: string) => void;
-  applyAssistantRecommendation: (
-    recommendation: import('../domain/assistant/types').AssistantRecommendation
-  ) => { success: boolean; message: string };
-  cacheAssistantExplanation: (
-    key: string,
-    data: { explanation: string; keyPoints: string[]; timestamp: string }
-  ) => void;
-  getPreMatchAnalysis: () => import('../domain/assistant/types').PreMatchAnalysis | null;
-  getLiveMatchAnalysis: () => import('../domain/assistant/types').LiveMatchAnalysis | null;
-  getPostMatchAnalysis: () => import('../domain/assistant/types').PostMatchAnalysis | null;
-  getExplainableTacticsRecommendation: () => import('../domain/assistant/types').AssistantRecommendation | null;
 }

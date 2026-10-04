@@ -18,6 +18,7 @@ import { InteractiveDecisionBanner, SpeedUpgradeModal } from './live-match/Speed
 import { LiveTacticsPanel } from './live-match/LiveTacticsPanel';
 import { VarOverlay } from './live-match/VarOverlay';
 import { LIVE_TACTICS_TEXT, pick } from '../i18n/liveTactics';
+import { LiveAssistantStrip } from './assistant/LiveAssistantStrip';
 
 export const LiveMatchView: React.FC = () => {
   const {
@@ -73,6 +74,8 @@ export const LiveMatchView: React.FC = () => {
         onOpenSpeedModal={() => setSpeedModalOpen(true)}
         onInstantSimulate={instantSimulateMatch}
       />
+
+      {isMatchLive && !record!.isFinished && <LiveAssistantStrip isAr={isAr} />}
 
       <VarOverlay
         reviews={record?.varReviews}

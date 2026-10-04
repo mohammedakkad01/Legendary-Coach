@@ -97,6 +97,8 @@ import type { MoveTarget } from '../domain/squad/squadTypes';
 import { applySquadState, createSquadState } from '../domain/squad/squadStateAdapter';
 import { EMPTY_SLOT } from '../domain/squad/squadTypes';
 import { applyRecommendation } from '../domain/tactics/bestTactics/applyRecommendation';
+import { buildDismissEvent } from '../domain/assistant/recommendations/filterIgnored';
+import type { Recommendation as AssistantRecommendation } from '../domain/assistant/types';
 import type { ApplyBestTacticsError } from '../domain/tactics/bestTactics/applyRecommendation';
 import type { BestTacticsRecommendation } from '../domain/tactics/bestTactics/types';
 import type { Result } from '../domain/shared/result';
@@ -301,6 +303,8 @@ interface GameState {
   moveSquadEntity: (playerId: string, target: MoveTarget) => MoveResult;
   /** Applies a Best Tactics recommendation (XI + substitutes + tactics) in ONE update — only from an explicit user "Apply". The store is untouched on Err. */
   applyBestTactics: (rec: BestTacticsRecommendation) => Result<Club, ApplyBestTacticsError>;
+  applyAssistantRecommendation: (rec: AssistantRecommendation) => { ok: boolean; error?: string };
+  dismissAssistantRecommendation: (rec: AssistantRecommendation) => void;
   setFootballRoles: (roles: { captainId?: string; penaltyTakerId?: string; freeKickTakerId?: string; cornerTakerId?: string }) => void;
 
   // Training & Facilities
@@ -1673,6 +1677,65 @@ export const useGameStore = create<GameState>((set, get) => {
         saveToStorage();
       }
       return result;
+    },
+
+    applyAssistantRecommendation: (rec: AssistantRecommendation) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      const change = rec.suggestedChanges[0];
+      if (!change) {
+        return { ok: false, error: isAr ? 'لا توجد تغييرات مقترحة' : 'No suggested changes' };
+      }
+      if (change.kind === 'best_tactics_apply' && change.bestTacticsRec) {
+        const result = get().applyBestTactics(change.bestTacticsRec);
+        if (!result.ok) {
+          return { ok: false, error: isAr ? 'تعذر تطبيق أفضل تكتيك' : 'Could not apply Best Tactics' };
+        }
+        return { ok: true };
+      }
+      if (change.kind === 'tactics' && change.patch) {
+        get().updateFootballTactics(change.patch);
+        return { ok: true };
+      }
+      if (change.kind === 'live_tactics' && change.patch) {
+        if (!state.isMatchLive) {
+          return { ok: false, error: isAr ? 'لا توجد مباراة مباشرة' : 'No live match' };
+        }
+        const ev = get().applyLiveTactics(change.patch);
+        if (!ev) {
+          return { ok: false, error: isAr ? 'تعذر تطبيق التكتيك المباشر' : 'Live tactics apply failed' };
+        }
+        return { ok: true };
+      }
+      if (change.kind === 'lineup' && change.lineupMoves) {
+        for (const m of change.lineupMoves) {
+          const res = get().moveSquadEntity(m.playerId, m.target);
+          if (!res.ok) {
+            return { ok: false, error: isAr ? 'تعذر تحريك اللاعب' : 'Lineup move rejected' };
+          }
+        }
+        return { ok: true };
+      }
+      return { ok: false, error: isAr ? 'نوع التغيير غير مدعوم' : 'Unsupported change kind' };
+    },
+
+    dismissAssistantRecommendation: (rec: AssistantRecommendation) => {
+      const state = get();
+      const event = buildDismissEvent({
+        dedupeKey: rec.dedupeKey,
+        clubId: state.club.id,
+        season: state.livingWorld?.currentSeason ?? 1,
+        nowIso: new Date().toISOString(),
+        recommendationId: rec.id,
+      });
+      const applied = applyStateChanges(
+        { livingWorld: state.livingWorld, players: state.club.footballSquad },
+        [{ kind: 'appendGameEvent', event }],
+      );
+      set({
+        livingWorld: applied.livingWorld,
+      });
+      saveToStorage({ livingWorld: applied.livingWorld }, false);
     },
 
     startNegotiation: (playerId: string, initialOfferAmount: number) => {

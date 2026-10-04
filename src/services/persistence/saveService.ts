@@ -18,6 +18,11 @@ import { REAL_INITIAL_PLAYER_CLUB, REAL_INITIAL_STANDINGS, REAL_INITIAL_SCOUT_MA
 import { STORY_CHAPTER_1_MISSIONS } from '../../data/storyChapter1';
 import { INITIAL_DAILY_MISSIONS } from '../../data/dailyMissionsData';
 import { generateFixturesForLeague, ensureFixtureDates } from '../../data/realLeaguesData';
+import { finalizePersistedGameSave } from './finalizePersistedSave';
+import {
+  extractAssistantPersistedFromState,
+  readAiNarrationEnabledFromState,
+} from './assistantPersist';
 
 export const STORAGE_KEY = 'MODAREB_LEGEND_REAL_V2';
 export const APP_VERSION = '2.1.0';
@@ -165,6 +170,8 @@ export class SaveService {
       livingWorld: state.livingWorld as GameSaveData['livingWorld'],
       recruitmentWorld: state.recruitmentWorld as GameSaveData['recruitmentWorld'],
       clubManagement: state.clubManagement as GameSaveData['clubManagement'],
+      assistant: extractAssistantPersistedFromState(state),
+      aiNarrationEnabled: readAiNarrationEnabledFromState(state),
       savePassthrough:
         state.savePassthrough && typeof state.savePassthrough === 'object'
           ? (state.savePassthrough as Record<string, unknown>)
@@ -179,7 +186,7 @@ export class SaveService {
     const syncedClub = withClub.clubManagement
       ? syncClubFromClubManagement(withClub.club, withClub.clubManagement)
       : withClub.club;
-    return { ...withClub, club: syncedClub };
+    return finalizePersistedGameSave({ ...withClub, club: syncedClub });
   }
 
   public serialize(data: GameSaveData, pretty = false): string {

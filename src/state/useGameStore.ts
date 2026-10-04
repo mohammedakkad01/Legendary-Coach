@@ -91,6 +91,10 @@ import { soundEffects } from '../audio/soundFX';
 import confetti from 'canvas-confetti';
 import { calculateTeamSynergy, TeamSynergyResult } from '../utils/teamSynergy';
 import { persistenceService } from '../services/persistenceService';
+import {
+  mergeAssistantIntoRuntimeState,
+  readAiNarrationEnabledFromSave,
+} from '../services/persistence/assistantPersist';
 import { moveEntity } from '../domain/squad/moveEntity';
 import type { MoveResult } from '../domain/squad/moveEntity';
 import type { MoveTarget } from '../domain/squad/squadTypes';
@@ -1363,11 +1367,11 @@ export const useGameStore = create<GameState>((set, get) => {
     livingWorld: initialWorldWithPhaseF,
     recruitmentWorld: initialRecruitmentWorld,
     clubManagement: initialClubManagement,
-    assistant: createEmptyAssistantState(),
+    assistant: mergeAssistantIntoRuntimeState(initialSave?.assistant),
     saveId: initialSave?.saveId ?? `save_${Date.now()}`,
     savePassthrough: initialSave?.savePassthrough ?? {},
 
-    aiNarrationEnabled: true,
+    aiNarrationEnabled: initialSave ? readAiNarrationEnabledFromSave(initialSave) : true,
     setAiNarrationEnabled: (enabled: boolean) => {
       set({ aiNarrationEnabled: enabled });
     },
@@ -4831,6 +4835,8 @@ export const useGameStore = create<GameState>((set, get) => {
         matchScoutReports: data.matchScoutReports,
         unlockedSpeed2x: data.unlockedSpeed2x,
         livingWorld: importedHydrated.livingWorld,
+        assistant: mergeAssistantIntoRuntimeState(data.assistant),
+        aiNarrationEnabled: readAiNarrationEnabledFromSave(data),
         savePassthrough: data.savePassthrough ?? {},
         activeTab: 'dashboard',
         clubSelectionModalOpen: false,

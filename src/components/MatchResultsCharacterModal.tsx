@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useGameStore } from '../state/useGameStore';
 import confetti from 'canvas-confetti';
+import { PostMatchAssistantSection } from './assistant/PostMatchAssistantSection';
 
 export const MatchResultsCharacterModal: React.FC = () => {
   const { postMatchAnalyst, setPostMatchAnalyst, activeMatchRecord, club, language } = useGameStore();
@@ -268,6 +269,8 @@ export const MatchResultsCharacterModal: React.FC = () => {
                 )}
               </div>
             )}
+
+            <PostMatchAssistantSection isAr={isAr} />
 
             {/* Tactical Advice for Next Game */}
             <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex items-start gap-3">

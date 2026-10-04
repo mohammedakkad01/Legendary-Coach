@@ -32,7 +32,7 @@ import {
   Gem
 } from 'lucide-react';
 import { formatFixtureDate } from '../utils/fixtureDate';
-import { AssistantRecommendationsPanel } from './assistant/AssistantRecommendationsPanel';
+import { PreMatchAnalystPanel } from './assistant/PreMatchAnalystPanel';
 
 export const PreMatchView: React.FC = () => {
   const { 
@@ -391,9 +391,7 @@ export const PreMatchView: React.FC = () => {
           </div>
         </div>
 
-        <div className="mt-5">
-          <AssistantRecommendationsPanel isAr={isAr} compact />
-        </div>
+        <PreMatchAnalystPanel isAr={isAr} />
 
         {/* Action Buttons */}
         <div className="mt-6 pt-5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3">

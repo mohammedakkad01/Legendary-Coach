@@ -97,26 +97,10 @@ import type { MoveTarget } from '../domain/squad/squadTypes';
 import { applySquadState, createSquadState } from '../domain/squad/squadStateAdapter';
 import { EMPTY_SLOT } from '../domain/squad/squadTypes';
 import { applyRecommendation } from '../domain/tactics/bestTactics/applyRecommendation';
+import { buildDismissEvent } from '../domain/assistant/recommendations/filterIgnored';
+import type { Recommendation as AssistantRecommendation } from '../domain/assistant/types';
 import type { ApplyBestTacticsError } from '../domain/tactics/bestTactics/applyRecommendation';
 import type { BestTacticsRecommendation } from '../domain/tactics/bestTactics/types';
-import { deriveOpponentProfile } from '../domain/tactics/bestTactics/opponentProfile';
-import {
-  createEmptyAssistantState,
-  mergeAssistantExplanationCache,
-  generatePreMatchAnalysis,
-  generatePostMatchAnalysis,
-  evaluateLiveMatch,
-  getExplainableBestTactics,
-  tacticsPatchFromAssistantChanges,
-  requiresBestTacticsApply,
-} from '../domain/assistant';
-import type {
-  AssistantRecommendation,
-  AssistantState,
-  PreMatchAnalysis,
-  LiveMatchAnalysis,
-  PostMatchAnalysis,
-} from '../domain/assistant/types';
 import type { Result } from '../domain/shared/result';
 import { deriveSyntheticOpponentTactics, opponentTacticsWithRoles } from '../domain/tactics/deriveSyntheticOpponentTactics';
 import { assignLineupToFormation } from '../domain/squad/assignFormationLineup';
@@ -284,7 +268,6 @@ interface GameState {
   livingWorld: LivingWorldState;
   recruitmentWorld: RecruitmentWorldState;
   clubManagement: ClubManagementState;
-  assistant: AssistantState;
   saveId: string;
   savePassthrough: Record<string, unknown>;
 
@@ -320,6 +303,8 @@ interface GameState {
   moveSquadEntity: (playerId: string, target: MoveTarget) => MoveResult;
   /** Applies a Best Tactics recommendation (XI + substitutes + tactics) in ONE update — only from an explicit user "Apply". The store is untouched on Err. */
   applyBestTactics: (rec: BestTacticsRecommendation) => Result<Club, ApplyBestTacticsError>;
+  applyAssistantRecommendation: (rec: AssistantRecommendation) => { ok: boolean; error?: string };
+  dismissAssistantRecommendation: (rec: AssistantRecommendation) => void;
   setFootballRoles: (roles: { captainId?: string; penaltyTakerId?: string; freeKickTakerId?: string; cornerTakerId?: string }) => void;
 
   // Training & Facilities
@@ -432,20 +417,6 @@ interface GameState {
     cohesionDelta: number;
   };
   storeNarrativeCacheEntry: (entry: NarrativeCacheEntry) => void;
-
-  // Phase G AI Assistant & Tactical Analyst
-  ignoreAssistantRecommendation: (id: string) => void;
-  applyAssistantRecommendation: (
-    recommendation: AssistantRecommendation,
-  ) => { success: boolean; message: string };
-  cacheAssistantExplanation: (
-    key: string,
-    data: { explanation: string; keyPoints: string[]; timestamp: string },
-  ) => void;
-  getPreMatchAnalysis: () => PreMatchAnalysis | null;
-  getLiveMatchAnalysis: () => LiveMatchAnalysis | null;
-  getPostMatchAnalysis: () => PostMatchAnalysis | null;
-  getExplainableTacticsRecommendation: () => AssistantRecommendation | null;
 }
 
 export const useGameStore = create<GameState>((set, get) => {
@@ -1363,7 +1334,6 @@ export const useGameStore = create<GameState>((set, get) => {
     livingWorld: initialWorldWithPhaseF,
     recruitmentWorld: initialRecruitmentWorld,
     clubManagement: initialClubManagement,
-    assistant: createEmptyAssistantState(),
     saveId: initialSave?.saveId ?? `save_${Date.now()}`,
     savePassthrough: initialSave?.savePassthrough ?? {},
 
@@ -1707,6 +1677,65 @@ export const useGameStore = create<GameState>((set, get) => {
         saveToStorage();
       }
       return result;
+    },
+
+    applyAssistantRecommendation: (rec: AssistantRecommendation) => {
+      const state = get();
+      const isAr = state.language === 'ar';
+      const change = rec.suggestedChanges[0];
+      if (!change) {
+        return { ok: false, error: isAr ? 'لا توجد تغييرات مقترحة' : 'No suggested changes' };
+      }
+      if (change.kind === 'best_tactics_apply' && change.bestTacticsRec) {
+        const result = get().applyBestTactics(change.bestTacticsRec);
+        if (!result.ok) {
+          return { ok: false, error: isAr ? 'تعذر تطبيق أفضل تكتيك' : 'Could not apply Best Tactics' };
+        }
+        return { ok: true };
+      }
+      if (change.kind === 'tactics' && change.patch) {
+        get().updateFootballTactics(change.patch);
+        return { ok: true };
+      }
+      if (change.kind === 'live_tactics' && change.patch) {
+        if (!state.isMatchLive) {
+          return { ok: false, error: isAr ? 'لا توجد مباراة مباشرة' : 'No live match' };
+        }
+        const ev = get().applyLiveTactics(change.patch);
+        if (!ev) {
+          return { ok: false, error: isAr ? 'تعذر تطبيق التكتيك المباشر' : 'Live tactics apply failed' };
+        }
+        return { ok: true };
+      }
+      if (change.kind === 'lineup' && change.lineupMoves) {
+        for (const m of change.lineupMoves) {
+          const res = get().moveSquadEntity(m.playerId, m.target);
+          if (!res.ok) {
+            return { ok: false, error: isAr ? 'تعذر تحريك اللاعب' : 'Lineup move rejected' };
+          }
+        }
+        return { ok: true };
+      }
+      return { ok: false, error: isAr ? 'نوع التغيير غير مدعوم' : 'Unsupported change kind' };
+    },
+
+    dismissAssistantRecommendation: (rec: AssistantRecommendation) => {
+      const state = get();
+      const event = buildDismissEvent({
+        dedupeKey: rec.dedupeKey,
+        clubId: state.club.id,
+        season: state.livingWorld?.currentSeason ?? 1,
+        nowIso: new Date().toISOString(),
+        recommendationId: rec.id,
+      });
+      const applied = applyStateChanges(
+        { livingWorld: state.livingWorld, players: state.club.footballSquad },
+        [{ kind: 'appendGameEvent', event }],
+      );
+      set({
+        livingWorld: applied.livingWorld,
+      });
+      saveToStorage({ livingWorld: applied.livingWorld }, false);
     },
 
     startNegotiation: (playerId: string, initialOfferAmount: number) => {
@@ -4197,128 +4226,6 @@ export const useGameStore = create<GameState>((set, get) => {
         },
       });
       saveToStorage(undefined, false);
-    },
-
-    ignoreAssistantRecommendation: (id) => {
-      const state = get();
-      if (state.assistant.ignoredRecommendationIds.includes(id)) return;
-      set({
-        assistant: {
-          ...state.assistant,
-          ignoredRecommendationIds: [...state.assistant.ignoredRecommendationIds, id],
-          activeRecommendations: state.assistant.activeRecommendations.filter((r) => r.id !== id),
-        },
-      });
-      saveToStorage(undefined, false);
-    },
-
-    cacheAssistantExplanation: (key, data) => {
-      const state = get();
-      set({
-        assistant: {
-          ...state.assistant,
-          explanationCache: mergeAssistantExplanationCache(state.assistant.explanationCache, key, data),
-        },
-      });
-      saveToStorage(undefined, false);
-    },
-
-    getPreMatchAnalysis: () => {
-      const state = get();
-      const preview = state.preMatchPreview ?? state.nextMatchInsight;
-      if (!preview) return null;
-      const analyticsLevel = state.clubManagement.facilities.analyticsDepartmentLevel ?? 0;
-      const oppositionDelegated =
-        state.clubManagement.delegation.modes.opposition_analysis === 'delegate';
-      const compact = state.livingWorld.opponentTacticalScouting?.[preview.opponentClub.id];
-      return generatePreMatchAnalysis({
-        userClub: state.club,
-        opponentClub: preview.opponentClub,
-        fixture: preview.fixture,
-        isScouted: preview.isScouted,
-        scoutAccuracy: preview.scoutAccuracy,
-        analyticsLevel,
-        oppositionAnalysisDelegated: oppositionDelegated,
-        opponentScoutingCompact: compact,
-      });
-    },
-
-    getLiveMatchAnalysis: () => {
-      const state = get();
-      if (!state.isMatchLive || !state.activeMatchRecord || !state.activeEngine) return null;
-      const record = state.activeMatchRecord;
-      const isHome = record.homeClubId === state.club.id;
-      return evaluateLiveMatch({
-        currentMinute: state.currentMatchMinute,
-        events: record.events,
-        analytics: record.analytics,
-        userTactics: state.activeMatchHomeTactics ?? state.club.footballTactics,
-        userSquad: state.club.footballSquad,
-        userLineup: state.club.footballLineup,
-        userBench: state.club.footballBench,
-        isHome,
-        cooldowns: state.assistant.liveTriggerCooldowns,
-        ignoredIds: state.assistant.ignoredRecommendationIds,
-      });
-    },
-
-    getPostMatchAnalysis: () => {
-      const state = get();
-      const last = state.matchHistory[state.matchHistory.length - 1];
-      if (!last || !last.isFinished) return null;
-      return generatePostMatchAnalysis(last, state.club);
-    },
-
-    getExplainableTacticsRecommendation: () => {
-      const state = get();
-      const preview = state.preMatchPreview ?? state.nextMatchInsight;
-      const opponent = preview?.opponentClub;
-      const result = getExplainableBestTactics({
-        club: state.club,
-        opponent: deriveOpponentProfile(opponent),
-        maxSubstitutes: getMaxBenchSlots(state.vipPoints),
-      });
-      return result?.assistantRecommendation ?? null;
-    },
-
-    applyAssistantRecommendation: (recommendation) => {
-      const state = get();
-      const isAr = state.language === 'ar';
-      if (state.assistant.ignoredRecommendationIds.includes(recommendation.id)) {
-        return {
-          success: false,
-          message: isAr ? 'تم تجاهل هذا التوصية مسبقاً.' : 'This recommendation was already ignored.',
-        };
-      }
-      const changes = recommendation.suggestedChanges;
-      if (requiresBestTacticsApply(changes) && changes?.bestTacticsRec) {
-        const bt = get().applyBestTactics(changes.bestTacticsRec);
-        if (!bt.ok) {
-          return {
-            success: false,
-            message: isAr ? 'تعذر تطبيق التشكيل الموصى به (تحقق من جاهزية اللاعبين).' : 'Could not apply recommended lineup (check player availability).',
-          };
-        }
-      } else {
-        const patch = tacticsPatchFromAssistantChanges(changes);
-        if (Object.keys(patch).length > 0) {
-          get().updateFootballTactics(patch);
-        }
-      }
-
-      set({
-        assistant: {
-          ...state.assistant,
-          appliedRecommendationIds: [...state.assistant.appliedRecommendationIds, recommendation.id],
-          activeRecommendations: state.assistant.activeRecommendations.filter((r) => r.id !== recommendation.id),
-        },
-      });
-      saveToStorage();
-      soundEffects.playTap();
-      return {
-        success: true,
-        message: isAr ? 'تم تطبيق توصية المساعد التكتيكي.' : 'Assistant recommendation applied.',
-      };
     },
 
     markNotificationRead: (id) => {

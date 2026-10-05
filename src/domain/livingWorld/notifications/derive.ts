@@ -26,7 +26,12 @@ export function deriveNotificationsFromEvent(event: GameEvent): GameNotification
   const title = String(event.context.title ?? event.type);
   const message = String(event.context.message ?? `Event ${event.type} recorded.`);
 
-  const dedupeKey = `${category}|${event.type}|${event.playerId ?? ''}|${event.clubId ?? ''}|${event.season}`;
+  let dedupeKey = `${category}|${event.type}|${event.playerId ?? ''}|${event.clubId ?? ''}|${event.season}`;
+  if (event.type === 'automation.report') {
+    const feature = String(event.context.feature ?? '');
+    const period = event.context.matchday ?? event.context.gameWeek ?? 0;
+    dedupeKey = `Suggestion|automation|${feature}|${period}|${event.season}`;
+  }
 
   return [
     {

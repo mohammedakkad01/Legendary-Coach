@@ -46,6 +46,10 @@ global.localStorage = mockStorage;
 let testsPassed = 0;
 let testsFailed = 0;
 
+function assertEqual<T>(actual: T, expected: T, msg: string) {
+  assert(actual === expected, `${msg} (expected ${String(expected)}, got ${String(actual)})`);
+}
+
 function assert(condition: boolean, msg: string) {
   if (condition) {
     console.log(`  ✅ PASS: ${msg}`);
@@ -369,6 +373,29 @@ async function runTests() {
   assert(!jsonString.includes('private_key'), 'No private_key in save JSON');
   assert(!jsonString.includes('client_secret'), 'No client_secret in save JSON');
   assert(!jsonString.includes('FIREBASE_SERVICE_ACCOUNT'), 'No service account secret in save JSON');
+
+  // Test 6: aiNarrationEnabled + assistant durable prefs roundtrip
+  console.log('\nTest 6: aiNarrationEnabled & assistant preferences persist');
+  const prefState = {
+    ...fullGameState,
+    aiNarrationEnabled: false,
+    assistant: {
+      ignoredRecommendationIds: ['rec_test_ignore'],
+      appliedRecommendationIds: ['rec_test_apply'],
+      explanationCache: { k: { explanation: 'must not persist', keyPoints: [], timestamp: 'x' } },
+      activeRecommendations: [],
+      liveTriggerCooldowns: {},
+    },
+  };
+  persistenceService.saveImmediate(prefState);
+  const prefLoaded = persistenceService.loadFromStorage();
+  assert(prefLoaded !== null, 'preference save loads');
+  assertEqual(prefLoaded!.aiNarrationEnabled, false, 'aiNarrationEnabled restored false');
+  assertEqual(prefLoaded!.assistant?.ignoredRecommendationIds?.[0], 'rec_test_ignore', 'ignored id restored');
+  assert(
+    Boolean(prefLoaded!.assistant && !('explanationCache' in prefLoaded!.assistant)),
+    'assistant cache not in save',
+  );
 
   console.log('\n====================================================');
   console.log(`📊 Test Summary: ${testsPassed} Passed, ${testsFailed} Failed`);

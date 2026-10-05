@@ -286,8 +286,18 @@ section('Test 5: review limit, and a thrown review leaves the match unchanged');
   assertEqual(continued.varReviews.length, 1, 'the match can still accept a later review');
 }
 
+function stripSetPieceEvents(events: MatchEvent[]): MatchEvent[] {
+  return events.filter((e) => !e.setPieceKind);
+}
+
+function outcomeBucket(h: number, a: number): 'H' | 'D' | 'A' {
+  if (h > a) return 'H';
+  if (h < a) return 'A';
+  return 'D';
+}
+
 // --------------------------------------------------------------- Test 6
-section('Test 6: same seed, same reviews; VAR off matches the pre-VAR snapshot');
+section('Test 6: same seed, same reviews; VAR off matches set-piece-aware snapshot');
 {
   const seed = 42424242;
   const fixture = JSON.parse(readFileSync('scripts/fixtures/preVar-seed-42424242.json', 'utf8')) as {
@@ -298,12 +308,64 @@ section('Test 6: same seed, same reviews; VAR off matches the pre-VAR snapshot')
     stats: MatchStats;
     events: MatchEvent[];
   };
+
+  // Aggregate proof: set pieces change the event stream/stats but not score distribution (200 seeds).
+  const sampleSeeds = 200;
+  const buckets = { H: 0, D: 0, A: 0 };
+  let totalGoals = 0;
+  let totalReds = 0;
+  for (let s = 1; s <= sampleSeeds; s += 1) {
+    const r = simulate(s, false);
+    const b = outcomeBucket(r.homeScore, r.awayScore);
+    buckets[b] += 1;
+    totalGoals += r.homeScore + r.awayScore;
+    totalReds += r.stats.homeRedCards + r.stats.awayRedCards;
+  }
+  const homeWinPct = (buckets.H / sampleSeeds) * 100;
+  const drawPct = (buckets.D / sampleSeeds) * 100;
+  const awayWinPct = (buckets.A / sampleSeeds) * 100;
+  assert(homeWinPct >= 20 && homeWinPct <= 60, `home win % in sane band (${homeWinPct.toFixed(1)})`);
+  assert(drawPct >= 10 && drawPct <= 40, `draw % in sane band (${drawPct.toFixed(1)})`);
+  assert(awayWinPct >= 20 && awayWinPct <= 60, `away win % in sane band (${awayWinPct.toFixed(1)})`);
+  assert(totalGoals / sampleSeeds >= 1.5 && totalGoals / sampleSeeds <= 5.5, `goals/match mean ${(totalGoals / sampleSeeds).toFixed(2)}`);
+  assert(totalReds / sampleSeeds <= 0.35, `red cards/match mean ${(totalReds / sampleSeeds).toFixed(3)}`);
+
   const off = simulate(seed, false);
   assert(off.varReviews === undefined, 'VAR off does not attach reviews');
+
+  const setPieceOnly =
+    off.events.filter((e) => e.setPieceKind).length > 0 &&
+    stripSetPieceEvents(off.events).length < off.events.length;
+  assert(setPieceOnly, 'current engine emits set-piece-tagged events for golden seed');
+
   assertEqual(
     { seed: off.seed, homeScore: off.homeScore, awayScore: off.awayScore, referee: off.referee, stats: off.stats, events: off.events },
     fixture,
-    'VAR off is byte-identical to the pre-VAR snapshot (seed 42424242)',
+    'VAR off matches set-piece-aware snapshot (seed 42424242)',
+  );
+
+  const withoutSetPieces = {
+    ...off,
+    events: stripSetPieceEvents(off.events),
+    stats: fixture.stats,
+  };
+  const legacyCore = {
+    seed: fixture.seed,
+    homeScore: fixture.homeScore,
+    awayScore: fixture.awayScore,
+    referee: fixture.referee,
+    events: stripSetPieceEvents(fixture.events),
+  };
+  assertEqual(
+    {
+      seed: withoutSetPieces.seed,
+      homeScore: withoutSetPieces.homeScore,
+      awayScore: withoutSetPieces.awayScore,
+      referee: withoutSetPieces.referee,
+      events: withoutSetPieces.events,
+    },
+    legacyCore,
+    'score/referee/non-set-piece events align with legacy core (seed 42424242)',
   );
 
   const referee = refereeProfileWithTraits(neutral, { varTendency: 80 });

@@ -91,6 +91,10 @@ import { soundEffects } from '../audio/soundFX';
 import confetti from 'canvas-confetti';
 import { calculateTeamSynergy, TeamSynergyResult } from '../utils/teamSynergy';
 import { persistenceService } from '../services/persistenceService';
+import {
+  mergeAssistantIntoRuntimeState,
+  readAiNarrationEnabledFromSave,
+} from '../services/persistence/assistantPersist';
 import { moveEntity } from '../domain/squad/moveEntity';
 import type { MoveResult } from '../domain/squad/moveEntity';
 import type { MoveTarget } from '../domain/squad/squadTypes';
@@ -98,7 +102,11 @@ import { applySquadState, createSquadState } from '../domain/squad/squadStateAda
 import { EMPTY_SLOT } from '../domain/squad/squadTypes';
 import { applyRecommendation } from '../domain/tactics/bestTactics/applyRecommendation';
 import { buildDismissEvent } from '../domain/assistant/recommendations/filterIgnored';
-import type { Recommendation as AssistantRecommendation } from '../domain/assistant/types';
+import type { AssistantState, Recommendation as AssistantRecommendation } from '../domain/assistant/types';
+import {
+  appendAppliedAssistantId,
+  appendIgnoredAssistantId,
+} from '../domain/assistant/runtimeState';
 import type { ApplyBestTacticsError } from '../domain/tactics/bestTactics/applyRecommendation';
 import type { BestTacticsRecommendation } from '../domain/tactics/bestTactics/types';
 import type { Result } from '../domain/shared/result';
@@ -268,6 +276,7 @@ interface GameState {
   livingWorld: LivingWorldState;
   recruitmentWorld: RecruitmentWorldState;
   clubManagement: ClubManagementState;
+  assistant: AssistantState;
   saveId: string;
   savePassthrough: Record<string, unknown>;
 
@@ -1334,10 +1343,11 @@ export const useGameStore = create<GameState>((set, get) => {
     livingWorld: initialWorldWithPhaseF,
     recruitmentWorld: initialRecruitmentWorld,
     clubManagement: initialClubManagement,
+    assistant: mergeAssistantIntoRuntimeState(initialSave?.assistant),
     saveId: initialSave?.saveId ?? `save_${Date.now()}`,
     savePassthrough: initialSave?.savePassthrough ?? {},
 
-    aiNarrationEnabled: true,
+    aiNarrationEnabled: initialSave ? readAiNarrationEnabledFromSave(initialSave) : true,
     setAiNarrationEnabled: (enabled: boolean) => {
       set({ aiNarrationEnabled: enabled });
     },
@@ -1691,10 +1701,14 @@ export const useGameStore = create<GameState>((set, get) => {
         if (!result.ok) {
           return { ok: false, error: isAr ? 'تعذر تطبيق أفضل تكتيك' : 'Could not apply Best Tactics' };
         }
+        set({ assistant: appendAppliedAssistantId(state.assistant, rec.id) });
+        saveToStorage(undefined, false);
         return { ok: true };
       }
       if (change.kind === 'tactics' && change.patch) {
         get().updateFootballTactics(change.patch);
+        set({ assistant: appendAppliedAssistantId(state.assistant, rec.id) });
+        saveToStorage(undefined, false);
         return { ok: true };
       }
       if (change.kind === 'live_tactics' && change.patch) {
@@ -1705,6 +1719,8 @@ export const useGameStore = create<GameState>((set, get) => {
         if (!ev) {
           return { ok: false, error: isAr ? 'تعذر تطبيق التكتيك المباشر' : 'Live tactics apply failed' };
         }
+        set({ assistant: appendAppliedAssistantId(state.assistant, rec.id) });
+        saveToStorage(undefined, false);
         return { ok: true };
       }
       if (change.kind === 'lineup' && change.lineupMoves) {
@@ -1714,6 +1730,8 @@ export const useGameStore = create<GameState>((set, get) => {
             return { ok: false, error: isAr ? 'تعذر تحريك اللاعب' : 'Lineup move rejected' };
           }
         }
+        set({ assistant: appendAppliedAssistantId(state.assistant, rec.id) });
+        saveToStorage(undefined, false);
         return { ok: true };
       }
       return { ok: false, error: isAr ? 'نوع التغيير غير مدعوم' : 'Unsupported change kind' };
@@ -1734,8 +1752,9 @@ export const useGameStore = create<GameState>((set, get) => {
       );
       set({
         livingWorld: applied.livingWorld,
+        assistant: appendIgnoredAssistantId(state.assistant, rec.id),
       });
-      saveToStorage({ livingWorld: applied.livingWorld }, false);
+      saveToStorage(undefined, false);
     },
 
     startNegotiation: (playerId: string, initialOfferAmount: number) => {
@@ -4739,6 +4758,8 @@ export const useGameStore = create<GameState>((set, get) => {
         unlockedSpeed2x: data.unlockedSpeed2x,
         livingWorld: importedHydrated.livingWorld,
         savePassthrough: data.savePassthrough ?? {},
+        assistant: mergeAssistantIntoRuntimeState(data.assistant),
+        aiNarrationEnabled: readAiNarrationEnabledFromSave(data),
         activeTab: 'dashboard',
         clubSelectionModalOpen: false,
       });

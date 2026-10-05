@@ -8,6 +8,7 @@
 
 import type { LivingWorldState } from '../domain/livingWorld/types';
 import type { RecruitmentWorldState } from '../domain/recruitment/types';
+import type { AssistantPersistedPreferences } from './assistantSave';
 import {
   Club,
   Player,
@@ -99,6 +100,12 @@ export interface GameSaveData {
 
   /** Phase E club management (finance ledger, staff, board, fans, delegation). */
   clubManagement?: import('../domain/clubManagement/types').ClubManagementState;
+
+  /** Phase G — durable assistant preferences only (ignored/applied recommendation ids). */
+  assistant?: AssistantPersistedPreferences;
+
+  /** User preference: optional Gemini narration/explanations (defaults true when absent). */
+  aiNarrationEnabled?: boolean;
 
   /**
    * Unknown root-level JSON keys preserved across migrate/export/import.

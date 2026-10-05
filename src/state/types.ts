@@ -298,4 +298,19 @@ export interface GameState {
     cohesionDelta: number;
   };
   storeNarrativeCacheEntry: (entry: import('../domain/livingWorld/phaseF/types').NarrativeCacheEntry) => void;
+
+  getAutomationSettings: () => import('../domain/automation/types').AutomationSettings;
+  setAutomationFeature: (
+    id: import('../domain/automation/types').AutomationFeatureId,
+    patch: Partial<import('../domain/automation/types').AutomationFeatureSetting>,
+  ) => import('../domain/automation/types').AutomationSettings;
+  getAutomationReports: () => readonly import('../domain/automation/types').AutomationReport[];
+  runBeforeUserMatchAutomations: () => import('../domain/automation/types').AutomationRunResult;
+  runWeeklyAutomations: (
+    matchday: number,
+    weeklyDelegationEvents: readonly import('../domain/livingWorld/types').GameEvent[],
+  ) => import('../domain/automation/types').AutomationRunResult;
+  undoLastAutomation: () =>
+    | { ok: true }
+    | { ok: false; reasonCode: import('../domain/automation/types').UndoFailureReason };
 }

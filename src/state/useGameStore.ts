@@ -175,6 +175,21 @@ import { resolvePressAnswer } from '../domain/livingWorld/press/resolver';
 import type { PressQuestion, PressAnswerOption } from '../domain/livingWorld/press/types';
 import { mergeNarrativeCache } from '../domain/livingWorld/narrative/cache';
 import type { NarrativeCacheEntry } from '../domain/livingWorld/phaseF/types';
+import {
+  executeBeforeUserMatchAutomations,
+  executeWeeklyAutomations,
+  getAutomationSettingsFromPrefs,
+  setAutomationFeatureInPrefs,
+  getRuntimeAutomationReports,
+  undoLastAutomationInStore,
+} from '../domain/automation/storeBridge';
+import type {
+  AutomationFeatureId,
+  AutomationFeatureSetting,
+  AutomationRunResult,
+  AutomationUndoSnapshot,
+} from '../domain/automation/types';
+import type { InjuryRiskContext } from '../domain/playerLife/injuryRisk';
 
 export type GameTab = 
   | 'dashboard' 
@@ -281,6 +296,8 @@ interface GameState {
   assistant: AssistantState;
   saveId: string;
   savePassthrough: Record<string, unknown>;
+  /** Bumps when local automation prefs change (not persisted in save). */
+  automationPrefsVersion: number;
 
   // Actions
   setSport: (sport: SportType) => void;
@@ -428,6 +445,19 @@ interface GameState {
     cohesionDelta: number;
   };
   storeNarrativeCacheEntry: (entry: NarrativeCacheEntry) => void;
+
+  // Phase H Block 6 — coach automation (local prefs + domain runners)
+  getAutomationSettings: () => ReturnType<typeof getAutomationSettingsFromPrefs>;
+  setAutomationFeature: (
+    id: AutomationFeatureId,
+    patch: Partial<AutomationFeatureSetting>,
+  ) => ReturnType<typeof setAutomationFeatureInPrefs>;
+  getAutomationReports: () => ReturnType<typeof getRuntimeAutomationReports>;
+  runBeforeUserMatchAutomations: () => AutomationRunResult;
+  runWeeklyAutomations: (matchday: number, weeklyDelegationEvents: readonly GameEvent[]) => AutomationRunResult;
+  undoLastAutomation: () =>
+    | { ok: true }
+    | { ok: false; reasonCode: import('../domain/automation/types').UndoFailureReason };
 }
 
 export const useGameStore = create<GameState>((set, get) => {
@@ -720,6 +750,90 @@ export const useGameStore = create<GameState>((set, get) => {
       recruitmentWorld: state.recruitmentWorld,
       clubManagement: state.clubManagement,
     }) as GameSaveData;
+
+  const buildAutomationInjuryContext = (state: GameState, matchday: number): InjuryRiskContext => {
+    const mods = getClubModifiersForSave(buildPartialSave(state), state.club);
+    const recentMatchesIn7Days = state.leagueFixtures.filter(
+      (f) => f.played && f.matchday >= matchday - 3 && f.matchday <= matchday,
+    ).length;
+    return {
+      medicalCenterLevel: state.club.facilities.medicalCenterLevel,
+      recentMatchesIn7Days,
+      minutesThisMatch: 90,
+      medicalInjuryRiskMult: mods.medicalInjuryRiskMult,
+    };
+  };
+
+  const buildAutomationStoreSlice = (state: GameState, injuryCtx: InjuryRiskContext) => ({
+    club: state.club,
+    livingWorld: state.livingWorld,
+    clubManagement: state.clubManagement,
+    recruitmentWorld: state.recruitmentWorld,
+    saveSnapshot: buildPartialSave(state),
+    maxSubstitutes: getMaxBenchSlots(state.vipPoints),
+    analyticsDepartmentLevel: state.clubManagement.facilities.analyticsDepartmentLevel,
+    leagueStandings: state.leagueStandings,
+    injuryCtx,
+  });
+
+  const makeAutomationRecoveryApply = (): {
+    ok: boolean;
+    club: Club;
+    livingWorld: LivingWorldState;
+    undo?: AutomationUndoSnapshot;
+  } => {
+    const state = get();
+    const coinsBefore = state.club.finances.coins;
+    const missionRow = (state.dailyMissions || INITIAL_DAILY_MISSIONS).find(
+      (m) => m.id === 'mission_manage_fatigue',
+    );
+    const missionBefore = missionRow?.current;
+    const fatigueBefore = Object.fromEntries(
+      state.club.footballSquad.map((p) => [p.id, p.fatigue ?? 0]),
+    );
+
+    let currentLevel = 1;
+    for (const tier of VIP_LEVELS) {
+      if (state.vipPoints >= tier.pointsRequired) currentLevel = tier.level;
+    }
+    const currentTier = VIP_LEVELS.find((t) => t.level === currentLevel) || VIP_LEVELS[0];
+    const recoveryBonusMult = 1 + (currentTier.recoverySpeedBonusPercent || 0) / 100;
+    const recoveryChanges = stateChangesForTrainingSession(
+      state.club.footballSquad.map((p) => p.id),
+      { category: 'recovery', intensity: 'low' },
+    ).map((c) =>
+      c.kind === 'patchPlayerLife' && c.legacyDelta
+        ? {
+            ...c,
+            legacyDelta: {
+              fatigue: Math.round((c.legacyDelta.fatigue ?? -20) * recoveryBonusMult),
+              stamina: Math.round((c.legacyDelta.stamina ?? 12) * recoveryBonusMult),
+            },
+          }
+        : c,
+    );
+
+    const result = get().runSquadRecoverySession();
+    if (!result.success) {
+      return { ok: false, club: state.club, livingWorld: state.livingWorld };
+    }
+    const after = get();
+    return {
+      ok: true,
+      club: after.club,
+      livingWorld: after.livingWorld,
+      undo: {
+        feature: 'recovery',
+        footballLineup: [...after.club.footballLineup],
+        footballBench: [...after.club.footballBench],
+        recoveryChanges,
+        coinsBefore,
+        dailyMissionManageFatigueBefore: missionBefore,
+        playerFatigueBefore: fatigueBefore,
+        appliedAtIso: new Date().toISOString(),
+      },
+    };
+  };
 
   const computeUserMatchIncome = (state: GameState, scale = 1): number => {
     const sponsor = state.club.finances.sponsorIncomePerMatch;
@@ -1129,6 +1243,27 @@ export const useGameStore = create<GameState>((set, get) => {
       weeklyClub = cmTick.club;
       weeklyWorld = cmTick.livingWorld;
       weeklyClubManagement = cmTick.clubManagement;
+
+      const autoSliceState = {
+        ...state,
+        club: weeklyClub,
+        livingWorld: weeklyWorld,
+        clubManagement: weeklyClubManagement,
+        recruitmentWorld: weeklyRecruitmentWorld,
+        leagueStandings: standings,
+        simulatedMatchdays,
+      };
+      const injuryCtx = buildAutomationInjuryContext(autoSliceState, summary.matchday);
+      const weeklyAuto = executeWeeklyAutomations(
+        buildAutomationStoreSlice(autoSliceState, injuryCtx),
+        summary.matchday,
+        deriveGameWeekFromSave(partialSave),
+        new Date().toISOString(),
+        cmTick.weeklyDelegationEvents,
+        makeAutomationRecoveryApply,
+      );
+      weeklyClub = weeklyAuto.club;
+      weeklyWorld = weeklyAuto.livingWorld;
     }
     set({
       leagueStandings: standings,
@@ -1348,6 +1483,7 @@ export const useGameStore = create<GameState>((set, get) => {
     assistant: mergeAssistantIntoRuntimeState(initialSave?.assistant),
     saveId: initialSave?.saveId ?? `save_${Date.now()}`,
     savePassthrough: initialSave?.savePassthrough ?? {},
+    automationPrefsVersion: 0,
 
     aiNarrationEnabled: initialSave ? readAiNarrationEnabledFromSave(initialSave) : true,
     setAiNarrationEnabled: (enabled: boolean) => {
@@ -2440,12 +2576,26 @@ export const useGameStore = create<GameState>((set, get) => {
         set({ isLoadingMatch: false });
         return;
       }
+      const state = get();
+      const md = previewData.fixture.matchday;
+      const gw = deriveGameWeekFromSave(buildPartialSave(state));
+      const injuryCtx = buildAutomationInjuryContext(state, md);
+      const auto = executeBeforeUserMatchAutomations(
+        buildAutomationStoreSlice(state, injuryCtx),
+        previewData,
+        new Date().toISOString(),
+        gw,
+        makeAutomationRecoveryApply,
+      );
       set({
         isLoadingMatch: false,
         preMatchPreview: previewData,
         nextMatchInsight: previewData,
         preMatchModalOpen: true,
+        club: auto.club,
+        livingWorld: auto.livingWorld,
       });
+      saveToStorage({ club: auto.club, livingWorld: auto.livingWorld });
     },
 
     // Lightweight version used by the idle match screen: same numbers as the pre-match
@@ -4724,6 +4874,73 @@ export const useGameStore = create<GameState>((set, get) => {
 
       set({ livingWorld: nextReducer.livingWorld });
       saveToStorage({ livingWorld: nextReducer.livingWorld });
+    },
+
+    getAutomationSettings: () => getAutomationSettingsFromPrefs(),
+
+    setAutomationFeature: (id, patch) => {
+      const next = setAutomationFeatureInPrefs(id, patch);
+      set({ automationPrefsVersion: get().automationPrefsVersion + 1 });
+      return next;
+    },
+
+    getAutomationReports: () => getRuntimeAutomationReports(),
+
+    runBeforeUserMatchAutomations: () => {
+      const state = get();
+      const preMatch = state.preMatchPreview ?? state.nextMatchInsight;
+      const md = preMatch?.fixture.matchday ?? 1;
+      const gw = deriveGameWeekFromSave(buildPartialSave(state));
+      const injuryCtx = buildAutomationInjuryContext(state, md);
+      const auto = executeBeforeUserMatchAutomations(
+        buildAutomationStoreSlice(state, injuryCtx),
+        preMatch,
+        new Date().toISOString(),
+        gw,
+        makeAutomationRecoveryApply,
+      );
+      set({ club: auto.club, livingWorld: auto.livingWorld });
+      saveToStorage({ club: auto.club, livingWorld: auto.livingWorld });
+      return auto.run;
+    },
+
+    runWeeklyAutomations: (matchday, weeklyDelegationEvents) => {
+      const state = get();
+      const gw = deriveGameWeekFromSave(buildPartialSave(state));
+      const injuryCtx = buildAutomationInjuryContext(state, matchday);
+      const auto = executeWeeklyAutomations(
+        buildAutomationStoreSlice(state, injuryCtx),
+        matchday,
+        gw,
+        new Date().toISOString(),
+        weeklyDelegationEvents,
+        makeAutomationRecoveryApply,
+      );
+      set({ club: auto.club, livingWorld: auto.livingWorld });
+      saveToStorage({ club: auto.club, livingWorld: auto.livingWorld });
+      return auto.run;
+    },
+
+    undoLastAutomation: () => {
+      const state = get();
+      const result = undoLastAutomationInStore({
+        club: state.club,
+        livingWorld: state.livingWorld,
+        maxSubstitutes: getMaxBenchSlots(state.vipPoints),
+        dailyMissions: state.dailyMissions || INITIAL_DAILY_MISSIONS,
+      });
+      if (!result.ok) return result;
+      set({
+        club: result.club,
+        livingWorld: result.livingWorld,
+        dailyMissions: result.dailyMissions,
+      });
+      saveToStorage({
+        club: result.club,
+        livingWorld: result.livingWorld,
+        dailyMissions: result.dailyMissions,
+      });
+      return { ok: true as const };
     },
 
     exportGameData: () => {

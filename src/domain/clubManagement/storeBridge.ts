@@ -257,6 +257,7 @@ export function applyUserWeeklyClubManagement(params: {
   livingWorld: LivingWorldState;
   clubManagement: ClubManagementState;
   save: GameSaveData;
+  weeklyDelegationEvents: import('../livingWorld/types').GameEvent[];
 } {
   const gameWeek = deriveGameWeekFromSave(params.save);
   const timestampIso = new Date().toISOString();
@@ -313,7 +314,13 @@ export function applyUserWeeklyClubManagement(params: {
     recruitmentWorld,
   };
 
-  return { club, livingWorld, clubManagement: tick.clubManagement, save };
+  return {
+    club,
+    livingWorld,
+    clubManagement: tick.clubManagement,
+    save,
+    weeklyDelegationEvents: tick.events,
+  };
 }
 
 export function applyPostMatchFanUpdate(

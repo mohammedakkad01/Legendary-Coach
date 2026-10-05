@@ -100,3 +100,12 @@ export interface LiveAnalystResult {
 }
 
 export const ASSISTANT_DISMISS_EVENT_TYPE = 'assistant.advice_dismissed' as const;
+
+/** Runtime store slice; only ignored/applied id lists are persisted on GameSaveData. */
+export interface AssistantState {
+  ignoredRecommendationIds: string[];
+  appliedRecommendationIds: string[];
+  liveTriggerCooldowns: Record<string, number>;
+  activeRecommendations: Recommendation[];
+  explanationCache: Record<string, { explanation: string; keyPoints: string[]; timestamp: string }>;
+}

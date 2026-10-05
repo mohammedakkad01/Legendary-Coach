@@ -15,6 +15,7 @@ import { ensureClubManagementV6 } from '../../domain/clubManagement/migration/mi
 import { ensureLivingWorldPhaseF } from '../../domain/livingWorld/migrateLivingWorldPhaseF';
 import { syncClubFromClubManagement } from '../../domain/clubManagement/syncLegacyClub';
 import { attachPassthrough } from './savePassthrough';
+import { finalizePersistedGameSave } from './finalizePersistedSave';
 import { Club, Fixture, LeagueStanding, DailyMission, StoryMission } from '../../types/game';
 import { REAL_INITIAL_PLAYER_CLUB, REAL_INITIAL_STANDINGS, REAL_INITIAL_SCOUT_MARKET } from '../../data/realFootballData';
 import { STORY_CHAPTER_1_MISSIONS } from '../../data/storyChapter1';
@@ -124,7 +125,8 @@ export class MigrationService {
     const syncedClub = withPhaseF.clubManagement
       ? syncClubFromClubManagement(withPhaseF.club, withPhaseF.clubManagement)
       : withPhaseF.club;
-    return attachPassthrough({ ...withPhaseF, club: syncedClub }, raw);
+    const attached = attachPassthrough({ ...withPhaseF, club: syncedClub }, raw);
+    return finalizePersistedGameSave(attached, raw);
   }
 }
 

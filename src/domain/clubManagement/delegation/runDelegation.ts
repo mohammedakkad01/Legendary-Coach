@@ -13,9 +13,19 @@ import type {
   StaffReportPayload,
 } from '../types';
 import type { StateChange } from '../../livingWorld/types';
-import { stateChangesForTrainingSession } from '../../playerLife/trainingEngine';
-import { legacyDrillToPlan } from '../../playerLife/trainingEngine';
+import {
+  stateChangesForTrainingSession,
+  legacyDrillToPlan,
+} from '../../playerLife/trainingEngine';
 import type { GameEvent } from '../../livingWorld/types';
+import type { RecruitmentPatch } from '../../recruitment/types';
+import type { DelegationIntegratorContext } from './delegationIntegratorContext';
+import { runDelegatedScouting } from './delegatedScouting';
+import { runDelegatedLoanSearch } from './delegatedLoanSearch';
+import { runDelegatedYouthIntake } from './delegatedYouthIntake';
+import { runDelegatedOppositionAnalysis } from './delegatedOppositionAnalysis';
+
+export type { DelegationIntegratorContext } from './delegationIntegratorContext';
 
 export interface DelegationRunInput {
   state: ClubManagementState;
@@ -24,12 +34,15 @@ export interface DelegationRunInput {
   gameWeek: number;
   season: number;
   timestampIso: string;
+  integrator?: DelegationIntegratorContext;
 }
 
 export interface DelegationRunResult {
   stateChanges: StateChange[];
+  recruitmentPatches?: RecruitmentPatch[];
   report?: StaffReportPayload;
   event?: GameEvent;
+  extraEvents?: GameEvent[];
 }
 
 function staffForTask(state: ClubManagementState, task: DelegationTask): StaffMember | undefined {
@@ -38,7 +51,11 @@ function staffForTask(state: ClubManagementState, task: DelegationTask): StaffMe
   return state.staff.members.find((m) => m.id === id);
 }
 
-function staffQualityFactor(staff: StaffMember | undefined, modifiers: ClubSystemModifiers, task: DelegationTask): number {
+export function staffQualityFactor(
+  staff: StaffMember | undefined,
+  modifiers: ClubSystemModifiers,
+  task: DelegationTask,
+): number {
   if (!staff) return DELEGATION_TUNING.qualityClampMin;
   let raw = 1;
   switch (task) {
@@ -72,6 +89,51 @@ function canReport(state: ClubManagementState, task: DelegationTask, gameWeek: n
   return gameWeek - last >= DELEGATION_TUNING.reportCooldownWeeks;
 }
 
+function buildStaffReportEvent(
+  task: DelegationTask,
+  input: DelegationRunInput,
+  report: StaffReportPayload,
+  reasonCodes: string[],
+): GameEvent {
+  return {
+    id: `evt_staff_report_${task}_${input.gameWeek}_${report.staffId}`,
+    type: 'staff.report',
+    timestamp: input.timestampIso,
+    season: input.season,
+    severity: 'low',
+    context: {
+      task,
+      staffId: report.staffId,
+      summaryCode: report.summaryCode,
+      reasonCodes: reasonCodes.join(','),
+      gameWeek: input.gameWeek,
+    },
+  };
+}
+
+function scaleTrainingChanges(changes: StateChange[], quality: number): StateChange[] {
+  return changes.map((c) => {
+    if (c.kind !== 'patchPlayerLife') return c;
+    const sharpBoost = c.conditionDelta?.sharpness ?? 0;
+    const legacy = c.legacyDelta;
+    return {
+      ...c,
+      conditionDelta: {
+        ...c.conditionDelta,
+        sharpness: sharpBoost * quality,
+      },
+      legacyDelta: legacy
+        ? {
+            ...legacy,
+            form: legacy.form !== undefined ? legacy.form * quality : undefined,
+            morale: legacy.morale !== undefined ? legacy.morale * quality : undefined,
+            stamina: legacy.stamina !== undefined ? legacy.stamina * quality : undefined,
+          }
+        : undefined,
+    };
+  });
+}
+
 /** Delegated training uses the same trainingEngine path as manual drills. */
 export function runDelegatedTask(
   task: DelegationTask,
@@ -87,22 +149,16 @@ export function runDelegatedTask(
   const staff = staffForTask(input.state, task);
   const quality = staffQualityFactor(staff, input.modifiers, task);
   const reasonCodes: string[] = [`delegated_${task}`, `quality_${Math.round(quality * 100)}`];
+  if (!staff) reasonCodes.push('staff_unassigned');
+
+  const integrator = input.integrator;
 
   if (task === 'training') {
     const plan = legacyDrillToPlan('technical');
-    const baseChanges = stateChangesForTrainingSession(input.playerIds, plan);
-    const stateChanges: StateChange[] = baseChanges.map((c) => {
-      if (c.kind !== 'patchPlayerLife') return c;
-      const sharpBoost = c.conditionDelta?.sharpness ?? 0;
-      return {
-        ...c,
-        conditionDelta: {
-          ...c.conditionDelta,
-          sharpness: sharpBoost * quality,
-        },
-      };
-    });
-
+    const stateChanges = scaleTrainingChanges(
+      stateChangesForTrainingSession(input.playerIds, plan),
+      quality,
+    );
     const report: StaffReportPayload = {
       task,
       staffId: staff?.id ?? 'unassigned',
@@ -111,59 +167,226 @@ export function runDelegatedTask(
       gameWeek: input.gameWeek,
       season: input.season,
     };
-
-    const event: GameEvent = {
-      id: `evt_staff_report_${task}_${input.gameWeek}`,
-      type: 'staff.report',
-      timestamp: input.timestampIso,
-      season: input.season,
-      severity: 'low',
-      context: {
-        task,
-        staffId: report.staffId,
-        summaryCode: report.summaryCode,
-        reasonCodes: reasonCodes.join(','),
-      },
-    };
-
-    return { stateChanges, report, event };
+    return { stateChanges, report, event: buildStaffReportEvent(task, input, report, reasonCodes) };
   }
 
   if (task === 'fitness_management') {
     const plan = legacyDrillToPlan('stamina');
     const stateChanges = stateChangesForTrainingSession(input.playerIds.slice(0, 11), plan);
-    return {
-      stateChanges,
-      report: {
+    const report: StaffReportPayload = {
+      task,
+      staffId: staff?.id ?? 'unassigned',
+      reasonCodes,
+      summaryCode: 'delegation_fitness_session',
+      gameWeek: input.gameWeek,
+      season: input.season,
+    };
+    return { stateChanges, report, event: buildStaffReportEvent(task, input, report, reasonCodes) };
+  }
+
+  if (task === 'set_pieces') {
+    const plan = { category: 'set_pieces' as const, intensity: 'normal' as const };
+    const stateChanges = scaleTrainingChanges(
+      stateChangesForTrainingSession(input.playerIds.slice(0, 16), plan),
+      quality,
+    );
+    reasonCodes.push('delegation_set_piece_session', `players_${Math.min(16, input.playerIds.length)}`);
+    const report: StaffReportPayload = {
+      task,
+      staffId: staff?.id ?? 'unassigned',
+      reasonCodes,
+      summaryCode: 'delegation_set_piece_session',
+      gameWeek: input.gameWeek,
+      season: input.season,
+    };
+    return { stateChanges, report, event: buildStaffReportEvent(task, input, report, reasonCodes) };
+  }
+
+  if (task === 'scouting') {
+    const world = integrator?.recruitmentWorld;
+    if (!world || !integrator.userClubId) {
+      reasonCodes.push('recruitment_world_unavailable');
+      const report: StaffReportPayload = {
         task,
         staffId: staff?.id ?? 'unassigned',
         reasonCodes,
-        summaryCode: 'delegation_fitness_session',
+        summaryCode: 'delegation_scouting_degraded',
         gameWeek: input.gameWeek,
         season: input.season,
-      },
-      event: {
-        id: `evt_staff_report_${task}_${input.gameWeek}`,
-        type: 'staff.report',
-        timestamp: input.timestampIso,
-        season: input.season,
-        severity: 'low',
-        context: { task, summaryCode: 'delegation_fitness_session' },
-      },
+      };
+      return { stateChanges: [], report, event: buildStaffReportEvent(task, input, report, reasonCodes) };
+    }
+
+    const scouting = runDelegatedScouting({
+      world,
+      userClubId: integrator.userClubId,
+      gameWeek: input.gameWeek,
+      season: input.season,
+      timestampIso: input.timestampIso,
+      staff,
+      scoutReportQualityMult: input.modifiers.scoutReportQualityMult,
+    });
+
+    const mergedReasons = [...reasonCodes, ...scouting.reasonCodes];
+    const report: StaffReportPayload = {
+      task,
+      staffId: staff?.id ?? 'unassigned',
+      reasonCodes: mergedReasons,
+      summaryCode: scouting.summaryCode,
+      gameWeek: input.gameWeek,
+      season: input.season,
+    };
+
+    return {
+      stateChanges: [],
+      recruitmentPatches: scouting.patches,
+      report,
+      event: buildStaffReportEvent(task, input, report, mergedReasons),
+      extraEvents: scouting.events.filter((e) => e.type !== 'staff.report'),
     };
   }
 
-  return {
-    stateChanges: [],
-    report: {
-      task,
-      staffId: staff?.id ?? 'unassigned',
-      reasonCodes: [...reasonCodes, 'task_no_op_domain_hook'],
-      summaryCode: 'delegation_scheduled',
+  if (task === 'loan_search') {
+    const world = integrator?.recruitmentWorld;
+    const squad = integrator?.userClub?.footballSquad ?? [];
+    const destinations = integrator?.loanSearch?.destinations ?? [];
+
+    if (!world || !integrator?.userClubId) {
+      reasonCodes.push('recruitment_world_unavailable');
+      const report: StaffReportPayload = {
+        task,
+        staffId: staff?.id ?? 'unassigned',
+        reasonCodes,
+        summaryCode: 'delegation_loan_degraded',
+        gameWeek: input.gameWeek,
+        season: input.season,
+      };
+      return { stateChanges: [], report, event: buildStaffReportEvent(task, input, report, reasonCodes) };
+    }
+
+    const loan = runDelegatedLoanSearch({
+      world,
+      userClubId: integrator.userClubId,
+      squad,
+      destinations,
       gameWeek: input.gameWeek,
       season: input.season,
-    },
-  };
+      timestampIso: input.timestampIso,
+      quality,
+    });
+
+    const mergedReasons = [...reasonCodes, ...loan.reasonCodes];
+    const report: StaffReportPayload = {
+      task,
+      staffId: staff?.id ?? 'unassigned',
+      reasonCodes: mergedReasons,
+      summaryCode: loan.summaryCode,
+      gameWeek: input.gameWeek,
+      season: input.season,
+    };
+
+    return {
+      stateChanges: [],
+      recruitmentPatches: loan.patches,
+      report,
+      event: buildStaffReportEvent(task, input, report, mergedReasons),
+      extraEvents: loan.events.filter((e) => e.type !== 'staff.report'),
+    };
+  }
+
+  if (task === 'youth_recruitment') {
+    const world = integrator?.recruitmentWorld;
+    const club = integrator?.userClub;
+
+    if (!world || !club) {
+      reasonCodes.push('recruitment_world_unavailable');
+      const report: StaffReportPayload = {
+        task,
+        staffId: staff?.id ?? 'unassigned',
+        reasonCodes,
+        summaryCode: 'delegation_youth_skipped',
+        gameWeek: input.gameWeek,
+        season: input.season,
+      };
+      return { stateChanges: [], report, event: buildStaffReportEvent(task, input, report, reasonCodes) };
+    }
+
+    const youth = runDelegatedYouthIntake({
+      world,
+      club,
+      modifiers: input.modifiers,
+      gameWeek: input.gameWeek,
+      season: input.season,
+      timestampIso: input.timestampIso,
+      quality,
+    });
+
+    const mergedReasons = [...reasonCodes, ...youth.reasonCodes];
+    const report: StaffReportPayload = {
+      task,
+      staffId: staff?.id ?? 'unassigned',
+      reasonCodes: mergedReasons,
+      summaryCode: youth.summaryCode,
+      gameWeek: input.gameWeek,
+      season: input.season,
+    };
+
+    return {
+      stateChanges: [],
+      recruitmentPatches: youth.patches,
+      report,
+      event: buildStaffReportEvent(task, input, report, mergedReasons),
+      extraEvents: youth.events,
+    };
+  }
+
+  if (task === 'opposition_analysis') {
+    const club = integrator?.userClub;
+    if (!club) {
+      reasonCodes.push('integrator_club_unavailable');
+      const report: StaffReportPayload = {
+        task,
+        staffId: staff?.id ?? 'unassigned',
+        reasonCodes,
+        summaryCode: 'delegation_opposition_degraded',
+        gameWeek: input.gameWeek,
+        season: input.season,
+      };
+      return { stateChanges: [], report, event: buildStaffReportEvent(task, input, report, reasonCodes) };
+    }
+
+    const opposition = runDelegatedOppositionAnalysis({
+      userClub: club,
+      nextFixture: integrator?.nextFixture ?? integrator?.leagueFixtures?.find((f) => !f.played),
+      opponentClub: integrator?.opponentClub,
+      livingWorld: integrator?.livingWorld,
+      leagueStandings: integrator?.leagueStandings,
+      analyticsDepartmentLevel: input.state.facilities.analyticsDepartmentLevel,
+      gameWeek: input.gameWeek,
+      season: input.season,
+      timestampIso: input.timestampIso,
+      quality,
+    });
+
+    const mergedReasons = [...reasonCodes, ...opposition.reasonCodes];
+    const report: StaffReportPayload = {
+      task,
+      staffId: staff?.id ?? 'unassigned',
+      reasonCodes: mergedReasons,
+      summaryCode: opposition.summaryCode,
+      gameWeek: input.gameWeek,
+      season: input.season,
+    };
+
+    return {
+      stateChanges: [],
+      report,
+      event: buildStaffReportEvent(task, input, report, mergedReasons),
+      extraEvents: opposition.events,
+    };
+  }
+
+  return { stateChanges: [] };
 }
 
 export const DELEGATION_TASKS: readonly DelegationTask[] = [

@@ -25,6 +25,8 @@ export interface CompleteScoutingReportInput {
   reportId: string;
   timestampIso: string;
   season: number;
+  /** Phase E/H staff modifier on existing report quality path (default 1). */
+  scoutReportQualityMult?: number;
 }
 
 export interface CompleteScoutingReportResult {
@@ -73,6 +75,7 @@ export function completeScoutingReport(
     truth,
     currentConfidencePct: knowledge.confidencePct,
     reportId: input.reportId,
+    scoutReportQualityMult: input.scoutReportQualityMult,
   });
 
   const updatedKnowledge = applyScoutingReportToKnowledge(

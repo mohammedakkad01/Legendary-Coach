@@ -45,7 +45,13 @@ export function resolveInteractionResponse(
         season: interaction.season,
         playerId: player.id,
         severity: 'low',
-        context: { kind: interaction.kind, responseId, effectKey: chosen.effectKey },
+        context: {
+          kind: interaction.kind,
+          responseId,
+          effectKey: chosen.effectKey,
+          title: 'Player interaction resolved',
+          message: `Handled ${interaction.kind} (${chosen.effectKey}).`,
+        },
       },
     },
   ];

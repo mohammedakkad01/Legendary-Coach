@@ -124,6 +124,7 @@ import {
 } from '../domain/livingWorld/events/dispatch';
 import { ensureDefaultHandlersRegistered } from '../domain/livingWorld/events/registry';
 import { ingestGameEvent } from '../domain/livingWorld/events/ingest';
+import { applyNotificationPipelineForEvents } from '../domain/livingWorld/notifications/pipeline';
 import type { GameEvent, LivingWorldState } from '../domain/livingWorld/types';
 import {
   buildMatchCompletedEvent,
@@ -1750,8 +1751,9 @@ export const useGameStore = create<GameState>((set, get) => {
         { livingWorld: state.livingWorld, players: state.club.footballSquad },
         [{ kind: 'appendGameEvent', event }],
       );
+      const withNotifications = applyNotificationPipelineForEvents(applied, [event]);
       set({
-        livingWorld: applied.livingWorld,
+        livingWorld: withNotifications.livingWorld,
         assistant: appendIgnoredAssistantId(state.assistant, rec.id),
       });
       saveToStorage(undefined, false);
@@ -4370,6 +4372,10 @@ export const useGameStore = create<GameState>((set, get) => {
           name: candidate.name,
           category: candidate.category,
           weeklyWage: candidate.weeklyWage,
+          title: isAr ? 'تعاقد طاقم فني' : 'Staff hired',
+          message: isAr
+            ? `تم التعاقد مع ${candidate.name}.`
+            : `${candidate.name} joined the club staff.`,
         },
       });
 
@@ -4435,6 +4441,10 @@ export const useGameStore = create<GameState>((set, get) => {
           name: member.name,
           category: member.category,
           severance,
+          title: isAr ? 'إنهاء خدمات طاقم' : 'Staff released',
+          message: isAr
+            ? `غادر ${member.name} النادي.`
+            : `${member.name} left the club staff.`,
         },
       });
 
@@ -4530,6 +4540,10 @@ export const useGameStore = create<GameState>((set, get) => {
             request,
             approved: true,
             reasons: evaluation.reasonCodes.join(','),
+            title: isAr ? `طلب مجلس الإدارة: ${label.ar}` : `Board request: ${label.en}`,
+            message: isAr
+              ? `وافق مجلس الإدارة على طلب (${label.ar}).`
+              : `The board approved your request (${label.en}).`,
           },
         });
 
@@ -4571,6 +4585,10 @@ export const useGameStore = create<GameState>((set, get) => {
             request,
             approved: false,
             reasons: evaluation.reasonCodes.join(','),
+            title: isAr ? `طلب مجلس الإدارة: ${label.ar}` : `Board request: ${label.en}`,
+            message: isAr
+              ? `رفض مجلس الإدارة طلب (${label.ar}): ${reasonText}`
+              : `Board rejected request (${label.en}): ${reasonText}`,
           },
         });
 

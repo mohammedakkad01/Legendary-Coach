@@ -7,9 +7,16 @@
  * Critical, Important, Information, Suggestion, Story (throttling managed by domain).
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useGameStore } from '../../state/useGameStore';
-import type { GameNotification, NotificationCategory } from '../../domain/livingWorld/types';
+import type { NotificationCategory } from '../../domain/livingWorld/types';
+import {
+  filterNotificationsForDisplay,
+  isNotificationCategoryMutedForDisplay,
+  loadNotificationMutes,
+  setNotificationCategoryMuted,
+  type NotificationMutePreferences,
+} from '../../services/localUiSettings';
 import {
   Bell,
   X,
@@ -66,17 +73,38 @@ const categoryBadgeClass = (category: NotificationCategory) => {
   }
 };
 
+const MUTE_TOGGLES: NotificationCategory[] = [
+  'Important',
+  'Information',
+  'Suggestion',
+  'Story',
+];
+
 export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, onClose }) => {
   const { livingWorld, language, markNotificationRead, markAllNotificationsRead } = useGameStore();
   const isAr = language === 'ar';
   const notifications = livingWorld.notifications ?? [];
 
   const [filter, setFilter] = useState<'All' | NotificationCategory>('All');
+  const [mutes, setMutes] = useState<NotificationMutePreferences>(() => loadNotificationMutes());
+
+  const visibleNotifications = useMemo(
+    () => filterNotificationsForDisplay(notifications, mutes),
+    [notifications, mutes],
+  );
 
   if (!isOpen) return null;
 
-  const filtered = filter === 'All' ? notifications : notifications.filter((n) => n.category === filter);
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const filtered =
+    filter === 'All'
+      ? visibleNotifications
+      : visibleNotifications.filter((n) => n.category === filter);
+  const unreadCount = visibleNotifications.filter((n) => !n.read).length;
+
+  const toggleMute = (category: NotificationCategory) => {
+    const nextMuted = !isNotificationCategoryMutedForDisplay(mutes, category);
+    setMutes(setNotificationCategoryMuted(category, nextMuted));
+  };
 
   return (
     <div
@@ -148,6 +176,30 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
               {isAr ? tab.labelAr : tab.labelEn}
             </button>
           ))}
+        </div>
+
+        {/* Category mute (local UI only; Critical always visible) */}
+        <div className="flex flex-wrap gap-2 shrink-0 border-b border-slate-800 pb-3">
+          <span className="text-[10px] font-bold text-slate-500 w-full">
+            {isAr ? 'كتم التنبيهات (محلي)' : 'Mute categories (device only)'}
+          </span>
+          {MUTE_TOGGLES.map((cat) => {
+            const muted = isNotificationCategoryMutedForDisplay(mutes, cat);
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => toggleMute(cat)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer ${
+                  muted
+                    ? 'bg-slate-950 border-slate-700 text-slate-500 line-through'
+                    : 'bg-slate-800 border-slate-700 text-slate-300'
+                }`}
+              >
+                {cat}
+              </button>
+            );
+          })}
         </div>
 
         {/* Notifications List */}

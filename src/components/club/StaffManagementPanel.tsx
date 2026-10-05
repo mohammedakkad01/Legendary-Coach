@@ -49,8 +49,6 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'roster' | 'hiring'>('roster');
   const [selectedStaffDetail, setSelectedStaffDetail] = useState<StaffMember | null>(null);
   const [confirmDismissStaff, setConfirmDismissStaff] = useState<StaffMember | null>(null);
-  const [feedback, setFeedback] = useState<{ success: boolean; message: string } | null>(null);
-
   // Generate deterministic hiring pool candidates for the current game week
   const hiringPool = useMemo(() => {
     return generateHiringPoolCandidates(clubId, 42, gameWeek);
@@ -83,41 +81,17 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({
   };
 
   const handleHire = (candidate: StaffMember) => {
-    const res = onHireStaff(candidate);
-    setFeedback(res);
+    onHireStaff(candidate);
   };
 
   const handleFire = (staffId: string) => {
-    const res = onFireStaff(staffId);
-    setFeedback(res);
+    onFireStaff(staffId);
     setConfirmDismissStaff(null);
   };
 
   return (
     <div className="space-y-6">
       
-      {/* Toast Feedback */}
-      {feedback && (
-        <div
-          className={`p-4 rounded-2xl border text-sm font-bold flex items-center justify-between shadow-lg transition-all ${
-            feedback.success
-              ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-200'
-              : 'bg-rose-950/80 border-rose-500/40 text-rose-200'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            {feedback.success ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertTriangle className="w-5 h-5 text-rose-400" />}
-            <p>{feedback.message}</p>
-          </div>
-          <button
-            onClick={() => setFeedback(null)}
-            className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
       {/* Roster vs Hiring Navigation */}
       <div className="flex items-center justify-between flex-wrap gap-4 border-b border-slate-800 pb-3">
         <div className="flex items-center bg-slate-900 p-1.5 rounded-2xl border border-slate-800">

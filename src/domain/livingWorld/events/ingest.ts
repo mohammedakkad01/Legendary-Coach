@@ -11,8 +11,8 @@
  * ingestGameEvent for any new emitters.
  */
 
-import { deriveNotificationsFromEvent } from '../notifications/derive';
-import { filterNotificationsByThrottle, mergeDuplicateNotifications } from '../notifications/throttle';
+import { notificationPipelineStepForEvent } from '../notifications/pipeline';
+import { mergeDuplicateNotifications } from '../notifications/throttle';
 import { applyStateChanges } from '../reducer';
 import type { ReducerInput, ReducerResult, StateChange, GameEvent } from '../types';
 import { getHandler } from './registry';
@@ -25,7 +25,6 @@ import {
   recordNewsAccepted,
 } from '../news/generator';
 import { ensurePhaseFState } from '../phaseF/ensurePhaseF';
-import { LIVING_WORLD_TUNING } from '../config/livingWorldTuning';
 import { handlerChangesFromReputationEvent, isReputationCatalogEventType } from '../manager/reputationCatalog';
 
 export interface IngestGameEventOptions {
@@ -83,29 +82,9 @@ function notificationChanges(
   event: GameEvent,
   input: ReducerInput,
 ): { changes: StateChange[]; throttle: ReducerInput['livingWorld']['notificationThrottle'] } {
-  const phaseF = ensurePhaseFState(input.livingWorld, event.clubId ?? '');
-  const newsItem = buildNewsItemFromGameEvent(event);
-  const notifs = deriveNotificationsFromEvent({
-    ...event,
-    severity:
-      newsItem && newsItem.importance >= LIVING_WORLD_TUNING.story.importanceMirrorToNotification
-        ? 'high'
-        : event.severity,
-    context: {
-      ...event.context,
-      title: event.context.title ?? newsItem?.type ?? event.type,
-      message: event.context.message ?? `Event ${event.type}`,
-    },
-  });
-  const { accepted, throttle } = filterNotificationsByThrottle(
-    input.livingWorld.notificationThrottle,
-    notifs,
-  );
-  void phaseF;
-  return {
-    changes: accepted.map((n) => ({ kind: 'addNotification' as const, notification: n })),
-    throttle,
-  };
+  void ensurePhaseFState(input.livingWorld, event.clubId ?? '');
+  const step = notificationPipelineStepForEvent(event, input);
+  return { changes: step.changes, throttle: step.throttle };
 }
 
 export function ingestGameEvent(

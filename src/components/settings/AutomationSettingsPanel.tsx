@@ -24,7 +24,10 @@ const FEATURE_ROWS: {
 ];
 
 export const AutomationSettingsPanel: React.FC<{ isAr: boolean }> = ({ isAr }) => {
-  const settings = useGameStore((s) => s.getAutomationSettings());
+  const settings = useGameStore((s) => {
+    void s.automationPrefsVersion;
+    return s.getAutomationSettings();
+  });
   const setFeature = useGameStore((s) => s.setAutomationFeature);
   const reports = useGameStore((s) => s.getAutomationReports());
   const undo = useGameStore((s) => s.undoLastAutomation);

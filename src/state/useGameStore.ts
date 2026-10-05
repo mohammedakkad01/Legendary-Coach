@@ -1483,6 +1483,7 @@ export const useGameStore = create<GameState>((set, get) => {
     assistant: mergeAssistantIntoRuntimeState(initialSave?.assistant),
     saveId: initialSave?.saveId ?? `save_${Date.now()}`,
     savePassthrough: initialSave?.savePassthrough ?? {},
+    automationPrefsVersion: 0,
 
     aiNarrationEnabled: initialSave ? readAiNarrationEnabledFromSave(initialSave) : true,
     setAiNarrationEnabled: (enabled: boolean) => {
@@ -4877,7 +4878,11 @@ export const useGameStore = create<GameState>((set, get) => {
 
     getAutomationSettings: () => getAutomationSettingsFromPrefs(),
 
-    setAutomationFeature: (id, patch) => setAutomationFeatureInPrefs(id, patch),
+    setAutomationFeature: (id, patch) => {
+      const next = setAutomationFeatureInPrefs(id, patch);
+      set({ automationPrefsVersion: get().automationPrefsVersion + 1 });
+      return next;
+    },
 
     getAutomationReports: () => getRuntimeAutomationReports(),
 

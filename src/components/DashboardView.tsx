@@ -8,13 +8,11 @@
 
 import React from 'react';
 import { useDashboardData } from '../hooks/useDashboardData';
-import { useFeedback } from '../context/FeedbackContext';
 import { DashboardHeaderCard } from './dashboard/DashboardHeaderCard';
 import { DashboardPromotionBanners } from './dashboard/DashboardPromotionBanners';
-import { DashboardReadinessTrio } from './dashboard/DashboardReadinessTrio';
 import { DashboardDailyActivities } from './dashboard/DashboardDailyActivities';
 import { DashboardStoryAndTiles } from './dashboard/DashboardStoryAndTiles';
-import { DashboardAiRecommendationsWidget } from './dashboard/DashboardAiRecommendationsWidget';
+import { UnifiedDashboardHub } from './dashboard/unified/UnifiedDashboardHub';
 
 export const DashboardView: React.FC = () => {
   const {
@@ -22,10 +20,6 @@ export const DashboardView: React.FC = () => {
     isAr,
     user,
     setAuthModalOpen,
-    avgFatigue,
-    totalDaily,
-    completedDaily,
-    claimedDaily,
     currentTier,
     nextTier,
     vipPoints,
@@ -44,18 +38,13 @@ export const DashboardView: React.FC = () => {
     startNewMatch,
     skipAndSimulateNextMatch,
     setClubSelectionModalOpen,
-    setDailyMissionsModalOpen,
-    startTacticalDuel,
-    runSquadRecoverySession,
     hasSelectedInitialClub,
     isLoadingMatch,
     setSeasonFinaleModalOpen,
   } = useDashboardData();
-  const { toast } = useFeedback();
 
   return (
-    <div className="max-w-7xl mx-auto p-3 sm:p-6 space-y-6">
-      {/* Top Banner: Club & Coach Identity */}
+    <div className="max-w-7xl mx-auto p-3 sm:p-6 space-y-6 overflow-x-hidden">
       <DashboardHeaderCard
         club={club}
         isAr={isAr}
@@ -75,7 +64,6 @@ export const DashboardView: React.FC = () => {
         onVipClick={() => setActiveTab('vip')}
       />
 
-      {/* Official Leagues & Gems Promotion Banners */}
       <DashboardPromotionBanners
         club={club}
         isAr={isAr}
@@ -85,28 +73,8 @@ export const DashboardView: React.FC = () => {
         onOpenAuth={() => setAuthModalOpen(true)}
       />
 
-      {/* PvP Duel, Daily Missions, Squad Readiness Trio */}
-      <DashboardReadinessTrio
-        isAr={isAr}
-        completedDaily={completedDaily}
-        totalDaily={totalDaily}
-        claimedDaily={claimedDaily}
-        avgFatigue={avgFatigue}
-        onStartDuel={() => startTacticalDuel('tactical')}
-        onOpenMissions={() => setDailyMissionsModalOpen(true)}
-        onSquadRecovery={() => {
-          const res = runSquadRecoverySession();
-          if (res.success) {
-            toast.success(res.message, isAr ? 'جلسة الاستشفاء' : 'Squad Recovery');
-          } else {
-            toast.error(res.message, isAr ? 'تعذر الاستشفاء' : 'Recovery Failed');
-          }
-        }}
-      />
+      <UnifiedDashboardHub />
 
-      <DashboardAiRecommendationsWidget isAr={isAr} onOpenTactics={() => setActiveTab('tactics')} />
-
-      {/* 7-Day Check-in & Daily VIP Chest */}
       <DashboardDailyActivities
         isAr={isAr}
         checkInStreak={checkInStreak}
@@ -117,12 +85,10 @@ export const DashboardView: React.FC = () => {
         onClaimVipReward={claimDailyVIPReward}
       />
 
-      {/* Story Spotlight & Quick Navigation Tiles */}
       <DashboardStoryAndTiles
         isAr={isAr}
         nextMission={nextMission}
         completedMissionsCount={completedMissionsCount}
-        club={club}
         onNavigateTab={(tab) => setActiveTab(tab)}
       />
     </div>

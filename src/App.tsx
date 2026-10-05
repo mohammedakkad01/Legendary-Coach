@@ -38,6 +38,7 @@ import { RoundSummaryView } from './components/RoundSummaryView';
 import { SeasonFinaleModal } from './components/SeasonFinaleModal';
 import { hydrateLiveLeagues } from './services/liveLeaguesService';
 import { LivingWorldHubView } from './components/living-world/LivingWorldHubView';
+import { SettingsView } from './components/settings/SettingsView';
 
 function MainAppLayout() {
   const { activeTab, language, preMatchModalOpen } = useGameStore();
@@ -108,6 +109,8 @@ function MainAppLayout() {
         return <FootballApiView />;
       case 'living_world':
         return <LivingWorldHubView />;
+      case 'settings':
+        return <SettingsView />;
       
       // Protected Admin & Developer Routes
       case 'admin':

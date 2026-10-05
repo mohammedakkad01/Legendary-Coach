@@ -133,7 +133,7 @@ export const DashboardHeaderCard: React.FC<DashboardHeaderCardProps> = ({
           {!hasSelectedInitialClub && (
             <button
               onClick={onSelectClubModal}
-              className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/30 font-bold text-xs sm:text-sm shadow-lg transition-all cursor-pointer"
+              className="touch-target-row flex items-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/30 font-bold text-xs sm:text-sm shadow-lg transition-all cursor-pointer"
             >
               <Trophy className="w-4 h-4 text-amber-400" />
               <span>{isAr ? 'اختر دورياً وفريقاً' : 'Select League & Team'}</span>
@@ -154,7 +154,7 @@ export const DashboardHeaderCard: React.FC<DashboardHeaderCardProps> = ({
                 id="btn_dashboard_skip"
                 disabled={isLoadingMatch}
                 onClick={onSkipMatch}
-                className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-black text-xs sm:text-sm shadow-lg transition-all cursor-pointer disabled:opacity-50"
+                className="touch-target-row flex items-center gap-2 px-4 py-3 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-black text-xs sm:text-sm shadow-lg transition-all cursor-pointer disabled:opacity-50"
                 title={isAr ? 'تخطي المباراة ومحاكاة الجولة فوراً مع خصم 50% من إيرادات التذاكر' : 'Instant simulate round with 50% revenue deduction'}
               >
                 <FastForward className="w-4 h-4 text-amber-400" />
@@ -165,7 +165,7 @@ export const DashboardHeaderCard: React.FC<DashboardHeaderCardProps> = ({
                 id="btn_dashboard_kickoff"
                 disabled={isLoadingMatch}
                 onClick={onPlayNextMatch}
-                className="flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-slate-950 font-black text-sm sm:text-base shadow-xl shadow-emerald-500/30 group transition-all cursor-pointer"
+                className="touch-target-row flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-slate-950 font-black text-sm sm:text-base shadow-xl shadow-emerald-500/30 group transition-all cursor-pointer"
               >
                 <Flame className={`w-5 h-5 text-slate-950 ${isLoadingMatch ? 'animate-spin' : 'group-hover:scale-110'} transition-transform`} />
                 <span>

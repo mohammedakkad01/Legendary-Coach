@@ -57,7 +57,7 @@ export const DashboardReadinessTrio: React.FC<DashboardReadinessTrioProps> = ({
           <button
             id="dashboard_play_duel_btn"
             onClick={onStartDuel}
-            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+            className="touch-target-row px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1 cursor-pointer"
           >
             <Swords className="w-3.5 h-3.5" />
             <span>{isAr ? 'بدء المواجهة' : 'Start Duel'}</span>
@@ -96,7 +96,7 @@ export const DashboardReadinessTrio: React.FC<DashboardReadinessTrioProps> = ({
           <button
             id="dashboard_open_missions_btn"
             onClick={onOpenMissions}
-            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+            className="touch-target-row px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1 cursor-pointer"
           >
             <Trophy className="w-3.5 h-3.5" />
             <span>{isAr ? 'فتح المهام' : 'Open Tasks'}</span>
@@ -132,7 +132,7 @@ export const DashboardReadinessTrio: React.FC<DashboardReadinessTrioProps> = ({
           <button
             id="dashboard_squad_recovery_btn"
             onClick={onSquadRecovery}
-            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+            className="touch-target-row px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1 cursor-pointer"
           >
             <HeartPulse className="w-3.5 h-3.5" />
             <span>{isAr ? 'جلسة استشفاء' : 'Recovery'}</span>

@@ -71,8 +71,9 @@ export const Navigation: React.FC = () => {
             <button
               key={item.id}
               id={`nav_btn_${item.id}`}
+              type="button"
               onClick={() => setActiveTab(item.id)}
-              className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+              className={`relative touch-target-row flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                 isActive
                   ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/30'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'

@@ -41,6 +41,8 @@ export function buildDismissEvent(input: {
     context: {
       dedupeKey: input.dedupeKey,
       recommendationId: input.recommendationId,
+      title: 'Assistant advice dismissed',
+      message: 'A coaching suggestion was dismissed.',
     },
   };
 }

@@ -19,6 +19,7 @@ export * from './events/dispatch';
 export { ingestGameEvent, ingestGameEventBatch } from './events/ingest';
 export * from './notifications/derive';
 export * from './notifications/throttle';
+export * from './notifications/pipeline';
 export * from './config/livingWorldTuning';
 export * from './phaseF/types';
 export { ensurePhaseFState } from './phaseF/ensurePhaseF';

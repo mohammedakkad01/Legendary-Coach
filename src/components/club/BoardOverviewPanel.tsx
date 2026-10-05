@@ -45,8 +45,6 @@ export const BoardOverviewPanel: React.FC<BoardOverviewPanelProps> = ({
 }) => {
   const [selectedRequest, setSelectedRequest] = useState<BoardRequestKind>('raise_transfer_budget');
   const [requestModalOpen, setRequestModalOpen] = useState(false);
-  const [feedback, setFeedback] = useState<{ approved: boolean; message: string; reasonCodes: string[] } | null>(null);
-
   const { board, influence, fans } = cm;
 
   // Real-time evaluation preview using domain pure evaluator
@@ -118,43 +116,13 @@ export const BoardOverviewPanel: React.FC<BoardOverviewPanelProps> = ({
   ];
 
   const handleExecuteRequest = () => {
-    const res = onSubmitBoardRequest(selectedRequest);
-    setFeedback(res);
+    onSubmitBoardRequest(selectedRequest);
     setRequestModalOpen(false);
   };
 
   return (
     <div className="space-y-6">
       
-      {/* Toast Feedback */}
-      {feedback && (
-        <div
-          className={`p-4 rounded-2xl border text-sm font-bold flex items-center justify-between shadow-lg transition-all ${
-            feedback.approved
-              ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-200'
-              : 'bg-rose-950/80 border-rose-500/40 text-rose-200'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            {feedback.approved ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertOctagon className="w-5 h-5 text-rose-400" />}
-            <div>
-              <p>{feedback.message}</p>
-              {feedback.reasonCodes.length > 0 && (
-                <p className="text-[11px] opacity-75 mt-0.5">
-                  {isAr ? 'رموز الاعتماد:' : 'Domain codes:'} {feedback.reasonCodes.join(', ')}
-                </p>
-              )}
-            </div>
-          </div>
-          <button
-            onClick={() => setFeedback(null)}
-            className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
       {/* Row 1: Board of Directors & Objectives Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         

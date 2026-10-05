@@ -13,6 +13,10 @@ import { CloudSyncModal } from './CloudSyncModal';
 import { RedeemCodeModal } from './RedeemCodeModal';
 import { VIP_LEVELS } from '../data/vipData';
 import { NotificationsModal } from './player-life/NotificationsModal';
+import {
+  filterNotificationsForDisplay,
+  loadNotificationMutes,
+} from '../services/localUiSettings';
 import { 
   Trophy, 
   Coins, 
@@ -68,7 +72,10 @@ export const Header: React.FC = () => {
   }, [saveStatus]);
 
   const claimableMissionsCount = (dailyMissions || []).filter(m => m.current >= m.target && !m.isClaimed).length;
-  const unreadNotificationsCount = (livingWorld?.notifications ?? []).filter(n => !n.read).length;
+  const unreadNotificationsCount = filterNotificationsForDisplay(
+    livingWorld?.notifications ?? [],
+    loadNotificationMutes(),
+  ).filter((n) => !n.read).length;
 
   // Find VIP Tier
   let currentTier = VIP_LEVELS[0];

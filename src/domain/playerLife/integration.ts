@@ -6,11 +6,9 @@
  */
 
 import type { SeededRandom } from '../../engine/prng';
-import type { ReducerInput, ReducerResult } from '../livingWorld/types';
+import type { GameEvent, ReducerInput, ReducerResult, StateChange } from '../livingWorld/types';
 import { applyStateChanges } from '../livingWorld/reducer';
-import { deriveNotificationsFromEvent } from '../livingWorld/notifications/derive';
-import { filterNotificationsByThrottle } from '../livingWorld/notifications/throttle';
-import type { GameEvent } from '../livingWorld/types';
+import { applyNotificationPipelineForEvents } from '../livingWorld/notifications/pipeline';
 import { buildPostMatchPlayerLifeChanges, injuryStateChangeFromMatch } from './tick/postMatchTick';
 import { buildWeeklyPlayerLifeChanges } from './tick/weeklyTick';
 import type { PostMatchTickInput, WeeklyTickInput } from './types';
@@ -18,8 +16,30 @@ import { computeInMatchInjuryProbability } from './injuryRisk';
 import { resolveInteractionResponse } from './interactions/resolver';
 import type { PendingPlayerInteraction } from './types';
 
-export function applyPlayerLifeChanges(input: ReducerInput, changes: import('../livingWorld/types').StateChange[]): ReducerResult {
-  return applyStateChanges(input, changes);
+function extractAppendedEvents(changes: readonly StateChange[]): GameEvent[] {
+  const events: GameEvent[] = [];
+  for (const change of changes) {
+    if (change.kind === 'appendGameEvent') {
+      events.push(change.event);
+    }
+  }
+  return events;
+}
+
+function applyPlayerLifeChangesWithNotifications(
+  input: ReducerInput,
+  changes: StateChange[],
+): ReducerResult {
+  const pendingEvents = extractAppendedEvents(changes);
+  const applied = applyStateChanges(input, changes);
+  if (pendingEvents.length === 0) {
+    return applied;
+  }
+  return applyNotificationPipelineForEvents(applied, pendingEvents);
+}
+
+export function applyPlayerLifeChanges(input: ReducerInput, changes: StateChange[]): ReducerResult {
+  return applyPlayerLifeChangesWithNotifications(input, changes);
 }
 
 export function runPostMatchPlayerLife(
@@ -64,7 +84,11 @@ export function runPostMatchPlayerLife(
               season: tick.season,
               playerId: s.playerId,
               severity: 'high',
-              context: { minutes: s.minutes },
+              context: {
+                minutes: s.minutes,
+                title: 'Player injury',
+                message: `${player.nameEn || player.name} picked up an injury during the match.`,
+              },
             },
           },
         ];
@@ -72,7 +96,7 @@ export function runPostMatchPlayerLife(
     }
   }
 
-  return applyPlayerLifeChanges(input, changes);
+  return applyPlayerLifeChangesWithNotifications(input, changes);
 }
 
 export function runWeeklyPlayerLife(
@@ -81,7 +105,7 @@ export function runWeeklyPlayerLife(
   rng: SeededRandom,
 ): ReducerResult {
   const changes = buildWeeklyPlayerLifeChanges(input, tick, rng);
-  return applyPlayerLifeChanges(input, changes);
+  return applyPlayerLifeChangesWithNotifications(input, changes);
 }
 
 export function resolveInteraction(
@@ -90,7 +114,7 @@ export function resolveInteraction(
   responseId: string,
 ): ReducerResult {
   const changes = resolveInteractionResponse(interaction, responseId, input);
-  return applyPlayerLifeChanges(input, changes);
+  return applyPlayerLifeChangesWithNotifications(input, changes);
 }
 
 export function listPendingInteractions(
@@ -99,21 +123,4 @@ export function listPendingInteractions(
 ): PendingPlayerInteraction[] {
   const list = livingWorld.pendingInteractions ?? [];
   return playerId ? list.filter((i) => i.playerId === playerId) : list;
-}
-
-export function dispatchPlayerLifeEvents(
-  input: ReducerInput,
-  events: GameEvent[],
-): ReducerResult {
-  let acc = input;
-  for (const event of events) {
-    const notifs = deriveNotificationsFromEvent(event);
-    const { accepted, throttle } = filterNotificationsByThrottle(acc.livingWorld.notificationThrottle, notifs);
-    acc = applyPlayerLifeChanges(acc, [
-      { kind: 'appendGameEvent', event },
-      ...accepted.map((n) => ({ kind: 'addNotification' as const, notification: n })),
-    ]);
-    acc = { ...acc, livingWorld: { ...acc.livingWorld, notificationThrottle: throttle } };
-  }
-  return acc;
 }

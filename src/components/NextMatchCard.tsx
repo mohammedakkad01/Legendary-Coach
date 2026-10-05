@@ -8,46 +8,40 @@
  * (odds, expected score, technical gap) — with the kick-off button.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { useGameStore } from '../state/useGameStore';
-import { Calendar, Flame, Sliders, Swords, Trophy, Home, Plane, TrendingUp, TrendingDown, Minus, FastForward, Search, Lock, Coins, Gem, Crown } from 'lucide-react';
+import { useNextMatchSummary } from '../hooks/useNextMatchSummary';
+import { Calendar, Flame, Sliders, Swords, Trophy, Home, Plane, TrendingUp, TrendingDown, Minus, FastForward, Search, Coins, Gem, Crown } from 'lucide-react';
 import { formatFixtureDate } from '../utils/fixtureDate';
 
 export const NextMatchCard: React.FC = () => {
   const {
-    club,
-    leagueFixtures,
-    leagueStandings,
-    nextMatchInsight,
-    loadNextMatchInsight,
     startNewMatch,
     skipAndSimulateNextMatch,
     unlockMatchScout,
     setSeasonFinaleModalOpen,
-    isLoadingMatch,
     setActiveTab,
-    vipPoints,
-    language,
   } = useGameStore();
+
+  const {
+    isAr,
+    club,
+    nextFixture,
+    lastPlayed,
+    seasonFinished,
+    insight,
+    isLoadingMatch,
+    rank,
+    gap,
+    gapSummaryEn,
+    gapSummaryAr,
+  } = useNextMatchSummary();
+
   const [scoutMessage, setScoutMessage] = useState<string | null>(null);
-  const isAr = language === 'ar';
 
-  const nextFixture = leagueFixtures.find(f => !f.played);
-  const lastPlayed = [...leagueFixtures].reverse().find(f => f.played);
-  const seasonFinished = leagueFixtures.length > 0 && !nextFixture;
-
-  // Recompute the prediction whenever something that affects it changes.
-  useEffect(() => {
-    loadNextMatchInsight();
-  }, [leagueFixtures, club.id, club.footballLineup, vipPoints, loadNextMatchInsight]);
-
-  const rank = useMemo(() => {
-    const sorted = [...leagueStandings].sort(
-      (a, b) => b.points - a.points || b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor,
-    );
-    const idx = sorted.findIndex(s => s.clubId === club.id);
-    return idx >= 0 ? { pos: idx + 1, total: sorted.length } : null;
-  }, [leagueStandings, club.id]);
+  const gapText = isAr ? gapSummaryAr : gapSummaryEn;
+  const GapIcon = gap > 1 ? TrendingUp : gap < -1 ? TrendingDown : Minus;
+  const gapColor = gap > 1 ? 'text-emerald-400' : gap < -1 ? 'text-rose-400' : 'text-amber-400';
 
   const handleUnlockScout = (method: 'coins' | 'diamonds') => {
     const res = unlockMatchScout(method);
@@ -66,10 +60,10 @@ export const NextMatchCard: React.FC = () => {
             {isAr ? 'راجع جدول الترتيب النهائي، ثم حدد خطوتك القادمة سواء بالبقاء لموسم جديد أو الانتقال لنادٍ أو دوري آخر.' : 'Check the final table, then choose whether to stay for Season 2 or move to a new club or league.'}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
-            <button onClick={() => setActiveTab('league')} className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 text-sm font-bold cursor-pointer">
+            <button type="button" onClick={() => setActiveTab('league')} className="touch-target-row px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/30 text-sm font-bold cursor-pointer">
               {isAr ? 'جدول الترتيب' : 'Standings'}
             </button>
-            <button onClick={() => setSeasonFinaleModalOpen(true)} className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 text-sm font-black cursor-pointer shadow-lg shadow-amber-500/30">
+            <button type="button" onClick={() => setSeasonFinaleModalOpen(true)} className="touch-target-row px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 text-sm font-black cursor-pointer shadow-lg shadow-amber-500/30">
               {isAr ? '🏆 إنهاء الموسم وتحديد مستقبلك' : '🏆 Season Finale & Career Step'}
             </button>
           </div>
@@ -90,24 +84,11 @@ export const NextMatchCard: React.FC = () => {
     );
   }
 
-  const insight = nextMatchInsight && nextMatchInsight.fixture.matchday === nextFixture.matchday ? nextMatchInsight : null;
-  const gap = insight?.technicalGap ?? 0;
-  const GapIcon = gap > 1 ? TrendingUp : gap < -1 ? TrendingDown : Minus;
-  const gapColor = gap > 1 ? 'text-emerald-400' : gap < -1 ? 'text-rose-400' : 'text-amber-400';
-  const gapText = !insight
-    ? ''
-    : gap > 1
-    ? (isAr ? `أفضلية فنية لك بفارق ${gap}` : `You lead by ${gap} rating points`)
-    : gap < -1
-    ? (isAr ? `الخصم أقوى فنياً بفارق ${Math.abs(gap)}` : `Opponent leads by ${Math.abs(gap)} rating points`)
-    : (isAr ? 'مستوى الفريقين متقارب جداً' : 'Teams are evenly matched');
-
   return (
-    <div className="max-w-3xl mx-auto p-3 sm:p-6 space-y-4 animate-fadeIn">
+    <div className="max-w-3xl mx-auto p-3 sm:p-6 space-y-4">
       <div className="relative bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-2xl overflow-hidden">
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 20% 0%, rgba(14,165,233,0.12), transparent 45%), radial-gradient(circle at 80% 0%, rgba(244,63,94,0.10), transparent 45%)' }} />
 
-        {/* Competition + date */}
         <div className="relative flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-4 mb-5">
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
@@ -118,7 +99,7 @@ export const NextMatchCard: React.FC = () => {
               <span className="text-sm font-black text-white">{isAr ? `الجولة #${nextFixture.matchday}` : `Matchday #${nextFixture.matchday}`}</span>
             </div>
           </div>
-          <div className="text-right">
+          <div className="text-end">
             <span className="flex items-center gap-1.5 text-xs font-bold text-slate-300 justify-end">
               <Calendar className="w-3.5 h-3.5 text-sky-400" />
               {formatFixtureDate(nextFixture.date, isAr)}
@@ -126,14 +107,12 @@ export const NextMatchCard: React.FC = () => {
           </div>
         </div>
 
-        {/* Scout notification */}
         {scoutMessage && (
           <div className="relative mb-4 p-2.5 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-bold text-center">
             {scoutMessage}
           </div>
         )}
 
-        {/* Versus */}
         <div className="relative grid grid-cols-3 items-center gap-3 bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
           <div className="flex flex-col items-center text-center">
             <div className="w-16 h-16 rounded-2xl bg-sky-500/10 border-2 border-sky-500/40 p-2 flex items-center justify-center">
@@ -170,7 +149,6 @@ export const NextMatchCard: React.FC = () => {
           </div>
         </div>
 
-        {/* Context chips */}
         <div className="relative mt-4 flex flex-wrap items-center gap-2 text-[11px] font-bold">
           {rank && (
             <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-200 border border-slate-700">
@@ -185,10 +163,9 @@ export const NextMatchCard: React.FC = () => {
           )}
         </div>
 
-        {/* Prediction or Scouting Report */}
         <div className="relative mt-4 bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
           {!insight ? (
-            <div className="space-y-2 animate-pulse">
+            <div className="space-y-2">
               <div className="h-3 bg-slate-800 rounded w-1/3" />
               <div className="h-3 bg-slate-800 rounded-full w-full" />
               <span className="text-[11px] text-slate-500 block text-center">{isAr ? 'جاري تحليل التشكيلتين…' : 'Analysing both line-ups…'}</span>
@@ -215,22 +192,24 @@ export const NextMatchCard: React.FC = () => {
 
               <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
                 <button
+                  type="button"
                   onClick={() => handleUnlockScout('coins')}
-                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
+                  className="touch-target-row px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
                 >
                   <Coins className="w-3.5 h-3.5 text-amber-400" />
                   <span>{isAr ? 'كشف بالكشافة (10,000 🪙)' : 'Scout (10,000 🪙)'}</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => handleUnlockScout('diamonds')}
-                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
+                  className="touch-target-row px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-md"
                 >
                   <Gem className="w-3.5 h-3.5 text-sky-200" />
                   <span>{isAr ? 'تقرير استخباراتي (15 💎)' : 'Instant Intel (15 💎)'}</span>
                 </button>
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-3 text-[11px] font-bold text-left sm:text-right">
+              <div className="mt-3 grid grid-cols-2 gap-3 text-[11px] font-bold text-start sm:text-end">
                 <div className="bg-slate-950/70 rounded-xl border border-sky-500/20 p-2.5 space-y-1">
                   <span className="text-sky-400 block">{isAr ? 'قوة فريقك' : 'Your power'}</span>
                   <span className="text-slate-300 block">⚔️ {insight.userAttackPower} &nbsp; 🛡️ {insight.userDefensePower}</span>
@@ -260,9 +239,9 @@ export const NextMatchCard: React.FC = () => {
                 <span className="text-rose-400">{isAr ? 'خسارة' : 'Loss'} <span className="font-mono text-sm">{insight.lossProbability}%</span></span>
               </div>
               <div className="w-full h-3 bg-slate-950 rounded-full overflow-hidden flex border border-slate-800">
-                <div className="h-full bg-emerald-500 transition-all duration-700" style={{ width: `${insight.winProbability}%` }} />
-                <div className="h-full bg-amber-500 transition-all duration-700" style={{ width: `${insight.drawProbability}%` }} />
-                <div className="h-full bg-rose-500 transition-all duration-700" style={{ width: `${insight.lossProbability}%` }} />
+                <div className="h-full bg-emerald-500 motion-safe:transition-all duration-700" style={{ width: `${insight.winProbability}%` }} />
+                <div className="h-full bg-amber-500 motion-safe:transition-all duration-700" style={{ width: `${insight.drawProbability}%` }} />
+                <div className="h-full bg-rose-500 motion-safe:transition-all duration-700" style={{ width: `${insight.lossProbability}%` }} />
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-3 text-center">
@@ -295,18 +274,18 @@ export const NextMatchCard: React.FC = () => {
           )}
         </div>
 
-        {/* Actions */}
         <div className="relative mt-5 flex flex-wrap items-center justify-between gap-3">
-          <button onClick={() => setActiveTab('tactics')} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-bold border border-slate-700 cursor-pointer">
+          <button type="button" onClick={() => setActiveTab('tactics')} className="touch-target-row flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-bold border border-slate-700 cursor-pointer">
             <Sliders className="w-4 h-4 text-sky-400" />
             <span>{isAr ? 'التشكيلة والتكتيك' : 'Lineup & Tactics'}</span>
           </button>
 
           <div className="flex items-center gap-2.5 flex-wrap">
             <button
+              type="button"
               onClick={() => skipAndSimulateNextMatch()}
               disabled={isLoadingMatch}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-xs sm:text-sm font-black cursor-pointer transition-all disabled:opacity-50"
+              className="touch-target-row flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-xs sm:text-sm font-black cursor-pointer transition-all disabled:opacity-50"
               title={isAr ? 'تخطي المباراة ومحاكاة الجولة فوراً مع خصم 50% من الإيرادات' : 'Skip match with 50% revenue deduction'}
             >
               <FastForward className="w-4 h-4 text-amber-400" />
@@ -315,9 +294,10 @@ export const NextMatchCard: React.FC = () => {
 
             <button
               id="btn_start_match_main"
+              type="button"
               disabled={isLoadingMatch}
               onClick={() => startNewMatch()}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-slate-950 text-sm font-black shadow-xl shadow-emerald-500/30 cursor-pointer transition-all"
+              className="touch-target-row flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 text-slate-950 text-sm font-black shadow-xl shadow-emerald-500/30 cursor-pointer transition-all"
             >
               <Flame className="w-4 h-4" />
               <span>{isLoadingMatch ? (isAr ? 'جاري التحضير…' : 'Preparing…') : (isAr ? 'معاينة وخوض المباراة' : 'Preview & Play')}</span>

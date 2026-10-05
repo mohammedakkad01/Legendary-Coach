@@ -33,7 +33,8 @@ import {
   Swords,
   Database,
   Gift,
-  Bell
+  Bell,
+  Settings
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -215,11 +216,25 @@ export const Header: React.FC = () => {
             <span>{energy}/100</span>
           </div>
 
+          {/* Settings (gear) — sole entry to Settings hub */}
+          <button
+            id="header_settings_btn"
+            type="button"
+            onClick={() => setActiveTab('settings')}
+            className="touch-target flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 cursor-pointer"
+            aria-label={isAr ? 'الإعدادات' : 'Settings'}
+            title={isAr ? 'الإعدادات' : 'Settings'}
+          >
+            <Settings className="w-5 h-5 text-slate-300" />
+          </button>
+
           {/* Notifications Bell Button */}
           <button
             id="header_notifications_btn"
+            type="button"
             onClick={() => setShowNotificationsModal(true)}
-            className="relative flex items-center gap-1.5 bg-neutral-800/90 hover:bg-neutral-700 border border-slate-700 hover:border-sky-400 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-200 transition-all active:scale-95 cursor-pointer"
+            className="relative touch-target-row flex items-center gap-1.5 bg-neutral-800/90 hover:bg-neutral-700 border border-slate-700 hover:border-sky-400 px-3 py-2 rounded-xl text-xs font-bold text-slate-200 transition-all cursor-pointer"
+            aria-label={isAr ? 'مركز الإشعارات والتنبيهات' : 'Notifications and alerts'}
             title={isAr ? 'مركز الإشعارات والتنبيهات' : 'Notifications & Alerts'}
           >
             <Bell className="w-3.5 h-3.5 text-sky-400" />
@@ -234,8 +249,10 @@ export const Header: React.FC = () => {
           {/* Daily Missions Button with Notification Badge */}
           <button
             id="header_daily_missions_btn"
+            type="button"
             onClick={() => setDailyMissionsModalOpen(true)}
-            className="relative flex items-center gap-1.5 bg-neutral-800/90 hover:bg-neutral-700 border border-amber-500/30 hover:border-amber-400 px-2.5 py-1 rounded-lg text-xs font-bold text-amber-300 transition-all active:scale-95"
+            className="relative touch-target-row flex items-center gap-1.5 bg-neutral-800/90 hover:bg-neutral-700 border border-amber-500/30 hover:border-amber-400 px-3 py-2 rounded-xl text-xs font-bold text-amber-300 transition-all cursor-pointer"
+            aria-label={isAr ? 'المهام اليومية' : 'Daily missions'}
             title={isAr ? 'المهام اليومية وجاهزية الفريق' : 'Daily Missions & Squad Readiness'}
           >
             <Trophy className="w-3.5 h-3.5 text-amber-400" />
@@ -341,9 +358,10 @@ export const Header: React.FC = () => {
           {/* Sound Toggle */}
           <button
             id="btn_sound_toggle"
+            type="button"
             onClick={toggleSound}
-            aria-label="Toggle Sound Effects"
-            className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
+            aria-label={isAr ? 'تبديل المؤثرات الصوتية' : 'Toggle sound effects'}
+            className="touch-target flex items-center justify-center rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
           >
             {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
           </button>
@@ -351,8 +369,10 @@ export const Header: React.FC = () => {
           {/* Language Toggle */}
           <button
             id="btn_lang_toggle"
+            type="button"
             onClick={() => setLanguage(language === 'ar' ? 'en' : 'ar')}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
+            className="touch-target-row flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-800 text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
+            aria-label={isAr ? 'تبديل اللغة' : 'Switch language'}
           >
             <Globe className="w-3.5 h-3.5" />
             <span>{language === 'ar' ? 'EN' : 'عربي'}</span>

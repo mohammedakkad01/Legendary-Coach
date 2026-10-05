@@ -22,8 +22,6 @@ import {
   UserCheck, 
   BookOpen,
   Sparkles,
-  ToggleLeft,
-  ToggleRight
 } from 'lucide-react';
 
 export type LivingWorldTab = 'news' | 'press' | 'history' | 'legends' | 'career' | 'stories';
@@ -33,7 +31,7 @@ interface LivingWorldHubViewProps {
 }
 
 export const LivingWorldHubView: React.FC<LivingWorldHubViewProps> = ({ initialTab = 'news' }) => {
-  const { language, livingWorld, aiNarrationEnabled, setAiNarrationEnabled } = useGameStore();
+  const { language } = useGameStore();
   const isAr = language === 'ar';
   const [activeTab, setActiveTab] = useState<LivingWorldTab>(initialTab);
 
@@ -71,31 +69,14 @@ export const LivingWorldHubView: React.FC<LivingWorldHubViewProps> = ({ initialT
           })}
         </div>
 
-        {/* AI Narration Kill Switch Toggle */}
-        <div className="flex items-center justify-end gap-2 px-2 py-1 text-xs text-slate-400 border-t sm:border-t-0 sm:border-l sm:border-slate-800 pt-2 sm:pt-0">
-          <span className="flex items-center gap-1 text-[11px] font-bold">
-            <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-            {isAr ? 'السرد بالذكاء الاصطناعي:' : 'AI Narration:'}
-          </span>
+        <div className="flex items-center justify-end gap-2 px-2 py-1 text-xs text-slate-400 border-t sm:border-t-0 sm:border-slate-800 pt-2 sm:pt-0">
           <button
-            onClick={() => setAiNarrationEnabled(!aiNarrationEnabled)}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-black transition cursor-pointer ${
-              aiNarrationEnabled
-                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                : 'bg-slate-800 text-slate-400 border border-slate-700'
-            }`}
+            type="button"
+            onClick={() => useGameStore.getState().setActiveTab('settings')}
+            className="touch-target-row flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 cursor-pointer"
           >
-            {aiNarrationEnabled ? (
-              <>
-                <ToggleRight className="w-4 h-4 text-sky-400" />
-                <span>{isAr ? 'مفعّل' : 'ON'}</span>
-              </>
-            ) : (
-              <>
-                <ToggleLeft className="w-4 h-4 text-slate-500" />
-                <span>{isAr ? 'معطّل' : 'OFF'}</span>
-              </>
-            )}
+            <Sparkles className="w-4 h-4 text-sky-400" aria-hidden />
+            <span>{isAr ? 'إعدادات الذكاء الاصطناعي' : 'AI settings'}</span>
           </button>
         </div>
       </div>

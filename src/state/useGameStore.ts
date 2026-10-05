@@ -194,7 +194,8 @@ export type GameTab =
   | 'admin'
   | 'tactical_duel'
   | 'round_summary'
-  | 'living_world';
+  | 'living_world'
+  | 'settings';
 
 interface GameState {
   currentSport: SportType;

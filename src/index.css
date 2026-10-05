@@ -3,16 +3,38 @@
 :root {
   --font-arabic: 'Tajawal', 'Alexandria', system-ui, -apple-system, sans-serif;
   --font-heading: 'Alexandria', 'Tajawal', system-ui, sans-serif;
+  --touch-min: 44px;
 }
 
 body {
   font-family: var(--font-arabic);
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  overflow-x: hidden;
 }
 
 h1, h2, h3, h4, h5, h6, .font-heading {
   font-family: var(--font-heading);
+}
+
+/* Minimum touch target for primary controls (mobile-first). */
+.touch-target {
+  min-height: var(--touch-min);
+  min-width: var(--touch-min);
+}
+
+.touch-target-row {
+  min-height: var(--touch-min);
+}
+
+/* Visible keyboard focus (do not rely on outline:none without replacement). */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid rgb(56 189 248);
+  outline-offset: 2px;
 }
 
 /* Smooth sleek game scrollbar */
@@ -31,3 +53,20 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   background: rgba(100, 116, 139, 0.9);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-pulse,
+  .animate-bounce,
+  .animate-ping,
+  .animate-spin {
+    animation: none !important;
+  }
+}

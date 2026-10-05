@@ -133,7 +133,7 @@ export const DashboardHeaderCard: React.FC<DashboardHeaderCardProps> = ({
           {!hasSelectedInitialClub && (
             <button
               onClick={onSelectClubModal}
-              className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/30 font-bold text-xs sm:text-sm shadow-lg transition-all cursor-pointer"
+              className="touch-target-row flex items-center gap-2 px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/30 font-bold text-xs sm:text-sm shadow-lg transition-all cursor-pointer"
             >
               <Trophy className="w-4 h-4 text-amber-400" />
               <span>{isAr ? 'اختر دورياً وفريقاً' : 'Select League & Team'}</span>

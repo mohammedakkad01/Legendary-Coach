@@ -17,6 +17,7 @@ import {
   setNotificationCategoryMuted,
   type NotificationMutePreferences,
 } from '../../services/localUiSettings';
+import { MuteCategoryToggle } from '../ui/MuteCategoryToggle';
 import {
   Bell,
   X,
@@ -74,6 +75,7 @@ const categoryBadgeClass = (category: NotificationCategory) => {
 };
 
 const MUTE_TOGGLES: NotificationCategory[] = [
+  'Critical',
   'Important',
   'Information',
   'Suggestion',
@@ -143,8 +145,9 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
           <div className="flex items-center gap-2">
             {unreadCount > 0 && (
               <button
+                type="button"
                 onClick={markAllNotificationsRead}
-                className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300 hover:text-white transition flex items-center gap-1 cursor-pointer"
+                className="touch-target-row px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300 hover:text-white transition flex items-center gap-1 cursor-pointer"
               >
                 <CheckCheck className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">{isAr ? 'قراءة الكل' : 'Mark all read'}</span>
@@ -152,8 +155,9 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
             )}
 
             <button
+              type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              className="touch-target flex items-center justify-center rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
               aria-label={isAr ? 'إغلاق' : 'Close'}
             >
               <X className="w-5 h-5" />
@@ -166,8 +170,9 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
           {CATEGORY_TABS.map((tab) => (
             <button
               key={tab.id}
+              type="button"
               onClick={() => setFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+              className={`touch-target-row px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${
                 filter === tab.id
                   ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30'
                   : 'bg-slate-950/60 text-slate-400 hover:text-white hover:bg-slate-800'
@@ -183,23 +188,15 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({ isOpen, 
           <span className="text-[10px] font-bold text-slate-500 w-full">
             {isAr ? 'كتم التنبيهات (محلي)' : 'Mute categories (device only)'}
           </span>
-          {MUTE_TOGGLES.map((cat) => {
-            const muted = isNotificationCategoryMutedForDisplay(mutes, cat);
-            return (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => toggleMute(cat)}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border cursor-pointer ${
-                  muted
-                    ? 'bg-slate-950 border-slate-700 text-slate-500 line-through'
-                    : 'bg-slate-800 border-slate-700 text-slate-300'
-                }`}
-              >
-                {cat}
-              </button>
-            );
-          })}
+          {MUTE_TOGGLES.map((cat) => (
+            <MuteCategoryToggle
+              key={cat}
+              isAr={isAr}
+              category={cat}
+              muted={isNotificationCategoryMutedForDisplay(mutes, cat)}
+              onToggle={() => toggleMute(cat)}
+            />
+          ))}
         </div>
 
         {/* Notifications List */}

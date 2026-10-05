@@ -62,7 +62,9 @@ export type GameTab =
   | 'football_api'
   | 'admin'
   | 'tactical_duel'
-  | 'round_summary';
+  | 'round_summary'
+  | 'living_world'
+  | 'settings';
 
 export interface GameState {
   currentSport: SportType;

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Club, Player } from '../../types/game';
+import type { Club, Fixture, Player } from '../../types/game';
 import type { GameSaveData } from '../../types/save';
 import type { LivingWorldState } from '../livingWorld/types';
 import { applyStateChanges } from '../livingWorld/reducer';
@@ -26,6 +26,18 @@ import { computeClubSystemModifiers } from './modifiers/attributeModifier';
 import { runWeeklyClubManagementTick, computeMatchGateReceipt } from './tick/weeklyClubTick';
 import type { ClubManagementState, ClubSystemModifiers } from './types';
 import { applyMatchResultToFans } from './fans/fanLogic';
+import type { DelegationIntegratorContext } from './delegation/delegationIntegratorContext';
+import { REAL_INITIAL_PLAYER_CLUB } from '../../data/realFootballData';
+import {
+  buildFallbackClubConfig,
+  generateSyntheticOpponentSquad,
+} from '../../data/realLeaguesData';
+import {
+  deriveSyntheticOpponentTactics,
+  opponentTacticsWithRoles,
+} from '../tactics/deriveSyntheticOpponentTactics';
+import { assignLineupToFormation } from '../squad/assignFormationLineup';
+import { applyRecruitmentPatches } from '../recruitment/reducer';
 
 export function buildUserNegotiationFinanceContext(
   cm: ClubManagementState,
@@ -173,6 +185,52 @@ export function recordPlayerPurchase(
   return applyClubManagementChanges(cm, [{ kind: 'patchFinance', patch: withLedger }]);
 }
 
+function buildOpponentClubSnapshot(fixture: Fixture, divisionId: string): Club {
+  const cfg = buildFallbackClubConfig(
+    fixture.opponentClubId,
+    fixture.opponentClubName,
+    fixture.opponentBadge ?? '',
+    divisionId,
+  );
+  const squad = generateSyntheticOpponentSquad(cfg);
+  const tacticsCore = deriveSyntheticOpponentTactics(fixture.opponentClubId, cfg.starRating);
+  const lineup = assignLineupToFormation(squad, tacticsCore.formation);
+  const footballTactics = opponentTacticsWithRoles(tacticsCore, lineup);
+  return {
+    ...REAL_INITIAL_PLAYER_CLUB,
+    id: fixture.opponentClubId,
+    name: fixture.opponentClubName,
+    nameEn: cfg.nameEn || fixture.opponentClubName,
+    footballSquad: squad,
+    footballLineup: lineup,
+    footballTactics,
+  };
+}
+
+export function buildDelegationIntegratorContext(params: {
+  save: GameSaveData;
+  club: Club;
+  livingWorld: LivingWorldState;
+  loanDestinations?: DelegationIntegratorContext['loanSearch'];
+}): DelegationIntegratorContext {
+  const fixtures = params.save.leagueFixtures ?? [];
+  const nextFixture = fixtures.find((f) => !f.played) ?? null;
+  const opponentClub =
+    nextFixture !== null ? buildOpponentClubSnapshot(nextFixture, params.club.divisionId) : null;
+
+  return {
+    userClubId: params.club.id,
+    recruitmentWorld: params.save.recruitmentWorld,
+    livingWorld: params.livingWorld,
+    userClub: params.club,
+    leagueFixtures: fixtures,
+    leagueStandings: params.save.leagueStandings ?? [],
+    nextFixture,
+    opponentClub,
+    loanSearch: params.loanDestinations,
+  };
+}
+
 export function getClubModifiersForSave(save: GameSaveData, club: Club): ClubSystemModifiers {
   const cm = save.clubManagement;
   const facilities = extendedFacilitiesFromClub(club);
@@ -218,6 +276,11 @@ export function applyUserWeeklyClubManagement(params: {
     timestampIso,
     lastMatchWon: params.lastMatchWon,
     lastMatchDrawn: params.lastMatchDrawn,
+    delegationIntegrator: buildDelegationIntegratorContext({
+      save: saveWithCm,
+      club: params.club,
+      livingWorld: params.livingWorld,
+    }),
   });
 
   let livingWorld = tick.livingWorld;
@@ -236,12 +299,18 @@ export function applyUserWeeklyClubManagement(params: {
     }
   }
 
+  let recruitmentWorld = saveWithCm.recruitmentWorld;
+  if (recruitmentWorld && tick.recruitmentPatches.length > 0) {
+    recruitmentWorld = applyRecruitmentPatches(recruitmentWorld, tick.recruitmentPatches);
+  }
+
   const club = syncClubFromClubManagement({ ...tick.club, footballSquad: players }, tick.clubManagement);
   const save: GameSaveData = {
     ...saveWithCm,
     club,
     livingWorld,
     clubManagement: tick.clubManagement,
+    recruitmentWorld,
   };
 
   return { club, livingWorld, clubManagement: tick.clubManagement, save };

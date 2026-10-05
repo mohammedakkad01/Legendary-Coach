@@ -19,6 +19,8 @@ import { applyResultToBoardTrust, evaluateBoardConsequenceLadder, updateObjectiv
 import { fanBoardPressureDelta } from '../fans/fanLogic';
 import { computeManagerInfluence } from '../influence/computeInfluence';
 import { DELEGATION_TASKS, runDelegatedTask } from '../delegation/runDelegation';
+import type { DelegationIntegratorContext } from '../delegation/delegationIntegratorContext';
+import type { RecruitmentPatch } from '../../recruitment/types';
 import type { GameEvent } from '../../livingWorld/types';
 import { applyDismissalToManagerCareer } from '../board/boardLogic';
 import type { LivingWorldState } from '../../livingWorld/types';
@@ -33,6 +35,7 @@ export interface WeeklyClubTickInput {
   timestampIso: string;
   lastMatchWon?: boolean;
   lastMatchDrawn?: boolean;
+  delegationIntegrator?: DelegationIntegratorContext;
 }
 
 export interface WeeklyClubTickOutput {
@@ -41,6 +44,7 @@ export interface WeeklyClubTickOutput {
   livingWorld: LivingWorldState;
   events: GameEvent[];
   playerLifeChanges: StateChange[];
+  recruitmentPatches: RecruitmentPatch[];
 }
 
 export function runWeeklyClubManagementTick(input: WeeklyClubTickInput): WeeklyClubTickOutput {
@@ -52,11 +56,13 @@ export function runWeeklyClubManagementTick(input: WeeklyClubTickInput): WeeklyC
       livingWorld: input.livingWorld,
       events: [],
       playerLifeChanges: [],
+      recruitmentPatches: [],
     };
   }
 
   const events: GameEvent[] = [];
   const playerLifeChanges: StateChange[] = [];
+  const recruitmentPatches: RecruitmentPatch[] = [];
   let livingWorld = input.livingWorld;
   const season = livingWorld.currentSeason;
   const facilities = extendedFacilitiesFromClub(input.club);
@@ -174,9 +180,12 @@ export function runWeeklyClubManagementTick(input: WeeklyClubTickInput): WeeklyC
       gameWeek: input.gameWeek,
       season,
       timestampIso: input.timestampIso,
+      integrator: input.delegationIntegrator,
     });
     playerLifeChanges.push(...del.stateChanges);
+    if (del.recruitmentPatches?.length) recruitmentPatches.push(...del.recruitmentPatches);
     if (del.event) events.push(del.event);
+    if (del.extraEvents?.length) events.push(...del.extraEvents);
     if (del.report) {
       cm = applyClubManagementChanges(cm, [
         {
@@ -204,6 +213,7 @@ export function runWeeklyClubManagementTick(input: WeeklyClubTickInput): WeeklyC
     livingWorld,
     events,
     playerLifeChanges,
+    recruitmentPatches,
   };
 }
 
